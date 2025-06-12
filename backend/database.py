@@ -1,0 +1,60 @@
+from supabase import create_client, Client
+import os
+from typing import Optional, List, Dict, Any
+
+class Database:
+    def __init__(self):
+        self.client: Optional[Client] = None
+    
+    async def init(self):
+        supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        supabase_key = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+        
+        if not supabase_url or not supabase_key:
+            raise ValueError("Supabase credentials not found in environment variables")
+        
+        self.client = create_client(supabase_url, supabase_key)
+    
+    def get_client(self) -> Client:
+        if not self.client:
+            raise RuntimeError("Database not initialized. Call init() first.")
+        return self.client
+    
+    async def get_documents(self, workspace_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+        response = self.client.table('documents').select(
+            'content, title, metadata'
+        ).eq('workspace_id', workspace_id).order(
+            'created_at', desc=True
+        ).limit(limit).execute()
+        
+        return response.data
+    
+    async def vector_search(self, query_embedding: List[float], workspace_id: str, 
+                          match_threshold: float = 0.7, match_count: int = 10) -> List[Dict[str, Any]]:
+        response = self.client.rpc('match_documents', {
+            'query_embedding': query_embedding,
+            'workspace_id': workspace_id,
+            'match_threshold': match_threshold,
+            'match_count': match_count
+        }).execute()
+        
+        return response.data
+    
+    async def upsert_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
+        response = self.client.table('documents').upsert(document_data).execute()
+        return response.data
+    
+    async def delete_document(self, notion_page_id: str) -> bool:
+        response = self.client.table('documents').delete().eq(
+            'notion_page_id', notion_page_id
+        ).execute()
+        return len(response.data) > 0
+
+# Global database instance
+db = Database()
+
+async def init_db():
+    await db.init()
+
+def get_db() -> Database:
+    return db

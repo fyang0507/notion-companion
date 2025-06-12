@@ -13,19 +13,18 @@ A production-ready AI-powered knowledge assistant that connects to your Notion w
 
 ## Architecture
 
-- **Frontend**: Next.js 15 with Tailwind CSS and shadcn/ui
-- **Backend**: FastAPI with async Python 3.12
+- **Frontend**: Next.js 13.5 with Tailwind CSS and shadcn/ui
+- **Backend**: FastAPI with async Python 3.8+
 - **Database**: Supabase with pgvector for embeddings
-- **AI Models**: OpenAI embeddings + GPT-4, Cohere Rerank
-- **Deployment**: Vercel for both frontend and serverless functions
+- **AI Models**: OpenAI embeddings + GPT-4
+- **Deployment**: Frontend on Vercel, FastAPI backend on your preferred platform
 
 ## Quick Start
 
 ### Prerequisites
 
 - Node.js 18+
-- Python 3.12+
-- uv package manager
+- Python 3.8+
 - Notion workspace with admin access
 
 ### Installation
@@ -33,30 +32,50 @@ A production-ready AI-powered knowledge assistant that connects to your Notion w
 1. **Clone and setup environment**:
 ```bash
 git clone <repository>
-cd notion-rag-companion
-make setup-env
+cd notion-companion
 ```
 
-2. **Install dependencies**:
+2. **Install frontend dependencies**:
 ```bash
-make install
+npm install
 ```
 
-3. **Configure environment variables**:
-Update `.env.local` with your API keys:
+3. **Install backend dependencies**:
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+4. **Configure environment variables**:
+
+For **frontend** (`.env.local`):
 ```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-OPENAI_API_KEY=your_openai_api_key
-COHERE_API_KEY=your_cohere_api_key
-NOTION_CLIENT_ID=your_notion_client_id
-NOTION_CLIENT_SECRET=your_notion_client_secret
 ```
 
-4. **Start development server**:
+For **backend** (`backend/.env`):
+```env
+OPENAI_API_KEY=your_openai_api_key
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+5. **Start development servers**:
+
+Option A - Start both frontend and backend:
 ```bash
-make dev
+npm run dev:full
+```
+
+Option B - Start separately:
+```bash
+# Terminal 1 - Frontend
+npm run dev
+
+# Terminal 2 - Backend
+npm run backend
 ```
 
 ### Database Setup
@@ -95,6 +114,8 @@ Create the required tables and enable RLS policies using the Supabase dashboard.
 
 ## API Endpoints
 
+The FastAPI backend provides the following endpoints (served at `http://localhost:8000`):
+
 ### Chat
 ```
 POST /api/chat
@@ -104,6 +125,7 @@ POST /api/chat
   "userId": "user-id"
 }
 ```
+Returns streaming SSE response with chat content.
 
 ### Search
 ```
@@ -114,12 +136,18 @@ POST /api/search
   "limit": 10
 }
 ```
+Returns JSON with search results and similarity scores.
 
 ### Webhook
 ```
 POST /api/notion/webhook
 # Receives Notion webhook events
 ```
+Processes Notion page updates, creation, and deletion events.
+
+### Documentation
+- Interactive API docs: `http://localhost:8000/docs`
+- OpenAPI schema: `http://localhost:8000/openapi.json`
 
 ## Configuration
 
@@ -154,11 +182,17 @@ POST /api/notion/webhook
 ```
 ├── app/                 # Next.js app directory
 ├── components/          # React components
-├── lib/                # Utility libraries
+├── lib/                # Frontend utility libraries
 ├── types/              # TypeScript definitions
 ├── hooks/              # Custom React hooks
-├── api/                # API route handlers
-└── requirements.txt    # Python dependencies
+├── backend/            # FastAPI backend
+│   ├── main.py         # FastAPI app
+│   ├── routers/        # API route handlers
+│   ├── services/       # Business logic
+│   ├── models.py       # Pydantic models
+│   ├── database.py     # Database layer
+│   └── requirements.txt # Python dependencies
+└── package.json        # Frontend dependencies
 ```
 
 ### Key Components

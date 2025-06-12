@@ -24,6 +24,7 @@ import { MessageCitations } from '@/components/message-citations';
 import { ChatFilterBar, ChatFilter } from '@/components/chat-filter-bar';
 import { ChatMessage } from '@/types/chat';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { apiClient } from '@/lib/api';
 
 interface ChatInterfaceProps {
   workspaceId: string | 'global';
@@ -170,29 +171,67 @@ export function ChatInterface({ workspaceId, onBackToHome }: ChatInterfaceProps)
     setMessages(prev => [...prev, botMessage]);
     setStreamingMessageId(botMessageId);
 
-    // Simulate streaming after a brief delay
-    setTimeout(() => {
-      const filterContext = getFilterContext();
-      const response = `Based on your filtered search ${filterContext}, I found relevant information about your question using ${selectedModel.name}. The product roadmap for Q4 includes several key initiatives focused on performance optimization and new integrations.\n\nSpecifically, the team is planning to:\n\n1. **Performance Optimization**: Reduce page load times by 40%\n2. **New Integrations**: Add support for Slack, Discord, and Microsoft Teams\n3. **User Experience**: Redesign the dashboard and improve mobile responsiveness\n\nThese initiatives align with the feedback collected from user surveys and will address the most requested features from your customer base.`;
+    try {
+      // Prepare API request
+      const apiMessages = messages.concat(userMessage).map(msg => ({
+        role: msg.type === 'bot' ? 'assistant' : 'user',
+        content: msg.content
+      }));
 
-      let index = 0;
-      const interval = setInterval(() => {
-        if (index < response.length) {
-          setMessages(prev => 
-            prev.map(msg => 
-              msg.id === botMessageId 
-                ? { ...msg, content: response.slice(0, index + 1) }
-                : msg
-            )
-          );
-          index++;
-        } else {
-          clearInterval(interval);
-          setIsLoading(false);
-          setStreamingMessageId(null);
+      const stream = await apiClient.sendChatMessage({
+        messages: apiMessages,
+        workspaceId: workspaceId === 'global' ? 'default' : workspaceId,
+        userId: 'user-1' // Replace with actual user ID
+      });
+
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              setIsLoading(false);
+              setStreamingMessageId(null);
+              break;
+            }
+
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === botMessageId 
+                      ? { ...msg, content: msg.content + parsed.content }
+                      : msg
+                  )
+                );
+              }
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
         }
-      }, 20);
-    }, 1000);
+      }
+    } catch (error) {
+      console.error('Chat error:', error);
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === botMessageId 
+            ? { ...msg, content: 'Sorry, I encountered an error. Please try again.' }
+            : msg
+        )
+      );
+      setIsLoading(false);
+      setStreamingMessageId(null);
+    }
   };
 
   const getFilterContext = () => {
