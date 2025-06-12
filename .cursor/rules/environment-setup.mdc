@@ -1,0 +1,23 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Environment Setup
+
+## Required Environment Variables
+
+### Frontend Environment Variables
+- `NEXT_PUBLIC_API_BASE_URL` - Base URL for the backend API
+- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
+
+### Backend Environment Variables
+- `OPENAI_API_KEY` - OpenAI API key for embeddings and chat
+- Supabase credentials for database access
+
+## Testing & Quality Guidelines
+
+1. Always run `npm run lint` before committing changes
+2. The application uses static export configuration
+3. Ensure all features work without server-side rendering

@@ -1,0 +1,30 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Project Overview
+
+Notion Companion is a production-ready AI-powered knowledge assistant that connects to Notion workspaces, providing intelligent search and chat capabilities with real-time synchronization. It's a full-stack RAG (Retrieval-Augmented Generation) application.
+
+## Tech Stack
+
+**Frontend**: Next.js 13.5.1 with App Router, TypeScript, Tailwind CSS, shadcn/ui components
+**Backend**: FastAPI (Python with uv package manager), Supabase (PostgreSQL + pgvector), OpenAI integration
+**Key Features**: Vector search, streaming chat, Notion webhook synchronization, multi-workspace support
+
+## Development Commands
+
+### Start Development
+- `npm run dev` - Frontend only (port 3000)
+- `npm run backend` - Backend only (port 8000) 
+- `npm run dev:full` - Both frontend and backend concurrently
+- `make dev` - Alternative using Makefile
+
+### Build & Lint
+- `npm run build` - Build Next.js for production
+- `npm run lint` - Run ESLint validation
+
+### Setup
+- `make install` - Install both Python (uv) and Node (pnpm) dependencies
+- `make setup-env` - Create environment file template
