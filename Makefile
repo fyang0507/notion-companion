@@ -1,13 +1,22 @@
-.PHONY: dev install clean test
+.PHONY: dev dev-backend dev-frontend install clean test setup-env sync-notion
 
 install:
 	@echo "Installing Python dependencies..."
-	uv pip install -r requirements.txt
+	cd backend && uv venv .venv
+	cd backend && uv pip install -r requirements.in
 	@echo "Installing Node.js dependencies..."
 	pnpm install
 
 dev:
 	@echo "Starting development servers..."
+	pnpm run dev:full
+
+dev-backend:
+	@echo "Starting backend server only..."
+	cd backend && .venv/bin/python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+dev-frontend:
+	@echo "Starting frontend server only..."
 	pnpm run dev
 
 build:
@@ -24,17 +33,23 @@ test:
 	@echo "Running tests..."
 	# Add test commands here
 
+sync-notion:
+	@echo "Syncing Notion databases..."
+	cd backend && ./sync_notion_databases.sh
+
 setup-env:
-	@echo "Creating environment file..."
+	@echo "Creating environment files..."
 	@if [ ! -f .env.local ]; then \
-		echo "NEXT_PUBLIC_SUPABASE_URL=your_supabase_url" > .env.local; \
+		echo "NEXT_PUBLIC_API_BASE_URL=http://localhost:8000" > .env.local; \
+		echo "NEXT_PUBLIC_SUPABASE_URL=your_supabase_url" >> .env.local; \
 		echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key" >> .env.local; \
-		echo "SUPABASE_SERVICE_ROLE_KEY=your_service_role_key" >> .env.local; \
-		echo "OPENAI_API_KEY=your_openai_api_key" >> .env.local; \
-		echo "COHERE_API_KEY=your_cohere_api_key" >> .env.local; \
-		echo "NOTION_CLIENT_ID=your_notion_client_id" >> .env.local; \
-		echo "NOTION_CLIENT_SECRET=your_notion_client_secret" >> .env.local; \
-		echo "Environment file created. Please update with your actual keys."; \
+		echo "Frontend environment file created."; \
 	else \
-		echo "Environment file already exists."; \
+		echo "Frontend environment file already exists."; \
+	fi
+	@if [ ! -f backend/.env ]; then \
+		cp backend/.env.example backend/.env; \
+		echo "Backend environment file created. Please update with your actual keys."; \
+	else \
+		echo "Backend environment file already exists."; \
 	fi
