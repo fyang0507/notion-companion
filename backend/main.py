@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import os
 from dotenv import load_dotenv
 
-from routers import chat, search, notion_webhook
+from routers import chat, search, notion_webhook, bootstrap
 from database import init_db
 
 load_dotenv()
@@ -37,6 +37,7 @@ app.add_middleware(
 app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(notion_webhook.router, prefix="/api/notion", tags=["notion"])
+app.include_router(bootstrap.router, prefix="/api/bootstrap", tags=["bootstrap"])
 
 @app.get("/")
 async def root():

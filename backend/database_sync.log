@@ -1,0 +1,10 @@
+2025-06-11 22:51:31,139 - __main__ - INFO - Initializing services...
+2025-06-11 22:51:32,313 - __main__ - INFO - Services initialized successfully
+2025-06-11 22:51:32,313 - __main__ - INFO - Starting sync for 1 databases
+2025-06-11 22:51:32,314 - __main__ - INFO - Starting sync for database: Instant Bookmarks
+2025-06-11 22:51:32,836 - httpx - INFO - HTTP Request: GET https://ojiujfjxaqtkaigayqxn.supabase.co/rest/v1/workspaces?select=id&name=eq.Default+Workspace "HTTP/2 404 Not Found"
+2025-06-11 22:51:32,837 - __main__ - ERROR - Failed to get/create default workspace: {'message': 'relation "public.workspaces" does not exist', 'code': '42P01', 'hint': None, 'details': None}
+2025-06-11 22:51:32,837 - __main__ - ERROR - Database sync failed for Instant Bookmarks: {'message': 'relation "public.workspaces" does not exist', 'code': '42P01', 'hint': None, 'details': None}
+2025-06-11 22:51:32,838 - __main__ - INFO - Sync completed: 0/1 databases successful
+2025-06-11 22:51:32,838 - __main__ - INFO - Total: 0 processed, 0 failed pages
+2025-06-11 22:51:32,838 - __main__ - INFO - Duration: 0.52 seconds

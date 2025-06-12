@@ -1,0 +1,86 @@
+# Example Notion Databases Configuration
+# Copy this file to databases.toml and update with your actual database IDs
+
+# Example 1: Documentation Database
+[[databases]]
+name = "Product Documentation"
+database_id = "12345678-1234-1234-1234-123456789abc"  # Replace with your database ID
+description = "Product documentation and guides"
+
+[databases.sync_settings]
+batch_size = 10
+rate_limit_delay = 1.0  # seconds between batches
+max_retries = 3
+
+[databases.filters]
+archived = false
+# Uncomment to filter by status property:
+# Status = "Published"
+
+[databases.processing]
+chunk_size = 1000
+chunk_overlap = 100
+enable_chunking = true
+
+# Example 2: Knowledge Base
+[[databases]]
+name = "Engineering Knowledge Base"
+database_id = "87654321-4321-4321-4321-cba987654321"  # Replace with your database ID
+description = "Technical documentation and best practices"
+
+[databases.sync_settings]
+batch_size = 5
+rate_limit_delay = 1.5
+max_retries = 3
+
+[databases.filters]
+archived = false
+# Team = "Backend"  # Uncomment to filter by team
+
+[databases.processing]
+chunk_size = 800
+chunk_overlap = 80
+enable_chunking = true
+
+# Example 3: Meeting Notes (no chunking)
+[[databases]]
+name = "Team Meeting Notes"
+database_id = "abcdef12-3456-7890-abcd-ef1234567890"  # Replace with your database ID
+description = "Weekly team meeting notes and action items"
+
+[databases.sync_settings]
+batch_size = 15
+rate_limit_delay = 0.5
+max_retries = 2
+
+[databases.filters]
+archived = false
+
+[databases.processing]
+chunk_size = 1200
+chunk_overlap = 120
+enable_chunking = false  # Keep as single documents
+
+# Global settings
+[global_settings]
+concurrent_databases = 3  # Max number of databases to process simultaneously
+default_batch_size = 10
+default_rate_limit_delay = 1.0
+default_max_retries = 3
+
+# Embedding settings
+embedding_model = "text-embedding-3-small"
+embedding_batch_size = 100
+
+# Logging
+log_level = "INFO"  # DEBUG, INFO, WARNING, ERROR
+log_file = "database_sync.log"
+
+# Database connection
+supabase_batch_size = 50  # Number of documents to upsert at once
+
+# How to get database IDs:
+# 1. Open your Notion database
+# 2. Copy the URL - it looks like: https://www.notion.so/workspace/DATABASE_ID?v=VIEW_ID
+# 3. The DATABASE_ID is the part between the last slash and the question mark
+# 4. Add dashes to format: 12345678-1234-1234-1234-123456789abc

@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from database import get_db
 from services.openai_service import get_openai_service
+from services.document_processor import get_document_processor
+from services.notion_service import get_notion_service
 from models import NotionWebhookPayload, WebhookResponse
 from typing import Dict, Any
 
@@ -23,10 +25,7 @@ async def notion_webhook(payload: NotionWebhookPayload):
 
 async def handle_page_update(page_data: Dict[str, Any]):
     db = get_db()
-    openai_service = get_openai_service()
-    
     notion_page_id = page_data.get('id')
-    properties = page_data.get('properties', {})
     archived = page_data.get('archived', False)
     
     if archived:
@@ -34,24 +33,28 @@ async def handle_page_update(page_data: Dict[str, Any]):
         await db.delete_document(notion_page_id)
         return
     
-    # Extract content and generate embedding
-    title = extract_title(properties)
-    content = await extract_page_content(notion_page_id)
-    embedding_response = await openai_service.generate_embedding(f"{title}\n{content}")
+    # Find the workspace for this page
+    workspace = await find_workspace_for_page(notion_page_id)
+    if not workspace:
+        raise Exception(f"No workspace found for page {notion_page_id}")
     
-    # Update or insert document
-    document_data = {
-        'notion_page_id': notion_page_id,
-        'title': title,
-        'content': content,
-        'embedding': embedding_response.embedding,
-        'metadata': {
-            'last_edited_time': page_data.get('last_edited_time'),
-            'properties': properties,
-        },
-    }
+    # Get Notion service for this workspace
+    notion_service = get_notion_service(workspace['access_token'])
     
-    await db.upsert_document(document_data)
+    # Get updated page content
+    title = notion_service.extract_title_from_page(page_data)
+    content = await notion_service.get_page_content(notion_page_id)
+    
+    # Process the updated document
+    openai_service = get_openai_service()
+    document_processor = get_document_processor(openai_service, db)
+    
+    await document_processor.update_document(
+        workspace_id=workspace['id'],
+        page_data=page_data,
+        content=content,
+        title=title
+    )
 
 async def handle_page_created(page_data: Dict[str, Any]):
     # Similar to handlePageUpdate but for new pages
@@ -62,14 +65,42 @@ async def handle_page_deleted(page_data: Dict[str, Any]):
     notion_page_id = page_data.get('id')
     await db.delete_document(notion_page_id)
 
-def extract_title(properties: Dict[str, Any]) -> str:
-    # Extract title from Notion page properties
-    title_property = properties.get('title') or properties.get('Name') or properties.get('name')
-    if title_property and title_property.get('title'):
-        return ''.join([t.get('plain_text', '') for t in title_property['title']])
-    return 'Untitled'
-
-async def extract_page_content(page_id: str) -> str:
-    # In production, use Notion API to fetch page content
-    # This is a placeholder implementation
-    return f"Content for page {page_id}"
+async def find_workspace_for_page(notion_page_id: str) -> Dict[str, Any]:
+    """
+    Find the workspace that contains this Notion page.
+    This is needed because webhooks don't include workspace information.
+    """
+    db = get_db()
+    
+    # First, check if we already have this page in our database
+    doc_response = await db.client.table('documents').select(
+        'workspace_id'
+    ).eq('notion_page_id', notion_page_id).execute()
+    
+    if doc_response.data:
+        workspace_id = doc_response.data[0]['workspace_id']
+        workspace_response = await db.client.table('workspaces').select(
+            'id, access_token, name'
+        ).eq('id', workspace_id).execute()
+        
+        if workspace_response.data:
+            return workspace_response.data[0]
+    
+    # If page not found in our database, try all active workspaces
+    # This can happen for newly created pages
+    workspaces_response = await db.client.table('workspaces').select(
+        'id, access_token, name'
+    ).eq('is_active', True).execute()
+    
+    for workspace in workspaces_response.data:
+        try:
+            notion_service = get_notion_service(workspace['access_token'])
+            # Try to fetch the page to see if it exists in this workspace
+            page = await notion_service.get_page(notion_page_id)
+            if page:
+                return workspace
+        except:
+            # Page not found in this workspace, continue
+            continue
+    
+    return None

@@ -1,0 +1,76 @@
+# Notion Databases Configuration
+# This file defines multiple Notion databases to connect and sync
+
+[[databases]]
+name = "Instant Bookmarks"
+database_id = "1f79782c4f4a803cb65bf560c83e7c41"
+description = "Test this database"
+
+[databases.sync_settings]
+batch_size = 10
+rate_limit_delay = 1.0  # seconds between batches
+max_retries = 3
+
+[databases.filters]
+archived = false
+# Uncomment to filter by status property:
+# Status = "Published"
+
+[databases.processing]
+chunk_size = 1000
+chunk_overlap = 100
+enable_chunking = true
+
+# [[databases]]
+# name = "Product Specs"
+# database_id = "your_database_id_2"
+# description = "Product specifications and requirements"
+
+# [databases.sync_settings]
+# batch_size = 5
+# rate_limit_delay = 1.5
+# max_retries = 3
+
+# [databases.filters]
+# archived = false
+
+# [databases.processing]
+# chunk_size = 800
+# chunk_overlap = 80
+# enable_chunking = true
+
+# [[databases]]
+# name = "Meeting Notes"
+# database_id = "your_database_id_3"
+# description = "Team meeting notes and decisions"
+
+# [databases.sync_settings]
+# batch_size = 15
+# rate_limit_delay = 0.5
+# max_retries = 2
+
+# [databases.filters]
+# archived = false
+
+# [databases.processing]
+# chunk_size = 1200
+# chunk_overlap = 120
+# enable_chunking = false  # Keep meeting notes as single documents
+
+# Global settings
+[global_settings]
+concurrent_databases = 3  # Max number of databases to process simultaneously
+default_batch_size = 10
+default_rate_limit_delay = 1.0
+default_max_retries = 3
+
+# Embedding settings
+embedding_model = "text-embedding-3-small"
+embedding_batch_size = 100
+
+# Logging
+log_level = "INFO"
+log_file = "database_sync.log"
+
+# Database connection
+supabase_batch_size = 50  # Number of documents to upsert at once
