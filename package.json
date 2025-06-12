@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "backend": "cd backend && python start.py",
-    "dev:full": "concurrently \"npm run dev\" \"npm run backend\""
+    "dev:full": "concurrently --kill-others-on-fail --kill-others \"npm run dev\" \"npm run backend\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
