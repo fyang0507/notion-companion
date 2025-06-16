@@ -4,6 +4,7 @@ import tiktoken
 from services.openai_service import OpenAIService
 from services.database_schema_manager import DatabaseSchemaManager
 from database import Database
+from config.model_config import get_model_config
 import asyncio
 from datetime import datetime
 import uuid
@@ -14,12 +15,14 @@ class DocumentProcessor:
         self.openai_service = openai_service
         self.db = db
         self.schema_manager = DatabaseSchemaManager(db)
+        self.model_config = get_model_config()
         self.encoding = tiktoken.get_encoding("cl100k_base")  # For text-embedding-3-small
         self.logger = logging.getLogger(__name__)
         
-        # Chunking parameters
-        self.max_chunk_tokens = 1000  # Leave room for metadata
-        self.chunk_overlap_tokens = 100
+        # Get chunking parameters from config
+        limits_config = self.model_config.get_limits_config()
+        self.max_chunk_tokens = limits_config.chunk_size_tokens
+        self.chunk_overlap_tokens = limits_config.chunk_overlap_tokens
         self.min_chunk_tokens = 50
     
     def count_tokens(self, text: str) -> int:
@@ -203,7 +206,8 @@ class DocumentProcessor:
         title_tokens = self.count_tokens(title)
         
         # Determine if we need chunking based on embedding token limits
-        max_embedding_tokens = 8000  # Conservative limit for text-embedding-3-small
+        limits_config = self.model_config.get_limits_config()
+        max_embedding_tokens = limits_config.max_embedding_tokens
         full_content_for_embedding = f"{title}\n{content}"
         full_content_tokens = self.count_tokens(full_content_for_embedding)
         

@@ -1,10 +1,11 @@
 # Notion Databases Configuration
 # This file defines multiple Notion databases to connect and sync
 
+
 [[databases]]
-name = "Instant Bookmarks"
-database_id = "1f79782c4f4a803cb65bf560c83e7c41"
-description = "Test this database"
+name = "他山之石"
+database_id = "1519782c4f4a80dc9deff9768446a113"
+description = "其他人的好文章"
 
 [databases.sync_settings]
 batch_size = 10

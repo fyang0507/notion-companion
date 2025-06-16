@@ -1,16 +1,27 @@
 from openai import OpenAI
 import os
+import asyncio
 from typing import List, Dict, Any, AsyncGenerator
 from models import EmbeddingResponse, ChatResponse
+from config.model_config import get_model_config
 
 class OpenAIService:
     def __init__(self):
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.model_config = get_model_config()
     
     async def generate_embedding(self, text: str) -> EmbeddingResponse:
+        """Generate embedding using configured model."""
+        embedding_config = self.model_config.get_embedding_config()
+        performance_config = self.model_config.get_performance_config()
+        
+        # Add delay for rate limiting
+        await asyncio.sleep(performance_config.embedding_delay_seconds)
+        
         response = self.client.embeddings.create(
-            model='text-embedding-3-small',
+            model=embedding_config.model,
             input=text,
+            dimensions=embedding_config.dimensions
         )
         
         return EmbeddingResponse(
@@ -19,6 +30,13 @@ class OpenAIService:
         )
     
     async def generate_chat_response(self, messages: List[Dict[str, str]], context: str = None) -> ChatResponse:
+        """Generate chat response using configured model."""
+        chat_config = self.model_config.get_chat_config()
+        performance_config = self.model_config.get_performance_config()
+        
+        # Add delay for rate limiting
+        await asyncio.sleep(performance_config.chat_delay_seconds)
+        
         system_message = {
             "role": "system",
             "content": f"""You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
@@ -32,10 +50,10 @@ class OpenAIService:
         }
         
         response = self.client.chat.completions.create(
-            model='gpt-4',
+            model=chat_config.model,
             messages=[system_message] + messages,
-            temperature=0.7,
-            max_tokens=1000,
+            temperature=chat_config.temperature,
+            max_tokens=chat_config.max_tokens,
         )
         
         return ChatResponse(
@@ -44,6 +62,9 @@ class OpenAIService:
         )
     
     async def generate_streaming_response(self, messages: List[Dict[str, str]], context: str = None) -> AsyncGenerator[str, None]:
+        """Generate streaming chat response using configured model."""
+        chat_config = self.model_config.get_chat_config()
+        
         system_message = {
             "role": "system",
             "content": f"""You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
@@ -51,10 +72,10 @@ class OpenAIService:
         }
         
         stream = self.client.chat.completions.create(
-            model='gpt-4',
+            model=chat_config.model,
             messages=[system_message] + messages,
-            temperature=0.7,
-            max_tokens=1000,
+            temperature=chat_config.temperature,
+            max_tokens=chat_config.max_tokens,
             stream=True,
         )
         
@@ -75,8 +96,15 @@ class OpenAIService:
         Returns:
             Concise summary suitable for embeddings
         """
+        summarization_config = self.model_config.get_summarization_config()
+        limits_config = self.model_config.get_limits_config()
+        performance_config = self.model_config.get_performance_config()
+        
+        # Add delay for rate limiting
+        await asyncio.sleep(performance_config.summarization_delay_seconds)
+        
         # Truncate content to fit within token limits (roughly 4 chars per token)
-        max_content_chars = 20000  # ~5000 tokens, leaving room for prompt
+        max_content_chars = limits_config.max_summary_input_tokens * 4
         truncated_content = content[:max_content_chars]
         if len(content) > max_content_chars:
             truncated_content += "\n\n[Content truncated...]"
@@ -97,17 +125,29 @@ Content:
 Summary:"""
 
         response = self.client.chat.completions.create(
-            model='gpt-4o-mini',  # Faster and cheaper for summarization
+            model=summarization_config.model,
             messages=[{
                 "role": "user", 
                 "content": prompt
             }],
-            temperature=0.3,  # Lower temperature for consistent summaries
-            max_tokens=800,   # Enough for a good summary
+            temperature=summarization_config.temperature,
+            max_tokens=summarization_config.max_tokens,
         )
         
         summary = response.choices[0].message.content or ''
         return summary.strip()
+    
+    def get_token_limits(self) -> Dict[str, int]:
+        """Get token limits for different operations."""
+        limits_config = self.model_config.get_limits_config()
+        return {
+            "max_embedding_tokens": limits_config.max_embedding_tokens,
+            "max_summary_input_tokens": limits_config.max_summary_input_tokens,
+            "max_chat_context_tokens": limits_config.max_chat_context_tokens,
+            "chunk_size_tokens": limits_config.chunk_size_tokens,
+            "chunk_overlap_tokens": limits_config.chunk_overlap_tokens
+        }
+    
 
 # Global OpenAI service instance
 openai_service = OpenAIService()

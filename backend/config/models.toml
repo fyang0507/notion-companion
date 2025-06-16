@@ -1,0 +1,86 @@
+# Model Configuration for Notion Companion
+# Centralized configuration for all AI models used in the system
+
+[models.embedding]
+# Primary embedding model for documents and queries
+model = "text-embedding-3-small"
+dimensions = 1536
+max_input_tokens = 8191
+batch_size = 100
+
+# Alternative embedding models (for future use)
+# [models.embedding.alternatives]
+# large = "text-embedding-3-large"  # Higher quality
+# ada = "text-embedding-ada-002"    # Legacy model
+
+[models.chat]
+# Primary chat model for user interactions
+model = "gpt-4.1-mini"
+max_tokens = 4096
+temperature = 0.7
+
+# Chat model alternatives (not currently used)
+# [models.chat.alternatives]
+# fast = "gpt-4o-mini"      # Faster for simple queries
+# reasoning = "o1-preview"   # For complex reasoning tasks
+# legacy = "gpt-4"          # Previous generation
+
+[models.summarization]
+# Model for document summarization
+model = "gpt-4.1-mini"
+max_tokens = 800
+temperature = 0.3  # Lower temperature for consistent summaries
+
+# Summarization alternatives (not currently used)
+# [models.summarization.alternatives]
+# quality = "gpt-4o"        # Higher quality summaries
+# budget = "gpt-3.5-turbo"  # Budget option
+
+# Analysis model (not currently used)
+# [models.analysis]
+# model = "gpt-4o-mini"
+# max_tokens = 1000
+# temperature = 0.2
+
+[limits]
+# Token limits for different operations
+max_embedding_tokens = 8000        # Conservative limit for embeddings
+max_summary_input_tokens = 20000   # Max content to summarize at once
+max_chat_context_tokens = 15000    # Max context for chat responses
+chunk_size_tokens = 1000           # Default chunk size
+chunk_overlap_tokens = 100         # Default chunk overlap
+
+[performance]
+# Performance and rate limiting settings
+embedding_batch_size = 100         # Embeddings per batch
+embedding_delay_seconds = 0.1      # Delay between embedding calls
+chat_delay_seconds = 0.5           # Delay between chat completions
+summarization_delay_seconds = 1.0  # Delay between summarization calls
+max_retries = 3                    # Max retries for failed API calls
+retry_delay_seconds = 2.0          # Delay between retries
+
+# Optimization settings (not currently used)
+# [optimization]
+# enable_caching = true               # Cache embeddings and summaries
+# cache_ttl_days = 30                # Cache time-to-live
+# prefer_faster_models = false       # Use faster alternatives when possible
+
+[environment]
+# Environment-specific overrides
+[environment.development]
+# Use cheaper models in development
+chat_model = "gpt-4.1-mini"
+summarization_model = "gpt-4.1-mini"
+embedding_batch_size = 10
+
+[environment.production]
+# Production settings (use defaults)
+enable_monitoring = true
+log_costs = true
+
+[environment.testing]
+# Testing environment
+chat_model = "gpt-4.1-mini"
+summarization_model = "gpt-4.1-mini"
+embedding_batch_size = 5
+max_retries = 1
