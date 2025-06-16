@@ -202,17 +202,41 @@ class DocumentProcessor:
         content_tokens = self.count_tokens(content)
         title_tokens = self.count_tokens(title)
         
-        # Generate embeddings
-        title_embedding_response = await self.openai_service.generate_embedding(title)
-        content_embedding_response = await self.openai_service.generate_embedding(f"{title}\n{content}")
+        # Determine if we need chunking based on embedding token limits
+        max_embedding_tokens = 8000  # Conservative limit for text-embedding-3-small
+        full_content_for_embedding = f"{title}\n{content}"
+        full_content_tokens = self.count_tokens(full_content_for_embedding)
         
-        # Generate summary embedding for large documents
+        # Generate title embedding (always safe)
+        title_embedding_response = await self.openai_service.generate_embedding(title)
+        
+        # Generate content embedding (use summary for large documents)
+        content_embedding_response = None
         summary_embedding = None
-        if content_tokens > 2000:
-            # Create a summary for large documents
-            summary = content[:1000] + "..." if len(content) > 1000 else content
-            summary_embedding_response = await self.openai_service.generate_embedding(summary)
-            summary_embedding = summary_embedding_response.embedding
+        document_summary = None
+        
+        if full_content_tokens <= max_embedding_tokens:
+            # Small document: use full content for embedding
+            content_embedding_response = await self.openai_service.generate_embedding(full_content_for_embedding)
+        else:
+            # Large document: generate summary and use for embedding
+            self.logger.info(f"Document {notion_page_id} is large ({full_content_tokens} tokens), generating summary for embedding")
+            
+            try:
+                document_summary = await self.openai_service.generate_document_summary(title, content)
+                self.logger.info(f"Generated summary for {notion_page_id}: {len(document_summary)} chars")
+                
+                # Use summary for both content and summary embeddings
+                summary_for_embedding = f"{title}\n{document_summary}"
+                content_embedding_response = await self.openai_service.generate_embedding(summary_for_embedding)
+                summary_embedding = content_embedding_response.embedding  # Same embedding for both
+                
+            except Exception as e:
+                self.logger.error(f"Failed to generate summary for {notion_page_id}: {str(e)}")
+                # Fallback: truncate content for embedding
+                truncated_content = content[:4000]  # Conservative truncation
+                fallback_content = f"{title}\n{truncated_content}..."
+                content_embedding_response = await self.openai_service.generate_embedding(fallback_content)
         
         # Prepare extracted metadata as JSONB
         extracted_metadata = {}
@@ -250,6 +274,10 @@ class DocumentProcessor:
             'multimedia_refs': multimedia_refs,
             'processing_status': 'processing'
         }
+        
+        # Add summary to extracted_metadata if generated
+        if document_summary:
+            document_data['extracted_metadata']['ai_generated_summary'] = document_summary
         
         if content_tokens <= self.max_chunk_tokens:
             # Store as single document without chunking

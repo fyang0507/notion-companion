@@ -62,6 +62,52 @@ class OpenAIService:
             content = chunk.choices[0].delta.content
             if content:
                 yield content
+    
+    async def generate_document_summary(self, title: str, content: str, max_length: int = 500) -> str:
+        """
+        Generate a concise summary of a document for embedding purposes.
+        
+        Args:
+            title: Document title
+            content: Full document content  
+            max_length: Maximum length of summary in words
+            
+        Returns:
+            Concise summary suitable for embeddings
+        """
+        # Truncate content to fit within token limits (roughly 4 chars per token)
+        max_content_chars = 20000  # ~5000 tokens, leaving room for prompt
+        truncated_content = content[:max_content_chars]
+        if len(content) > max_content_chars:
+            truncated_content += "\n\n[Content truncated...]"
+        
+        prompt = f"""Please create a comprehensive but concise summary of this document that captures:
+1. Main topics and key points
+2. Important concepts and themes  
+3. Essential information and takeaways
+4. Context and purpose
+
+The summary should be roughly {max_length} words and be optimized for semantic search.
+
+Title: {title}
+
+Content:
+{truncated_content}
+
+Summary:"""
+
+        response = self.client.chat.completions.create(
+            model='gpt-4o-mini',  # Faster and cheaper for summarization
+            messages=[{
+                "role": "user", 
+                "content": prompt
+            }],
+            temperature=0.3,  # Lower temperature for consistent summaries
+            max_tokens=800,   # Enough for a good summary
+        )
+        
+        summary = response.choices[0].message.content or ''
+        return summary.strip()
 
 # Global OpenAI service instance
 openai_service = OpenAIService()
