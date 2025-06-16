@@ -70,6 +70,28 @@ class NotionService:
         except Exception as e:
             raise Exception(f"Failed to get content for page {page_id}: {str(e)}")
     
+    async def get_page_content_with_multimedia(self, page_id: str) -> tuple[str, List[Dict[str, Any]]]:
+        """Extract text content and multimedia references from a Notion page."""
+        try:
+            # Get page blocks
+            blocks_response = self.client.blocks.children.list(block_id=page_id, page_size=100)
+            blocks = blocks_response.get("results", [])
+            
+            # Handle pagination for blocks
+            while blocks_response.get("has_more"):
+                blocks_response = self.client.blocks.children.list(
+                    block_id=page_id,
+                    page_size=100,
+                    start_cursor=blocks_response.get("next_cursor")
+                )
+                blocks.extend(blocks_response.get("results", []))
+            
+            content, multimedia_refs = await self._extract_text_and_multimedia_from_blocks(blocks)
+            return content.strip(), multimedia_refs
+        
+        except Exception as e:
+            raise Exception(f"Failed to get content for page {page_id}: {str(e)}")
+    
     async def _extract_text_from_blocks(self, blocks: List[Dict[str, Any]]) -> str:
         """Recursively extract text from Notion blocks."""
         content_parts = []
@@ -156,6 +178,160 @@ class NotionService:
                 content_parts.append(text_content)
         
         return "\n\n".join(content_parts)
+    
+    async def _extract_text_and_multimedia_from_blocks(self, blocks: List[Dict[str, Any]]) -> tuple[str, List[Dict[str, Any]]]:
+        """Recursively extract text and multimedia references from Notion blocks."""
+        content_parts = []
+        multimedia_refs = []
+        position = 0
+        
+        for block in blocks:
+            block_type = block.get("type")
+            
+            if not block_type:
+                continue
+            
+            # Handle different block types
+            text_content = ""
+            
+            if block_type in ["paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item", "to_do", "quote", "callout"]:
+                rich_text = block.get(block_type, {}).get("rich_text", [])
+                text_content = self._extract_plain_text(rich_text)
+                
+                # Add formatting for headings
+                if block_type.startswith("heading"):
+                    level = int(block_type.split("_")[1])
+                    text_content = f"{'#' * level} {text_content}"
+                elif block_type == "bulleted_list_item":
+                    text_content = f"• {text_content}"
+                elif block_type == "numbered_list_item":
+                    text_content = f"1. {text_content}"
+                elif block_type == "to_do":
+                    checked = block.get(block_type, {}).get("checked", False)
+                    checkbox = "☑" if checked else "☐"
+                    text_content = f"{checkbox} {text_content}"
+                elif block_type == "quote":
+                    text_content = f"> {text_content}"
+            
+            elif block_type == "code":
+                code_data = block.get("code", {})
+                language = code_data.get("language", "")
+                rich_text = code_data.get("rich_text", [])
+                code_content = self._extract_plain_text(rich_text)
+                text_content = f"```{language}\n{code_content}\n```"
+            
+            elif block_type == "table":
+                # For tables, we'll get the table rows
+                table_width = block.get("table", {}).get("table_width", 0)
+                if block.get("has_children"):
+                    try:
+                        table_rows = self.client.blocks.children.list(block_id=block["id"])
+                        table_content = await self._extract_table_content(table_rows.get("results", []))
+                        text_content = table_content
+                    except:
+                        text_content = "[Table content]"
+            
+            elif block_type == "image":
+                image_data = block.get("image", {})
+                caption = image_data.get("caption", [])
+                caption_text = self._extract_plain_text(caption)
+                
+                # Extract image URL
+                image_url = self._get_file_url(image_data)
+                
+                # Add to multimedia references
+                multimedia_refs.append({
+                    'type': 'image',
+                    'url': image_url,
+                    'caption': caption_text,
+                    'position': position,
+                    'block_id': block.get('id')
+                })
+                
+                text_content = f"[Image: {caption_text}]" if caption_text else "[Image]"
+            
+            elif block_type == "file":
+                file_data = block.get("file", {})
+                caption = file_data.get("caption", [])
+                caption_text = self._extract_plain_text(caption)
+                
+                # Extract file URL
+                file_url = self._get_file_url(file_data)
+                
+                # Add to multimedia references
+                multimedia_refs.append({
+                    'type': 'file',
+                    'url': file_url,
+                    'caption': caption_text,
+                    'position': position,
+                    'block_id': block.get('id')
+                })
+                
+                text_content = f"[File: {caption_text}]" if caption_text else "[File]"
+            
+            elif block_type == "video":
+                video_data = block.get("video", {})
+                caption = video_data.get("caption", [])
+                caption_text = self._extract_plain_text(caption)
+                
+                # Extract video URL
+                video_url = self._get_file_url(video_data)
+                
+                # Add to multimedia references
+                multimedia_refs.append({
+                    'type': 'video',
+                    'url': video_url,
+                    'caption': caption_text,
+                    'position': position,
+                    'block_id': block.get('id')
+                })
+                
+                text_content = f"[Video: {caption_text}]" if caption_text else "[Video]"
+            
+            elif block_type == "bookmark":
+                bookmark_data = block.get("bookmark", {})
+                url = bookmark_data.get("url", "")
+                caption = bookmark_data.get("caption", [])
+                caption_text = self._extract_plain_text(caption)
+                
+                # Add to multimedia references
+                multimedia_refs.append({
+                    'type': 'bookmark',
+                    'url': url,
+                    'caption': caption_text,
+                    'position': position,
+                    'block_id': block.get('id')
+                })
+                
+                text_content = f"[Bookmark: {caption_text or url}]"
+            
+            elif block_type == "divider":
+                text_content = "---"
+            
+            # Handle child blocks recursively
+            if block.get("has_children") and block_type not in ["table"]:  # Table children handled separately
+                try:
+                    child_blocks = self.client.blocks.children.list(block_id=block["id"])
+                    child_content, child_multimedia = await self._extract_text_and_multimedia_from_blocks(child_blocks.get("results", []))
+                    if child_content.strip():
+                        text_content += f"\n{child_content}"
+                    multimedia_refs.extend(child_multimedia)
+                except:
+                    pass  # Skip if we can't get child blocks
+            
+            if text_content.strip():
+                content_parts.append(text_content)
+                position += 1
+        
+        return "\n\n".join(content_parts), multimedia_refs
+    
+    def _get_file_url(self, file_data: Dict[str, Any]) -> str:
+        """Extract file URL from Notion file data."""
+        if 'external' in file_data:
+            return file_data['external'].get('url', '')
+        elif 'file' in file_data:
+            return file_data['file'].get('url', '')
+        return ''
     
     async def _extract_table_content(self, table_rows: List[Dict[str, Any]]) -> str:
         """Extract content from table rows."""

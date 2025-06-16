@@ -2,16 +2,20 @@ from typing import List, Dict, Any, Tuple, Optional
 import re
 import tiktoken
 from services.openai_service import OpenAIService
+from services.database_schema_manager import DatabaseSchemaManager
 from database import Database
 import asyncio
 from datetime import datetime
 import uuid
+import logging
 
 class DocumentProcessor:
     def __init__(self, openai_service: OpenAIService, db: Database):
         self.openai_service = openai_service
         self.db = db
+        self.schema_manager = DatabaseSchemaManager(db)
         self.encoding = tiktoken.get_encoding("cl100k_base")  # For text-embedding-3-small
+        self.logger = logging.getLogger(__name__)
         
         # Chunking parameters
         self.max_chunk_tokens = 1000  # Leave room for metadata
@@ -171,41 +175,100 @@ class DocumentProcessor:
     
     async def process_document(self, 
                              workspace_id: str,
+                             database_id: str,
                              page_data: Dict[str, Any],
                              content: str,
-                             title: str) -> Dict[str, Any]:
+                             title: str,
+                             multimedia_refs: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Process a single document: chunk it, generate embeddings, and store.
+        Process a single document with new schema: chunk it, generate embeddings, extract metadata, and store.
         """
         notion_page_id = page_data.get("id")
+        notion_database_id = page_data.get("parent", {}).get("database_id", database_id)
+        multimedia_refs = multimedia_refs or []
+        
+        self.logger.info(f"Processing document {notion_page_id} from database {database_id}")
+        
+        # Extract metadata using schema manager
+        try:
+            extracted_metadata_records = await self.schema_manager.extract_document_metadata(
+                notion_page_id, page_data, database_id
+            )
+        except Exception as e:
+            self.logger.warning(f"Failed to extract metadata for {notion_page_id}: {str(e)}")
+            extracted_metadata_records = []
         
         # Check if document is small enough to store as single document
         content_tokens = self.count_tokens(content)
+        title_tokens = self.count_tokens(title)
+        
+        # Generate embeddings
+        title_embedding_response = await self.openai_service.generate_embedding(title)
+        content_embedding_response = await self.openai_service.generate_embedding(f"{title}\n{content}")
+        
+        # Generate summary embedding for large documents
+        summary_embedding = None
+        if content_tokens > 2000:
+            # Create a summary for large documents
+            summary = content[:1000] + "..." if len(content) > 1000 else content
+            summary_embedding_response = await self.openai_service.generate_embedding(summary)
+            summary_embedding = summary_embedding_response.embedding
+        
+        # Prepare extracted metadata as JSONB
+        extracted_metadata = {}
+        for metadata_record in extracted_metadata_records:
+            field_name = metadata_record['field_name']
+            raw_value = metadata_record['raw_value']
+            extracted_metadata[field_name] = raw_value
+        
+        # Determine content type
+        content_type = self._determine_content_type(title, content, page_data)
+        
+        # Create main document record
+        document_id = str(uuid.uuid4())
+        document_data = {
+            'id': document_id,
+            'workspace_id': workspace_id,
+            'database_id': database_id,
+            'notion_page_id': notion_page_id,
+            'notion_database_id': notion_database_id,
+            'title': title,
+            'content': content,
+            'title_embedding': title_embedding_response.embedding,
+            'content_embedding': content_embedding_response.embedding,
+            'summary_embedding': summary_embedding,
+            'page_url': f"https://www.notion.so/{notion_page_id.replace('-', '')}",
+            'parent_page_id': page_data.get('parent', {}).get('page_id'),
+            'notion_created_time': page_data.get('created_time'),
+            'notion_last_edited_time': page_data.get('last_edited_time'),
+            'content_type': content_type,
+            'content_length': len(content),
+            'token_count': content_tokens,
+            'notion_properties': page_data.get('properties', {}),
+            'extracted_metadata': extracted_metadata,
+            'has_multimedia': len(multimedia_refs) > 0,
+            'multimedia_refs': multimedia_refs,
+            'processing_status': 'processing'
+        }
         
         if content_tokens <= self.max_chunk_tokens:
-            # Store as single document
-            embedding_response = await self.openai_service.generate_embedding(f"{title}\n{content}")
+            # Store as single document without chunking
+            document_data.update({
+                'is_chunked': False,
+                'chunk_count': 0,
+                'processing_status': 'completed'
+            })
             
-            document_data = {
-                'id': str(uuid.uuid4()),
-                'workspace_id': workspace_id,
-                'notion_page_id': notion_page_id,
-                'title': title,
-                'content': content,
-                'embedding': embedding_response.embedding,
-                'metadata': {
-                    'token_count': content_tokens,
-                    'chunk_count': 1,
-                    'last_edited_time': page_data.get('last_edited_time'),
-                    'properties': page_data.get('properties', {}),
-                },
-                'last_edited_time': page_data.get('last_edited_time'),
-                'page_url': f"https://www.notion.so/{notion_page_id.replace('-', '')}",
-                'parent_page_id': page_data.get('parent', {}).get('page_id'),
-                'updated_at': datetime.utcnow().isoformat()
-            }
+            # Store document
+            self._store_document(document_data)
             
-            return await self.db.upsert_document(document_data)
+            # Store metadata records
+            for metadata_record in extracted_metadata_records:
+                metadata_record['document_id'] = document_id
+                self._store_document_metadata(metadata_record)
+            
+            self.logger.info(f"Stored document {notion_page_id} as single document")
+            return {'document_id': document_id, 'chunks_created': 0}
         
         else:
             # Chunk the document
@@ -214,34 +277,76 @@ class DocumentProcessor:
             if not chunks:
                 raise ValueError(f"No valid chunks generated for page {notion_page_id}")
             
-            # Create main document record
-            document_data = {
-                'id': str(uuid.uuid4()),
-                'workspace_id': workspace_id,
-                'notion_page_id': notion_page_id,
-                'title': title,
-                'content': content[:2000] + "..." if len(content) > 2000 else content,  # Truncated preview
-                'embedding': None,  # No embedding for chunked documents
-                'metadata': {
-                    'token_count': content_tokens,
-                    'chunk_count': len(chunks),
-                    'last_edited_time': page_data.get('last_edited_time'),
-                    'properties': page_data.get('properties', {}),
-                    'is_chunked': True
-                },
-                'last_edited_time': page_data.get('last_edited_time'),
-                'page_url': f"https://www.notion.so/{notion_page_id.replace('-', '')}",
-                'parent_page_id': page_data.get('parent', {}).get('page_id'),
-                'updated_at': datetime.utcnow().isoformat()
-            }
+            document_data.update({
+                'is_chunked': True,
+                'chunk_count': len(chunks),
+                'processing_status': 'completed'
+            })
             
-            document_result = await self.db.upsert_document(document_data)
-            document_id = document_result[0]['id']
+            # Store main document
+            self._store_document(document_data)
             
-            # Generate embeddings for chunks in batches
-            chunk_data_list = []
+            # Store metadata records
+            for metadata_record in extracted_metadata_records:
+                metadata_record['document_id'] = document_id
+                self._store_document_metadata(metadata_record)
             
-            for chunk in chunks:
+            # Generate and store chunks
+            await self._store_document_chunks(document_id, chunks, title)
+            
+            self.logger.info(f"Stored document {notion_page_id} with {len(chunks)} chunks")
+            return {'document_id': document_id, 'chunks_created': len(chunks)}
+    
+    def _determine_content_type(self, title: str, content: str, page_data: Dict[str, Any]) -> str:
+        """Determine the content type based on title, content, and properties."""
+        title_lower = title.lower()
+        content_lower = content.lower()
+        
+        # Check for meeting notes
+        if any(keyword in title_lower for keyword in ['meeting', 'standup', 'sync', 'call']):
+            return 'meeting'
+        
+        # Check for project documents
+        if any(keyword in title_lower for keyword in ['project', 'initiative', 'roadmap']):
+            return 'project'
+        
+        # Check for documentation
+        if any(keyword in title_lower for keyword in ['doc', 'guide', 'manual', 'howto', 'readme']):
+            return 'documentation'
+        
+        # Check for notes
+        if any(keyword in title_lower for keyword in ['note', 'notes', 'journal', 'diary']):
+            return 'note'
+        
+        # Check for bookmarks/references
+        if any(keyword in content_lower for keyword in ['http', 'https', 'www.']):
+            return 'bookmark'
+        
+        # Default
+        return 'document'
+    
+    def _store_document(self, document_data: Dict[str, Any]) -> None:
+        """Store document in the database using new schema."""
+        try:
+            self.db.client.table('documents').upsert(document_data).execute()
+        except Exception as e:
+            self.logger.error(f"Failed to store document {document_data['notion_page_id']}: {str(e)}")
+            raise
+    
+    def _store_document_metadata(self, metadata_record: Dict[str, Any]) -> None:
+        """Store document metadata record."""
+        try:
+            self.db.client.table('document_metadata').upsert(metadata_record).execute()
+        except Exception as e:
+            self.logger.error(f"Failed to store metadata for document {metadata_record['document_id']}: {str(e)}")
+            raise
+    
+    async def _store_document_chunks(self, document_id: str, chunks: List[Dict[str, Any]], title: str) -> None:
+        """Generate embeddings and store document chunks."""
+        chunk_data_list = []
+        
+        for chunk in chunks:
+            try:
                 embedding_response = await self.openai_service.generate_embedding(chunk['content'])
                 
                 chunk_data = {
@@ -250,49 +355,98 @@ class DocumentProcessor:
                     'chunk_index': chunk['index'],
                     'content': chunk['content'],
                     'embedding': embedding_response.embedding,
-                    'token_count': chunk['token_count']
+                    'token_count': chunk['token_count'],
+                    'content_type': 'text'  # Default for now
                 }
                 chunk_data_list.append(chunk_data)
                 
                 # Add small delay to avoid rate limits
                 await asyncio.sleep(0.1)
-            
-            # Store chunks in database
-            await self.db.upsert_document_chunks(chunk_data_list)
-            
-            return document_result
+                
+            except Exception as e:
+                self.logger.error(f"Failed to process chunk {chunk['index']} for document {document_id}: {str(e)}")
+                continue
+        
+        # Store chunks in database
+        if chunk_data_list:
+            try:
+                self.db.client.table('document_chunks').upsert(chunk_data_list).execute()
+            except Exception as e:
+                self.logger.error(f"Failed to store chunks for document {document_id}: {str(e)}")
+                raise
     
     async def update_document(self, 
                              workspace_id: str,
+                             database_id: str,
                              page_data: Dict[str, Any],
                              content: str,
-                             title: str) -> Dict[str, Any]:
+                             title: str,
+                             multimedia_refs: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Update an existing document (delete old chunks and create new ones).
         """
         notion_page_id = page_data.get("id")
         
-        # Delete existing document and chunks
-        await self.db.delete_document(notion_page_id)
-        
-        # Process as new document
-        return await self.process_document(workspace_id, page_data, content, title)
-    
-    async def process_workspace_pages(self, 
-                                    workspace_id: str,
-                                    access_token: str,
-                                    batch_size: int = 10) -> Dict[str, Any]:
-        """
-        Process all pages in a workspace with batching for rate limiting.
-        """
-        from services.notion_service import NotionService
-        notion_service = NotionService(access_token)
-        
         try:
-            # Get all pages from workspace
-            pages = await notion_service.search_pages()
+            # Delete existing document and related data
+            self._delete_document_cascade(notion_page_id)
+            
+            # Process as new document
+            return await self.process_document(workspace_id, database_id, page_data, content, title, multimedia_refs)
+        except Exception as e:
+            self.logger.error(f"Failed to update document {notion_page_id}: {str(e)}")
+            raise
+    
+    def _delete_document_cascade(self, notion_page_id: str) -> None:
+        """Delete document and all related records."""
+        try:
+            # Get document ID first
+            response = self.db.client.table('documents').select('id').eq('notion_page_id', notion_page_id).execute()
+            
+            if response.data:
+                document_id = response.data[0]['id']
+                
+                # Delete chunks (cascades automatically due to foreign key)
+                self.db.client.table('document_chunks').delete().eq('document_id', document_id).execute()
+                
+                # Delete metadata (cascades automatically due to foreign key)
+                self.db.client.table('document_metadata').delete().eq('document_id', document_id).execute()
+                
+                # Delete document
+                self.db.client.table('documents').delete().eq('id', document_id).execute()
+                
+                self.logger.info(f"Deleted document and related data for {notion_page_id}")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to delete document {notion_page_id}: {str(e)}")
+            raise
+    
+    async def process_database_pages(self, 
+                                   workspace_id: str,
+                                   database_id: str,
+                                   notion_service,
+                                   batch_size: int = 10) -> Dict[str, Any]:
+        """
+        Process all pages from a specific Notion database with schema analysis and batching.
+        """
+        try:
+            self.logger.info(f"Processing database {database_id}")
+            
+            # Analyze database schema first
+            try:
+                schema_record = await self.schema_manager.analyze_database_schema(
+                    database_id, workspace_id, notion_service
+                )
+                self.logger.info(f"Schema analyzed for database {database_id}")
+            except Exception as e:
+                self.logger.warning(f"Failed to analyze schema for {database_id}: {str(e)}")
+                # Continue processing without schema analysis
+            
+            # Get all pages from database
+            pages = await notion_service.get_database_pages(database_id)
             
             results = {
+                'database_id': database_id,
                 'total_pages': len(pages),
                 'processed_pages': 0,
                 'failed_pages': 0,
@@ -309,32 +463,112 @@ class DocumentProcessor:
                         if page.get('archived', False):
                             continue
                         
-                        # Extract page content
-                        content = await notion_service.get_page_content(page['id'])
+                        # Extract page content and multimedia references
+                        content, multimedia_refs = await notion_service.get_page_content_with_multimedia(page['id'])
                         title = notion_service.extract_title_from_page(page)
                         
                         # Process the document
-                        await self.process_document(workspace_id, page, content, title)
+                        result = await self.process_document(
+                            workspace_id, database_id, page, content, title, multimedia_refs
+                        )
                         results['processed_pages'] += 1
+                        
+                        self.logger.debug(f"Processed page {page['id']}: {result}")
                         
                     except Exception as e:
                         results['failed_pages'] += 1
-                        results['errors'].append({
+                        error_info = {
                             'page_id': page.get('id'),
                             'title': notion_service.extract_title_from_page(page),
                             'error': str(e)
-                        })
+                        }
+                        results['errors'].append(error_info)
+                        self.logger.error(f"Failed to process page {page.get('id')}: {str(e)}")
                 
                 # Add delay between batches to respect rate limits
                 await asyncio.sleep(1)
             
-            # Update workspace sync timestamp
-            await self.db.update_workspace_sync_time(workspace_id)
-            
             return results
         
         except Exception as e:
-            raise Exception(f"Failed to process workspace pages: {str(e)}")
+            self.logger.error(f"Failed to process database {database_id}: {str(e)}")
+            raise Exception(f"Failed to process database pages: {str(e)}")
+    
+    async def process_workspace_databases(self, 
+                                        workspace_id: str,
+                                        database_configs: List[Dict[str, Any]],
+                                        notion_service,
+                                        batch_size: int = 10) -> Dict[str, Any]:
+        """
+        Process multiple databases from workspace configuration.
+        """
+        try:
+            overall_results = {
+                'total_databases': len(database_configs),
+                'processed_databases': 0,
+                'failed_databases': 0,
+                'database_results': [],
+                'errors': []
+            }
+            
+            for config in database_configs:
+                database_id = config['database_id']
+                database_name = config.get('name', 'Unknown')
+                
+                try:
+                    self.logger.info(f"Processing database: {database_name} ({database_id})")
+                    
+                    # Process this database
+                    sync_settings = config.get('sync_settings', {})
+                    db_batch_size = sync_settings.get('batch_size', batch_size)
+                    
+                    db_results = await self.process_database_pages(
+                        workspace_id, database_id, notion_service, db_batch_size
+                    )
+                    
+                    overall_results['database_results'].append({
+                        'database_name': database_name,
+                        'database_id': database_id,
+                        'results': db_results
+                    })
+                    overall_results['processed_databases'] += 1
+                    
+                    # Add delay between databases
+                    rate_limit_delay = sync_settings.get('rate_limit_delay', 1.0)
+                    await asyncio.sleep(rate_limit_delay)
+                    
+                except Exception as e:
+                    overall_results['failed_databases'] += 1
+                    error_info = {
+                        'database_name': database_name,
+                        'database_id': database_id,
+                        'error': str(e)
+                    }
+                    overall_results['errors'].append(error_info)
+                    self.logger.error(f"Failed to process database {database_name}: {str(e)}")
+            
+            # Update workspace sync timestamp
+            try:
+                self._update_workspace_sync_time(workspace_id)
+            except Exception as e:
+                self.logger.warning(f"Failed to update workspace sync time: {str(e)}")
+            
+            return overall_results
+        
+        except Exception as e:
+            self.logger.error(f"Failed to process workspace databases: {str(e)}")
+            raise
+    
+    def _update_workspace_sync_time(self, workspace_id: str) -> None:
+        """Update the last sync timestamp for a workspace."""
+        try:
+            self.db.client.table('workspaces').update({
+                'last_sync_at': datetime.utcnow().isoformat(),
+                'updated_at': datetime.utcnow().isoformat()
+            }).eq('id', workspace_id).execute()
+        except Exception as e:
+            self.logger.error(f"Failed to update workspace sync time: {str(e)}")
+            raise
 
 def get_document_processor(openai_service: OpenAIService, db: Database) -> DocumentProcessor:
     """Factory function to create DocumentProcessor instance."""
