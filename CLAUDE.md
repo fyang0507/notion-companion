@@ -20,6 +20,11 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `npm run dev:full` - Both frontend and backend concurrently
 - `make dev` - Alternative using Makefile
 
+### Backend Operations
+- `cd backend && .venv/bin/python scripts/sync_databases.py` - Sync Notion databases
+- `cd backend && .venv/bin/python scripts/sync_databases.py --dry-run` - Test sync configuration
+- `cd backend && .venv/bin/python scripts/model_config_demo.py` - Test model configuration
+
 ### Build & Lint
 - `npm run build` - Build Next.js for production
 - `npm run lint` - Run ESLint validation
@@ -27,6 +32,7 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 ### Setup
 - `make install` - Install both Python (uv) and Node (pnpm) dependencies
 - `make setup-env` - Create environment file template
+- Deploy `backend/schema.sql` in Supabase before first sync
 
 ## Architecture Patterns
 
@@ -38,8 +44,10 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 
 ### RAG Implementation
 - Vector embeddings stored in Supabase pgvector
-- OpenAI text-embedding-3-small for document embeddings
-- GPT-4 for chat responses with retrieved context
+- Configurable OpenAI models via `backend/config/models.toml`
+- AI document summarization for large documents (handles 30k+ tokens)
+- Hybrid search: document-level (summaries) + chunk-level (detailed content)
+- Intelligent chunking with semantic boundary preservation
 - Server-Sent Events for streaming chat responses
 
 ### API Architecture
@@ -49,8 +57,12 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - Main endpoints: `/api/chat` (streaming), `/api/search` (vector), `/api/notion/webhook`
 
 ### Database Schema
-Core tables: `users`, `workspaces`, `documents`, `chat_sessions`, `api_usage`
-Uses Supabase Auth for user management and pgvector for similarity search.
+Enhanced V2 schema with hybrid metadata approach:
+- Core tables: `workspaces`, `documents`, `document_chunks`, `document_metadata`, `database_schemas`
+- Multimedia support: `multimedia_assets`, `document_multimedia`
+- Analytics: `search_analytics` for query tracking
+- Database schema manager for automatic Notion database analysis
+- Uses Supabase Auth for user management and pgvector for similarity search
 
 ### Frontend Patterns
 - React components with TypeScript and Tailwind CSS
@@ -61,7 +73,13 @@ Uses Supabase Auth for user management and pgvector for similarity search.
 ## Environment Setup
 
 Frontend requires: `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-Backend requires: `OPENAI_API_KEY`, plus Supabase credentials
+Backend requires: `OPENAI_API_KEY`, `NOTION_ACCESS_TOKEN`, plus Supabase credentials
+
+### Model Configuration
+Configure models in `backend/config/models.toml`:
+- Set `ENVIRONMENT=development` for cheaper models in dev
+- Set `ENVIRONMENT=production` for higher quality models in prod
+- Modify model selections directly in the TOML file
 
 ## Testing & Quality
 
