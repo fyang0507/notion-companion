@@ -30,7 +30,7 @@ async def handle_page_update(page_data: Dict[str, Any]):
     
     if archived:
         # Remove from database if archived
-        await db.delete_document(notion_page_id)
+        db.delete_document(notion_page_id)
         return
     
     # Find the workspace for this page
@@ -63,7 +63,7 @@ async def handle_page_created(page_data: Dict[str, Any]):
 async def handle_page_deleted(page_data: Dict[str, Any]):
     db = get_db()
     notion_page_id = page_data.get('id')
-    await db.delete_document(notion_page_id)
+    db.delete_document(notion_page_id)
 
 async def find_workspace_for_page(notion_page_id: str) -> Dict[str, Any]:
     """
@@ -73,13 +73,13 @@ async def find_workspace_for_page(notion_page_id: str) -> Dict[str, Any]:
     db = get_db()
     
     # First, check if we already have this page in our database
-    doc_response = await db.client.table('documents').select(
+    doc_response = db.client.table('documents').select(
         'workspace_id'
     ).eq('notion_page_id', notion_page_id).execute()
     
     if doc_response.data:
         workspace_id = doc_response.data[0]['workspace_id']
-        workspace_response = await db.client.table('workspaces').select(
+        workspace_response = db.client.table('workspaces').select(
             'id, access_token, name'
         ).eq('id', workspace_id).execute()
         
@@ -88,7 +88,7 @@ async def find_workspace_for_page(notion_page_id: str) -> Dict[str, Any]:
     
     # If page not found in our database, try all active workspaces
     # This can happen for newly created pages
-    workspaces_response = await db.client.table('workspaces').select(
+    workspaces_response = db.client.table('workspaces').select(
         'id, access_token, name'
     ).eq('is_active', True).execute()
     

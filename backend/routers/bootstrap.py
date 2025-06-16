@@ -65,7 +65,7 @@ async def connect_workspace(request: WorkspaceConnectRequest):
             'is_active': True
         }
         
-        result = await db.client.table('workspaces').insert(workspace_data).execute()
+        result = db.client.table('workspaces').insert(workspace_data).execute()
         workspace_id = result.data[0]['id']
         
         return BootstrapResponse(
@@ -89,7 +89,7 @@ async def start_bootstrap(request: BootstrapRequest, background_tasks: Backgroun
         db = get_db()
         
         # Verify workspace exists
-        workspace_response = await db.client.table('workspaces').select(
+        workspace_response = db.client.table('workspaces').select(
             'id, access_token, name'
         ).eq('id', request.workspace_id).execute()
         
@@ -208,14 +208,14 @@ async def get_workspace_stats(workspace_id: str):
         db = get_db()
         
         # Get document count
-        doc_response = await db.client.table('documents').select(
+        doc_response = db.client.table('documents').select(
             'id, title, created_at, metadata'
         ).eq('workspace_id', workspace_id).execute()
         
         documents = doc_response.data
         
         # Get chunk count
-        chunk_response = await db.client.rpc('get_workspace_chunk_count', {
+        chunk_response = db.client.rpc('get_workspace_chunk_count', {
             'workspace_id': workspace_id
         }).execute()
         
@@ -263,7 +263,7 @@ async def clear_workspace_documents(workspace_id: str):
         db = get_db()
         
         # Delete all chunks first (through foreign key cascade this should happen automatically)
-        await db.client.table('documents').delete().eq('workspace_id', workspace_id).execute()
+        db.client.table('documents').delete().eq('workspace_id', workspace_id).execute()
         
         return {"success": True, "message": "All workspace documents cleared"}
         

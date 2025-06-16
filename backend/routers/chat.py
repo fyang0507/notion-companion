@@ -15,7 +15,7 @@ async def chat_endpoint(request: ChatRequest):
         openai_service = get_openai_service()
         
         # Get relevant context from workspace documents
-        documents = await db.get_documents(request.workspaceId, limit=5)
+        documents = db.get_documents(request.workspaceId, limit=5)
         
         context = "\n\n".join([
             f"Document: {doc['title']}\nContent: {doc['content'][:500]}"

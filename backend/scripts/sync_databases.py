@@ -160,7 +160,7 @@ class DatabaseSyncer:
         """Get the default workspace for this single-user application."""
         try:
             # Check if default workspace exists
-            response = await self.db.client.table('workspaces').select('id').eq(
+            response = self.db.client.table('workspaces').select('id').eq(
                 'name', 'Default Workspace'
             ).execute()
             
@@ -170,14 +170,12 @@ class DatabaseSyncer:
             # Create default workspace
             workspace_data = {
                 'id': str(uuid.uuid4()),
-                'user_id': '00000000-0000-0000-0000-000000000000',  # Default user for script
-                'notion_workspace_id': f"default_workspace_{uuid.uuid4()}",
                 'name': 'Default Workspace',
-                'access_token': self.access_token,  # In production, encrypt this
+                'notion_access_token': self.access_token,  # In production, encrypt this
                 'is_active': True
             }
             
-            result = await self.db.client.table('workspaces').insert(workspace_data).execute()
+            result = self.db.client.table('workspaces').insert(workspace_data).execute()
             workspace_id = result.data[0]['id']
             
             self.logger.info(f"Created default workspace ({workspace_id})")
@@ -188,22 +186,10 @@ class DatabaseSyncer:
             raise
     
     async def sync_database(self, db_config: DatabaseSyncConfig) -> Dict[str, Any]:
-        """Sync a single Notion database."""
+        """Sync a single Notion database using the new schema."""
         self.logger.info(f"Starting sync for database: {db_config.name}")
         
         start_time = time.time()
-        result = {
-            'name': db_config.name,
-            'database_id': db_config.database_id,
-            'status': 'started',
-            'total_pages': 0,
-            'processed_pages': 0,
-            'failed_pages': 0,
-            'errors': [],
-            'start_time': start_time,
-            'end_time': None,
-            'duration': None
-        }
         
         try:
             # Use the default workspace for all databases
@@ -211,74 +197,44 @@ class DatabaseSyncer:
                 self.workspace_id = await self.get_or_create_default_workspace()
             workspace_id = self.workspace_id
             
-            # Get database pages
-            self.logger.info(f"Fetching pages from database: {db_config.database_id}")
-            pages = await self.notion_service.get_database_pages(db_config.database_id)
+            # Update document processor settings for this database
+            if hasattr(self.document_processor, 'max_chunk_tokens'):
+                self.document_processor.max_chunk_tokens = db_config.chunk_size
+                self.document_processor.chunk_overlap_tokens = db_config.chunk_overlap
             
-            # Apply filters
-            filtered_pages = self._apply_filters(pages, db_config.filters)
-            result['total_pages'] = len(filtered_pages)
+            # Use the new document processor method
+            result = await self.document_processor.process_database_pages(
+                workspace_id, 
+                db_config.database_id, 
+                self.notion_service, 
+                db_config.batch_size
+            )
             
-            self.logger.info(f"Found {len(filtered_pages)} pages to process in {db_config.name}")
+            # Add timing and config information
+            result.update({
+                'name': db_config.name,
+                'status': 'completed',
+                'start_time': start_time,
+                'end_time': time.time(),
+                'duration': time.time() - start_time
+            })
             
-            # Process pages in batches
-            for i in range(0, len(filtered_pages), db_config.batch_size):
-                batch = filtered_pages[i:i + db_config.batch_size]
-                
-                for page in batch:
-                    try:
-                        # Skip archived pages
-                        if page.get('archived', False):
-                            continue
-                        
-                        # Extract content
-                        content = await self.notion_service.get_page_content(page['id'])
-                        title = self.notion_service.extract_title_from_page(page)
-                        
-                        # Update document processor settings for this database
-                        if hasattr(self.document_processor, 'max_chunk_tokens'):
-                            self.document_processor.max_chunk_tokens = db_config.chunk_size
-                            self.document_processor.chunk_overlap_tokens = db_config.chunk_overlap
-                        
-                        # Process the document
-                        if db_config.enable_chunking:
-                            await self.document_processor.process_document(
-                                workspace_id, page, content, title
-                            )
-                        else:
-                            # Process as single document without chunking
-                            await self._process_single_document(
-                                workspace_id, page, content, title
-                            )
-                        
-                        result['processed_pages'] += 1
-                        
-                        if result['processed_pages'] % 10 == 0:
-                            self.logger.info(
-                                f"{db_config.name}: Processed {result['processed_pages']}/{result['total_pages']} pages"
-                            )
-                    
-                    except Exception as e:
-                        result['failed_pages'] += 1
-                        error_msg = f"Failed to process page {page.get('id', 'unknown')}: {str(e)}"
-                        result['errors'].append(error_msg)
-                        self.logger.error(error_msg)
-                
-                # Rate limiting between batches
-                await asyncio.sleep(db_config.rate_limit_delay)
-            
-            result['status'] = 'completed'
             self.logger.info(f"Completed sync for {db_config.name}: {result['processed_pages']} processed, {result['failed_pages']} failed")
         
         except Exception as e:
-            result['status'] = 'failed'
-            error_msg = f"Database sync failed for {db_config.name}: {str(e)}"
-            result['errors'].append(error_msg)
-            self.logger.error(error_msg)
-        
-        finally:
-            result['end_time'] = time.time()
-            result['duration'] = result['end_time'] - result['start_time']
+            result = {
+                'name': db_config.name,
+                'database_id': db_config.database_id,
+                'status': 'failed',
+                'total_pages': 0,
+                'processed_pages': 0,
+                'failed_pages': 0,
+                'errors': [f"Database sync failed: {str(e)}"],
+                'start_time': start_time,
+                'end_time': time.time(),
+                'duration': time.time() - start_time
+            }
+            self.logger.error(f"Database sync failed for {db_config.name}: {str(e)}")
         
         return result
     
@@ -324,93 +280,80 @@ class DatabaseSyncer:
         
         return filtered_pages
     
-    async def _process_single_document(self, workspace_id: str, page_data: Dict[str, Any], 
-                                     content: str, title: str) -> Dict[str, Any]:
-        """Process a single document without chunking."""
-        notion_page_id = page_data.get("id")
-        
-        # Generate embedding for the full document
-        embedding_response = await self.openai_service.generate_embedding(f"{title}\n{content}")
-        
-        document_data = {
-            'id': str(uuid.uuid4()),
-            'workspace_id': workspace_id,
-            'notion_page_id': notion_page_id,
-            'title': title,
-            'content': content,
-            'embedding': embedding_response.embedding,
-            'metadata': {
-                'token_count': self.document_processor.count_tokens(content),
-                'chunk_count': 1,
-                'last_edited_time': page_data.get('last_edited_time'),
-                'properties': page_data.get('properties', {}),
-                'is_chunked': False
-            },
-            'last_edited_time': page_data.get('last_edited_time'),
-            'page_url': f"https://www.notion.so/{notion_page_id.replace('-', '')}",
-            'parent_page_id': page_data.get('parent', {}).get('page_id'),
-            'updated_at': datetime.utcnow().isoformat()
-        }
-        
-        return await self.db.upsert_document(document_data)
-    
     async def sync_all_databases(self) -> Dict[str, Any]:
-        """Sync all databases concurrently."""
+        """Sync all databases using the new document processor approach."""
         self.logger.info(f"Starting sync for {len(self.database_configs)} databases")
         self.start_time = time.time()
         
-        # Create semaphore to limit concurrent database syncs
-        semaphore = asyncio.Semaphore(self.global_config.concurrent_databases)
+        try:
+            # Use the default workspace for all databases
+            if not self.workspace_id:
+                self.workspace_id = await self.get_or_create_default_workspace()
+            workspace_id = self.workspace_id
+            
+            # Convert database configs to the format expected by document processor
+            database_configs = []
+            for db_config in self.database_configs:
+                database_configs.append({
+                    'name': db_config.name,
+                    'database_id': db_config.database_id,
+                    'description': db_config.description,
+                    'sync_settings': {
+                        'batch_size': db_config.batch_size,
+                        'rate_limit_delay': db_config.rate_limit_delay,
+                        'max_retries': db_config.max_retries
+                    }
+                })
+            
+            # Use the new document processor method
+            results = await self.document_processor.process_workspace_databases(
+                workspace_id, 
+                database_configs, 
+                self.notion_service,
+                self.global_config.default_batch_size
+            )
+            
+            # Add timing information
+            results.update({
+                'start_time': self.start_time,
+                'end_time': time.time(),
+                'duration': time.time() - self.start_time
+            })
+            
+            # Calculate summary statistics
+            total_pages = sum(db_result['results']['total_pages'] for db_result in results['database_results'])
+            total_processed = sum(db_result['results']['processed_pages'] for db_result in results['database_results'])
+            total_failed = sum(db_result['results']['failed_pages'] for db_result in results['database_results'])
+            
+            results.update({
+                'total_pages': total_pages,
+                'total_processed': total_processed,
+                'total_failed': total_failed,
+                'successful_databases': results['processed_databases'],
+                'failed_databases': results['failed_databases']
+            })
+            
+            self.logger.info(f"Sync completed: {results['successful_databases']}/{results['total_databases']} databases successful")
+            self.logger.info(f"Total: {results['total_processed']} processed, {results['total_failed']} failed pages")
+            self.logger.info(f"Duration: {results['duration']:.2f} seconds")
+            
+            return results
         
-        async def sync_with_semaphore(db_config):
-            async with semaphore:
-                return await self.sync_database(db_config)
-        
-        # Start all database syncs concurrently
-        tasks = [sync_with_semaphore(db_config) for db_config in self.database_configs]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Process results
-        summary = {
-            'total_databases': len(self.database_configs),
-            'successful_databases': 0,
-            'failed_databases': 0,
-            'total_pages': 0,
-            'total_processed': 0,
-            'total_failed': 0,
-            'start_time': self.start_time,
-            'end_time': time.time(),
-            'databases': []
-        }
-        
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                # Handle exception
-                error_result = {
-                    'name': self.database_configs[i].name,
-                    'status': 'error',
-                    'error': str(result)
-                }
-                summary['databases'].append(error_result)
-                summary['failed_databases'] += 1
-            else:
-                summary['databases'].append(result)
-                if result['status'] == 'completed':
-                    summary['successful_databases'] += 1
-                else:
-                    summary['failed_databases'] += 1
-                
-                summary['total_pages'] += result['total_pages']
-                summary['total_processed'] += result['processed_pages']
-                summary['total_failed'] += result['failed_pages']
-        
-        summary['duration'] = summary['end_time'] - summary['start_time']
-        
-        self.logger.info(f"Sync completed: {summary['successful_databases']}/{summary['total_databases']} databases successful")
-        self.logger.info(f"Total: {summary['total_processed']} processed, {summary['total_failed']} failed pages")
-        self.logger.info(f"Duration: {summary['duration']:.2f} seconds")
-        
-        return summary
+        except Exception as e:
+            self.logger.error(f"Sync failed: {str(e)}")
+            return {
+                'total_databases': len(self.database_configs),
+                'successful_databases': 0,
+                'failed_databases': len(self.database_configs),
+                'total_pages': 0,
+                'total_processed': 0,
+                'total_failed': 0,
+                'start_time': self.start_time,
+                'end_time': time.time(),
+                'duration': time.time() - self.start_time,
+                'database_results': [],
+                'errors': [str(e)]
+            }
 
 
 async def main():

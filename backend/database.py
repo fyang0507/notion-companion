@@ -20,7 +20,7 @@ class Database:
             raise RuntimeError("Database not initialized. Call init() first.")
         return self.client
     
-    async def get_documents(self, workspace_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_documents(self, workspace_id: str, limit: int = 5) -> List[Dict[str, Any]]:
         response = self.client.table('documents').select(
             'content, title, metadata'
         ).eq('workspace_id', workspace_id).order(
@@ -29,7 +29,7 @@ class Database:
         
         return response.data
     
-    async def vector_search(self, query_embedding: List[float], workspace_id: str, 
+    def vector_search(self, query_embedding: List[float], workspace_id: str, 
                           match_threshold: float = 0.7, match_count: int = 10) -> List[Dict[str, Any]]:
         response = self.client.rpc('match_documents', {
             'query_embedding': query_embedding,
@@ -40,13 +40,13 @@ class Database:
         
         return response.data
     
-    async def upsert_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
+    def upsert_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
         response = self.client.table('documents').upsert(document_data).execute()
         return response.data
     
-    async def delete_document(self, notion_page_id: str) -> bool:
+    def delete_document(self, notion_page_id: str) -> bool:
         # First delete associated chunks
-        await self.delete_document_chunks_by_page(notion_page_id)
+        self.delete_document_chunks_by_page(notion_page_id)
         
         # Then delete the document
         response = self.client.table('documents').delete().eq(
@@ -54,11 +54,11 @@ class Database:
         ).execute()
         return len(response.data) > 0
     
-    async def upsert_document_chunks(self, chunks_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def upsert_document_chunks(self, chunks_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         response = self.client.table('document_chunks').upsert(chunks_data).execute()
         return response.data
     
-    async def delete_document_chunks_by_page(self, notion_page_id: str) -> bool:
+    def delete_document_chunks_by_page(self, notion_page_id: str) -> bool:
         # Get document ID first
         doc_response = self.client.table('documents').select('id').eq(
             'notion_page_id', notion_page_id
@@ -72,14 +72,14 @@ class Database:
             return len(response.data) > 0
         return False
     
-    async def update_workspace_sync_time(self, workspace_id: str) -> bool:
+    def update_workspace_sync_time(self, workspace_id: str) -> bool:
         from datetime import datetime
         response = self.client.table('workspaces').update({
             'last_sync_at': datetime.utcnow().isoformat()
         }).eq('id', workspace_id).execute()
         return len(response.data) > 0
     
-    async def vector_search_chunks(self, query_embedding: List[float], workspace_id: str, 
+    def vector_search_chunks(self, query_embedding: List[float], workspace_id: str, 
                                  match_threshold: float = 0.7, match_count: int = 10) -> List[Dict[str, Any]]:
         response = self.client.rpc('match_chunks', {
             'query_embedding': query_embedding,
