@@ -37,3 +37,6 @@ next-env.d.ts
 
 # Python
 *.pyc
+
+# Log
+*.log
