@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useWorkspaces } from '@/hooks/use-workspaces';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -29,101 +30,32 @@ import {
 import Link from 'next/link';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
-interface Workspace {
-  id: string;
-  name: string;
-  type: 'workspace' | 'database' | 'page';
-  documentCount: number;
-  lastSync: string;
-  status: 'active' | 'syncing' | 'error' | 'pending';
-  notionUrl: string;
-  permissions: string[];
-  syncEnabled: boolean;
-}
-
 export default function WorkspacesPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [newWorkspaceUrl, setNewWorkspaceUrl] = useState('');
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([
-    {
-      id: 'ws-1',
-      name: 'Product Documentation',
-      type: 'workspace',
-      documentCount: 156,
-      lastSync: '2 minutes ago',
-      status: 'active',
-      notionUrl: 'https://notion.so/product-docs',
-      permissions: ['read', 'write'],
-      syncEnabled: true
-    },
-    {
-      id: 'ws-2',
-      name: 'Meeting Notes',
-      type: 'database',
-      documentCount: 43,
-      lastSync: '5 minutes ago',
-      status: 'active',
-      notionUrl: 'https://notion.so/meeting-notes',
-      permissions: ['read'],
-      syncEnabled: true
-    },
-    {
-      id: 'ws-3',
-      name: 'Project Roadmap',
-      type: 'page',
-      documentCount: 12,
-      lastSync: '1 hour ago',
-      status: 'syncing',
-      notionUrl: 'https://notion.so/roadmap',
-      permissions: ['read'],
-      syncEnabled: true
-    }
-  ]);
+  const { workspaces, loading, error, connectWorkspace, syncWorkspace } = useWorkspaces();
 
   const handleConnectWorkspace = async () => {
     if (!newWorkspaceUrl.trim()) return;
     
     setIsConnecting(true);
     
-    // Simulate connection process
-    setTimeout(() => {
-      const newWorkspace: Workspace = {
-        id: `ws-${Date.now()}`,
-        name: 'New Workspace',
-        type: 'workspace',
-        documentCount: 0,
-        lastSync: 'Just now',
-        status: 'pending',
-        notionUrl: newWorkspaceUrl,
-        permissions: ['read'],
-        syncEnabled: false
-      };
-      
-      setWorkspaces(prev => [...prev, newWorkspace]);
+    try {
+      await connectWorkspace(newWorkspaceUrl);
       setNewWorkspaceUrl('');
+    } catch (error) {
+      console.error('Failed to connect workspace:', error);
+    } finally {
       setIsConnecting(false);
-    }, 2000);
+    }
   };
 
-  const handleDisconnectWorkspace = (workspaceId: string) => {
-    setWorkspaces(prev => prev.filter(w => w.id !== workspaceId));
-  };
-
-  const handleSyncWorkspace = (workspaceId: string) => {
-    setWorkspaces(prev => prev.map(w => 
-      w.id === workspaceId 
-        ? { ...w, status: 'syncing' as const, lastSync: 'Syncing...' }
-        : w
-    ));
-
-    // Simulate sync completion
-    setTimeout(() => {
-      setWorkspaces(prev => prev.map(w => 
-        w.id === workspaceId 
-          ? { ...w, status: 'active' as const, lastSync: 'Just now' }
-          : w
-      ));
-    }, 3000);
+  const handleSyncWorkspace = async (workspaceId: string) => {
+    try {
+      await syncWorkspace(workspaceId);
+    } catch (error) {
+      console.error('Failed to sync workspace:', error);
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -136,13 +68,8 @@ export default function WorkspacesPage() {
     }
   };
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'workspace': return <Users className="h-4 w-4" />;
-      case 'database': return <Database className="h-4 w-4" />;
-      case 'page': return <FileText className="h-4 w-4" />;
-      default: return <Globe className="h-4 w-4" />;
-    }
+  const getTypeIcon = () => {
+    return <Database className="h-4 w-4" />;
   };
 
   const getStatusColor = (status: string) => {
@@ -155,7 +82,7 @@ export default function WorkspacesPage() {
     }
   };
 
-  const totalDocuments = workspaces.reduce((sum, w) => sum + w.documentCount, 0);
+  const totalDocuments = workspaces.reduce((sum, w) => sum + (w.document_count || 0), 0);
   const activeWorkspaces = workspaces.filter(w => w.status === 'active').length;
 
   return (
@@ -240,80 +167,86 @@ export default function WorkspacesPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {workspaces.map((workspace) => (
-                    <div key={workspace.id} className="flex items-center gap-4 p-4 rounded-lg border hover:bg-accent transition-colors">
-                      <div className="p-2 rounded-lg bg-muted">
-                        {getTypeIcon(workspace.type)}
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-medium text-sm">{workspace.name}</h3>
-                          <Badge 
-                            variant="outline" 
-                            className={`text-xs ${getStatusColor(workspace.status)}`}
-                          >
-                            <div className="flex items-center gap-1">
-                              {getStatusIcon(workspace.status)}
-                              {workspace.status}
-                            </div>
-                          </Badge>
-                          {workspace.syncEnabled && (
-                            <Badge variant="secondary" className="text-xs">
-                              <Zap className="h-3 w-3 mr-1" />
-                              Auto-sync
-                            </Badge>
-                          )}
-                        </div>
-                        
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{workspace.documentCount} documents</span>
-                          <span>•</span>
-                          <span>Last sync: {workspace.lastSync}</span>
-                          <span>•</span>
-                          <span className="capitalize">{workspace.type}</span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleSyncWorkspace(workspace.id)}
-                          disabled={workspace.status === 'syncing'}
-                        >
-                          <RefreshCw className={`h-4 w-4 ${workspace.status === 'syncing' ? 'animate-spin' : ''}`} />
-                        </Button>
-
-                        <Button variant="ghost" size="icon" asChild>
-                          <a href={workspace.notionUrl} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
-
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem>
-                              <Settings className="mr-2 h-4 w-4" />
-                              Settings
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              onClick={() => handleDisconnectWorkspace(workspace.id)}
-                              className="text-red-600"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Disconnect
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
+                  {loading ? (
+                    <div className="flex items-center justify-center p-8">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                      <span className="ml-2">Loading workspaces...</span>
                     </div>
-                  ))}
+                  ) : error ? (
+                    <div className="text-center p-8 text-red-600">
+                      Error loading workspaces: {error}
+                    </div>
+                  ) : workspaces.length === 0 ? (
+                    <div className="text-center p-8 text-muted-foreground">
+                      No workspaces connected yet. Use the &quot;Connect New&quot; tab to get started.
+                    </div>
+                  ) : (
+                    workspaces.map((workspace) => (
+                      <div key={workspace.id} className="flex items-center gap-4 p-4 rounded-lg border hover:bg-accent transition-colors">
+                        <div className="p-2 rounded-lg bg-muted">
+                          {getTypeIcon()}
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-medium text-sm">{workspace.name}</h3>
+                            <Badge 
+                              variant="outline" 
+                              className={`text-xs ${getStatusColor(workspace.status)}`}
+                            >
+                              <div className="flex items-center gap-1">
+                                {getStatusIcon(workspace.status)}
+                                {workspace.status}
+                              </div>
+                            </Badge>
+                            {workspace.is_active && (
+                              <Badge variant="secondary" className="text-xs">
+                                <Zap className="h-3 w-3 mr-1" />
+                                Auto-sync
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <span>{workspace.document_count || 0} documents</span>
+                            <span>•</span>
+                            <span>Last sync: {workspace.last_sync_at ? new Date(workspace.last_sync_at).toLocaleString() : 'Never'}</span>
+                            <span>•</span>
+                            <span>Workspace</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleSyncWorkspace(workspace.id)}
+                            disabled={workspace.status === 'syncing'}
+                          >
+                            <RefreshCw className={`h-4 w-4 ${workspace.status === 'syncing' ? 'animate-spin' : ''}`} />
+                          </Button>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem>
+                                <Settings className="mr-2 h-4 w-4" />
+                                Settings
+                              </DropdownMenuItem>
+                              <DropdownMenuItem className="text-red-600">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Disconnect
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>

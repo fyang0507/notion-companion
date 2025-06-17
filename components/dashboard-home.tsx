@@ -1,5 +1,6 @@
 'use client';
 
+import { useWorkspaces } from '@/hooks/use-workspaces';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -26,6 +27,8 @@ interface DashboardHomeProps {
 }
 
 export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat }: DashboardHomeProps) {
+  const { workspaces, loading } = useWorkspaces();
+  
   const recentActivity = [
     {
       id: '1',
@@ -53,32 +56,14 @@ export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat 
     }
   ];
 
-  const workspaceStats = [
-    {
-      name: 'Product Documentation',
-      id: 'ws-1',
-      documents: 156,
-      lastSync: '2 min ago',
-      status: 'active',
-      icon: <FileText className="h-4 w-4" />
-    },
-    {
-      name: 'Meeting Notes',
-      id: 'ws-2',
-      documents: 43,
-      lastSync: '5 min ago',
-      status: 'active',
-      icon: <Database className="h-4 w-4" />
-    },
-    {
-      name: 'Project Roadmap',
-      id: 'ws-3',
-      documents: 12,
-      lastSync: '1 hour ago',
-      status: 'syncing',
-      icon: <Users className="h-4 w-4" />
-    }
-  ];
+  const workspaceStats = workspaces.map(workspace => ({
+    name: workspace.name,
+    id: workspace.id,
+    documents: workspace.document_count || 0,
+    lastSync: workspace.last_sync_at ? new Date(workspace.last_sync_at).toLocaleString() : 'Never',
+    status: workspace.status,
+    icon: <Database className="h-4 w-4" />
+  }));
 
   const quickActions = [
     {
@@ -97,11 +82,13 @@ export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat 
     }
   ];
 
+  const totalDocuments = workspaces.reduce((sum, w) => sum + (w.document_count || 0), 0);
+  
   const usageStats = {
-    tokensUsed: 45780,
+    tokensUsed: 0,
     tokensLimit: 100000,
-    chatsToday: 12,
-    documentsProcessed: 211
+    chatsToday: 0,
+    documentsProcessed: totalDocuments
   };
 
   const usagePercentage = (usageStats.tokensUsed / usageStats.tokensLimit) * 100;

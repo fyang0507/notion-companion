@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useAnalytics } from '@/hooks/use-analytics';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,105 +34,20 @@ export default function AnalyticsPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('7d');
   const [selectedType, setSelectedType] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  const { analytics, loading, error } = useAnalytics();
 
-  const overviewStats = {
-    totalTokens: 245780,
-    monthlyLimit: 100000,
-    totalChats: 156,
-    totalSearches: 89,
-    avgResponseTime: 1.2,
-    costThisMonth: 24.56,
-    documentsProcessed: 1247,
-    activeWorkspaces: 3,
-    successRate: 98.7
+  const overviewStats = analytics?.overviewStats || {
+    totalTokens: 0,
+    totalChats: 0,
+    totalSearches: 0,
+    totalCost: 0
   };
 
-  const weeklyData = [
-    { day: 'Mon', tokens: 8500, chats: 12, searches: 8, cost: 0.17 },
-    { day: 'Tue', tokens: 12300, chats: 18, searches: 15, cost: 0.25 },
-    { day: 'Wed', tokens: 9800, chats: 14, searches: 11, cost: 0.20 },
-    { day: 'Thu', tokens: 15600, chats: 22, searches: 19, cost: 0.31 },
-    { day: 'Fri', tokens: 11200, chats: 16, searches: 13, cost: 0.22 },
-    { day: 'Sat', tokens: 6400, chats: 9, searches: 6, cost: 0.13 },
-    { day: 'Sun', tokens: 4200, chats: 6, searches: 4, cost: 0.08 }
-  ];
-
-  const workspaceUsage = [
-    { name: 'Product Documentation', tokens: 125000, percentage: 51, chats: 89, documents: 156 },
-    { name: 'Meeting Notes', tokens: 78000, percentage: 32, chats: 45, documents: 43 },
-    { name: 'Project Roadmap', tokens: 42780, percentage: 17, chats: 22, documents: 12 }
-  ];
-
-  const recentOperations = [
-    {
-      id: '1',
-      timestamp: '2024-01-15 14:30:22',
-      type: 'chat',
-      operation: 'Chat Response',
-      workspace: 'Product Documentation',
-      query: 'API authentication methods',
-      tokens: 1250,
-      cost: 0.025,
-      duration: 1.2,
-      status: 'success'
-    },
-    {
-      id: '2',
-      timestamp: '2024-01-15 14:28:15',
-      type: 'search',
-      operation: 'Document Search',
-      workspace: 'Product Documentation',
-      query: 'user onboarding flow',
-      tokens: 450,
-      cost: 0.009,
-      duration: 0.8,
-      status: 'success'
-    },
-    {
-      id: '3',
-      timestamp: '2024-01-15 14:25:33',
-      type: 'embedding',
-      operation: 'Document Processing',
-      workspace: 'Meeting Notes',
-      query: 'New document sync',
-      tokens: 2100,
-      cost: 0.021,
-      duration: 2.1,
-      status: 'success'
-    },
-    {
-      id: '4',
-      timestamp: '2024-01-15 14:20:45',
-      type: 'chat',
-      operation: 'Chat Response',
-      workspace: 'Project Roadmap',
-      query: 'Q4 roadmap milestones',
-      tokens: 890,
-      cost: 0.018,
-      duration: 1.5,
-      status: 'success'
-    },
-    {
-      id: '5',
-      timestamp: '2024-01-15 14:18:12',
-      type: 'sync',
-      operation: 'Workspace Sync',
-      workspace: 'Product Documentation',
-      query: 'Automatic sync',
-      tokens: 3200,
-      cost: 0.064,
-      duration: 4.2,
-      status: 'success'
-    }
-  ];
-
-  const topQueries = [
-    { query: 'API authentication methods', count: 23, workspace: 'Product Documentation', avgTokens: 1200 },
-    { query: 'Q4 roadmap milestones', count: 18, workspace: 'Project Roadmap', avgTokens: 890 },
-    { query: 'Meeting action items', count: 15, workspace: 'Meeting Notes', avgTokens: 650 },
-    { query: 'User onboarding flow', count: 12, workspace: 'Product Documentation', avgTokens: 1100 },
-    { query: 'Performance metrics', count: 9, workspace: 'Meeting Notes', avgTokens: 780 }
-  ];
+  const weeklyData = analytics?.weeklyData || [];
+  const workspaceUsage = analytics?.workspaceUsage || [];
+  const recentOperations = analytics?.recentOperations || [];
+  const topQueries = analytics?.topQueries || [];
 
   const getOperationIcon = (type: string) => {
     switch (type) {
@@ -155,12 +71,37 @@ export default function AnalyticsPage() {
   const filteredOperations = recentOperations.filter(item => {
     const matchesType = selectedType === 'all' || item.type === selectedType;
     const matchesSearch = !searchQuery || 
-      item.query.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.workspace.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesType && matchesSearch;
   });
 
-  const usagePercentage = (overviewStats.totalTokens / overviewStats.monthlyLimit) * 100;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-7xl mx-auto p-8">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="mt-4 text-muted-foreground">Loading analytics...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-7xl mx-auto p-8">
+          <div className="text-center p-8 text-red-600">
+            <p>Error loading analytics: {error}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

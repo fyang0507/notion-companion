@@ -9,16 +9,18 @@ import { Header } from '@/components/header';
 import { LoadingScreen } from '@/components/loading-screen';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { useAuth } from '@/hooks/use-auth';
+import { useWorkspaces } from '@/hooks/use-workspaces';
 import { AuthDialog } from '@/components/auth-dialog';
 
 export default function Home() {
   const { user, loading, initialized } = useAuth();
+  const { workspaces, loading: workspacesLoading } = useWorkspaces();
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | 'global' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatKey, setChatKey] = useState(0);
-  const [hasWorkspaces, setHasWorkspaces] = useState(false);
-  const [workspacesLoading, setWorkspacesLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  
+  const hasWorkspaces = workspaces.length > 0;
 
   // Check if mobile on mount and resize
   useEffect(() => {
@@ -35,19 +37,6 @@ export default function Home() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Simulate checking for existing workspaces
-  useEffect(() => {
-    if (user && initialized) {
-      const checkWorkspaces = async () => {
-        // Simulate API call to check user's workspaces
-        await new Promise(resolve => setTimeout(resolve, 800));
-        setHasWorkspaces(true);
-        setWorkspacesLoading(false);
-      };
-      
-      checkWorkspaces();
-    }
-  }, [user, initialized]);
 
   const handleNewChat = () => {
     setChatKey(prev => prev + 1);
