@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useWorkspaces } from '@/hooks/use-workspaces';
+import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -33,28 +33,28 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 export default function WorkspacesPage() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [newWorkspaceUrl, setNewWorkspaceUrl] = useState('');
-  const { workspaces, loading, error, connectWorkspace, syncWorkspace } = useWorkspaces();
+  const { connection, isConnected, loading, error, connectNotion, syncNotion } = useNotionConnection();
 
-  const handleConnectWorkspace = async () => {
+  const handleConnectNotion = async () => {
     if (!newWorkspaceUrl.trim()) return;
     
     setIsConnecting(true);
     
     try {
-      await connectWorkspace(newWorkspaceUrl);
+      await connectNotion(newWorkspaceUrl);
       setNewWorkspaceUrl('');
     } catch (error) {
-      console.error('Failed to connect workspace:', error);
+      console.error('Failed to connect Notion:', error);
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const handleSyncWorkspace = async (workspaceId: string) => {
+  const handleSyncNotion = async () => {
     try {
-      await syncWorkspace(workspaceId);
+      await syncNotion();
     } catch (error) {
-      console.error('Failed to sync workspace:', error);
+      console.error('Failed to sync Notion:', error);
     }
   };
 
@@ -82,8 +82,8 @@ export default function WorkspacesPage() {
     }
   };
 
-  const totalDocuments = workspaces.reduce((sum, w) => sum + (w.document_count || 0), 0);
-  const activeWorkspaces = workspaces.filter(w => w.status === 'active').length;
+  const totalDocuments = connection?.document_count || 0;
+  const connectionStatus = connection?.status || 'pending';
 
   return (
     <div className="min-h-screen bg-background">
@@ -97,9 +97,9 @@ export default function WorkspacesPage() {
           </Link>
           
           <div>
-            <h1 className="text-3xl font-bold">Workspace Management</h1>
+            <h1 className="text-3xl font-bold">Notion Connection</h1>
             <p className="text-muted-foreground">
-              Connect and manage your Notion workspaces for AI-powered search and chat
+              Connect and manage your Notion workspace for AI-powered search and chat
             </p>
           </div>
         </div>
@@ -108,11 +108,11 @@ export default function WorkspacesPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Connected Workspaces</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Connection Status</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{workspaces.length}</div>
-              <p className="text-xs text-muted-foreground">{activeWorkspaces} active</p>
+              <div className="text-2xl font-bold">{isConnected ? 'Connected' : 'Not Connected'}</div>
+              <p className="text-xs text-muted-foreground">{connection?.name || 'No workspace'}</p>
             </CardContent>
           </Card>
 
@@ -131,8 +131,8 @@ export default function WorkspacesPage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Sync Status</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">Real-time</div>
-              <p className="text-xs text-muted-foreground">Webhook enabled</p>
+              <div className="text-2xl font-bold">{connectionStatus === 'active' ? 'Active' : 'Pending'}</div>
+              <p className="text-xs text-muted-foreground">{isConnected ? 'Real-time sync' : 'Not syncing'}</p>
             </CardContent>
           </Card>
 
@@ -141,28 +141,30 @@ export default function WorkspacesPage() {
               <CardTitle className="text-sm font-medium text-muted-foreground">Last Update</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">2m</div>
-              <p className="text-xs text-muted-foreground">ago</p>
+              <div className="text-2xl font-bold">
+                {connection?.last_sync_at ? new Date(connection.last_sync_at).toLocaleTimeString() : 'Never'}
+              </div>
+              <p className="text-xs text-muted-foreground">Last sync</p>
             </CardContent>
           </Card>
         </div>
 
-        <Tabs defaultValue="workspaces" className="space-y-6">
+        <Tabs defaultValue="connection" className="space-y-6">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="workspaces">My Workspaces</TabsTrigger>
-            <TabsTrigger value="connect">Connect New</TabsTrigger>
+            <TabsTrigger value="connection">My Connection</TabsTrigger>
+            <TabsTrigger value="connect">Connect Notion</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="workspaces" className="space-y-6">
-            {/* Workspace List */}
+          <TabsContent value="connection" className="space-y-6">
+            {/* Notion Connection */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Database className="h-5 w-5" />
-                  Connected Workspaces
+                  Notion Connection
                 </CardTitle>
                 <CardDescription>
-                  Manage your connected Notion workspaces and their sync settings
+                  Manage your Notion workspace connection and sync settings
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -170,82 +172,80 @@ export default function WorkspacesPage() {
                   {loading ? (
                     <div className="flex items-center justify-center p-8">
                       <Loader2 className="h-6 w-6 animate-spin" />
-                      <span className="ml-2">Loading workspaces...</span>
+                      <span className="ml-2">Loading connection...</span>
                     </div>
                   ) : error ? (
                     <div className="text-center p-8 text-red-600">
-                      Error loading workspaces: {error}
+                      Error loading connection: {error}
                     </div>
-                  ) : workspaces.length === 0 ? (
+                  ) : !connection ? (
                     <div className="text-center p-8 text-muted-foreground">
-                      No workspaces connected yet. Use the &quot;Connect New&quot; tab to get started.
+                      No Notion workspace connected yet. Use the &quot;Connect Notion&quot; tab to get started.
                     </div>
                   ) : (
-                    workspaces.map((workspace) => (
-                      <div key={workspace.id} className="flex items-center gap-4 p-4 rounded-lg border hover:bg-accent transition-colors">
-                        <div className="p-2 rounded-lg bg-muted">
-                          {getTypeIcon()}
-                        </div>
+                    <div className="flex items-center gap-4 p-4 rounded-lg border hover:bg-accent transition-colors">
+                      <div className="p-2 rounded-lg bg-muted">
+                        {getTypeIcon()}
+                      </div>
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="font-medium text-sm">{workspace.name}</h3>
-                            <Badge 
-                              variant="outline" 
-                              className={`text-xs ${getStatusColor(workspace.status)}`}
-                            >
-                              <div className="flex items-center gap-1">
-                                {getStatusIcon(workspace.status)}
-                                {workspace.status}
-                              </div>
-                            </Badge>
-                            {workspace.is_active && (
-                              <Badge variant="secondary" className="text-xs">
-                                <Zap className="h-3 w-3 mr-1" />
-                                Auto-sync
-                              </Badge>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>{workspace.document_count || 0} documents</span>
-                            <span>•</span>
-                            <span>Last sync: {workspace.last_sync_at ? new Date(workspace.last_sync_at).toLocaleString() : 'Never'}</span>
-                            <span>•</span>
-                            <span>Workspace</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleSyncWorkspace(workspace.id)}
-                            disabled={workspace.status === 'syncing'}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-medium text-sm">{connection.name}</h3>
+                          <Badge 
+                            variant="outline" 
+                            className={`text-xs ${getStatusColor(connection.status)}`}
                           >
-                            <RefreshCw className={`h-4 w-4 ${workspace.status === 'syncing' ? 'animate-spin' : ''}`} />
-                          </Button>
-
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem>
-                                <Settings className="mr-2 h-4 w-4" />
-                                Settings
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="text-red-600">
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Disconnect
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                            <div className="flex items-center gap-1">
+                              {getStatusIcon(connection.status)}
+                              {connection.status}
+                            </div>
+                          </Badge>
+                          {connection.is_active && (
+                            <Badge variant="secondary" className="text-xs">
+                              <Zap className="h-3 w-3 mr-1" />
+                              Auto-sync
+                            </Badge>
+                          )}
+                        </div>
+                        
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{connection.document_count || 0} documents</span>
+                          <span>•</span>
+                          <span>Last sync: {connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleString() : 'Never'}</span>
+                          <span>•</span>
+                          <span>Workspace</span>
                         </div>
                       </div>
-                    ))
+
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={handleSyncNotion}
+                          disabled={connection.status === 'syncing'}
+                        >
+                          <RefreshCw className={`h-4 w-4 ${connection.status === 'syncing' ? 'animate-spin' : ''}`} />
+                        </Button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem>
+                              <Settings className="mr-2 h-4 w-4" />
+                              Settings
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-red-600">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Disconnect
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
                   )}
                 </div>
               </CardContent>
@@ -317,7 +317,7 @@ export default function WorkspacesPage() {
                   <Button 
                     className="w-full" 
                     variant="outline"
-                    onClick={handleConnectWorkspace}
+                    onClick={handleConnectNotion}
                     disabled={!newWorkspaceUrl.trim() || isConnecting}
                   >
                     {isConnecting ? (
@@ -328,7 +328,7 @@ export default function WorkspacesPage() {
                     ) : (
                       <>
                         <Plus className="mr-2 h-4 w-4" />
-                        Connect Workspace
+                        Connect Notion
                       </>
                     )}
                   </Button>

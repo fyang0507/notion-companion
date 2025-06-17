@@ -9,18 +9,16 @@ import { Header } from '@/components/header';
 import { LoadingScreen } from '@/components/loading-screen';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { useAuth } from '@/hooks/use-auth';
-import { useWorkspaces } from '@/hooks/use-workspaces';
+import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { AuthDialog } from '@/components/auth-dialog';
 
 export default function Home() {
   const { user, loading, initialized } = useAuth();
-  const { workspaces, loading: workspacesLoading } = useWorkspaces();
+  const { connection, isConnected, loading: connectionLoading } = useNotionConnection();
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | 'global' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatKey, setChatKey] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
-  
-  const hasWorkspaces = workspaces.length > 0;
   
   // Check if database is configured (Supabase setup)
   const isDatabaseConfigured = process.env.NEXT_PUBLIC_SUPABASE_URL && 
@@ -43,10 +41,10 @@ export default function Home() {
 
   // Auto-start global chat when database is configured and user is ready
   useEffect(() => {
-    if (isDatabaseConfigured && user && initialized && !workspacesLoading && !selectedWorkspace) {
+    if (isDatabaseConfigured && user && initialized && !connectionLoading && !selectedWorkspace) {
       setSelectedWorkspace('global');
     }
-  }, [isDatabaseConfigured, user, initialized, workspacesLoading, selectedWorkspace]);
+  }, [isDatabaseConfigured, user, initialized, connectionLoading, selectedWorkspace]);
 
 
   const handleNewChat = () => {
@@ -87,9 +85,9 @@ export default function Home() {
     return <AuthDialog />;
   }
 
-  // Show loading screen while checking workspaces
-  if (workspacesLoading) {
-    return <LoadingScreen message="Checking your workspaces..." />;
+  // Show loading screen while checking Notion connection
+  if (connectionLoading) {
+    return <LoadingScreen message="Checking your Notion connection..." />;
   }
 
   // Show welcome screen only if database is not configured
@@ -144,7 +142,6 @@ export default function Home() {
             {selectedWorkspace ? (
               <ChatInterface 
                 key={chatKey} 
-                workspaceId={selectedWorkspace}
                 onBackToHome={handleBackToHome}
               />
             ) : (
@@ -190,7 +187,6 @@ export default function Home() {
               {selectedWorkspace ? (
                 <ChatInterface 
                   key={chatKey} 
-                  workspaceId={selectedWorkspace}
                   onBackToHome={handleBackToHome}
                 />
               ) : (

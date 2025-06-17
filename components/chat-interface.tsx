@@ -27,7 +27,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { apiClient } from '@/lib/api';
 
 interface ChatInterfaceProps {
-  workspaceId: string | 'global';
   onBackToHome?: () => void;
 }
 
@@ -77,7 +76,7 @@ const availableModels: AIModel[] = [
   }
 ];
 
-export function ChatInterface({ workspaceId, onBackToHome }: ChatInterfaceProps) {
+export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -94,7 +93,7 @@ export function ChatInterface({ workspaceId, onBackToHome }: ChatInterfaceProps)
   const [selectedModel, setSelectedModel] = useState<AIModel>(availableModels[0]); // Default to GPT-4.1 Mini
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [filters, setFilters] = useState<ChatFilter>({
-    workspaces: workspaceId === 'global' ? [] : [workspaceId],
+    workspaces: [], // No workspace selection needed - use user's connected workspace
     documentTypes: [],
     dateRange: {},
     authors: [],
@@ -180,7 +179,6 @@ export function ChatInterface({ workspaceId, onBackToHome }: ChatInterfaceProps)
 
       const stream = await apiClient.sendChatMessage({
         messages: apiMessages,
-        workspaceId: workspaceId === 'global' ? 'default' : workspaceId,
         userId: 'user-1' // Replace with actual user ID
       });
 

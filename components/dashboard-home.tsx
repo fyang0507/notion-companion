@@ -1,6 +1,6 @@
 'use client';
 
-import { useWorkspaces } from '@/hooks/use-workspaces';
+import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -27,7 +27,7 @@ interface DashboardHomeProps {
 }
 
 export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat }: DashboardHomeProps) {
-  const { workspaces, loading } = useWorkspaces();
+  const { connection, isConnected, loading } = useNotionConnection();
   
   const recentActivity = [
     {
@@ -56,14 +56,14 @@ export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat 
     }
   ];
 
-  const workspaceStats = workspaces.map(workspace => ({
-    name: workspace.name,
-    id: workspace.id,
-    documents: workspace.document_count || 0,
-    lastSync: workspace.last_sync_at ? new Date(workspace.last_sync_at).toLocaleString() : 'Never',
-    status: workspace.status,
+  const notionStats = connection ? {
+    name: connection.name,
+    id: connection.id,
+    documents: connection.document_count || 0,
+    lastSync: connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleString() : 'Never',
+    status: connection.status,
     icon: <Database className="h-4 w-4" />
-  }));
+  } : null;
 
   const quickActions = [
     {
@@ -82,7 +82,7 @@ export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat 
     }
   ];
 
-  const totalDocuments = workspaces.reduce((sum, w) => sum + (w.document_count || 0), 0);
+  const totalDocuments = connection?.document_count || 0;
   
   const usageStats = {
     tokensUsed: 0,
@@ -187,43 +187,50 @@ export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat 
             </CardContent>
           </Card>
 
-          {/* Connected Workspaces */}
+          {/* Notion Connection */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg md:text-xl">
                 <Database className="h-5 w-5" />
-                Workspaces
+                Notion Connection
               </CardTitle>
               <CardDescription className="text-sm md:text-base">
-                Your connected Notion workspaces
+                Your connected Notion workspace
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {workspaceStats.map((workspace) => (
+              {notionStats ? (
                 <div 
-                  key={workspace.id}
                   className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent cursor-pointer transition-colors"
-                  onClick={() => onSelectWorkspace(workspace.id)}
+                  onClick={() => onSelectWorkspace(notionStats.id)}
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="p-1.5 rounded bg-muted flex-shrink-0">
-                      {workspace.icon}
+                      {notionStats.icon}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm truncate">{workspace.name}</p>
+                      <p className="font-medium text-sm truncate">{notionStats.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {workspace.documents} docs • {workspace.lastSync}
+                        {notionStats.documents} docs • {notionStats.lastSync}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <div className={`w-2 h-2 rounded-full ${
-                      workspace.status === 'active' ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'
+                      notionStats.status === 'active' ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'
                     }`} />
                     <ArrowRight className="h-3 w-3 text-muted-foreground" />
                   </div>
                 </div>
-              ))}
+              ) : (
+                <div className="text-center p-6 text-muted-foreground">
+                  <Database className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No Notion workspace connected</p>
+                  <Button variant="outline" size="sm" className="mt-2" asChild>
+                    <Link href="/workspaces">Connect Notion</Link>
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

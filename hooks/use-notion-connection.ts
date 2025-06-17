@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from './use-auth'
 
-export interface Workspace {
+export interface NotionConnection {
   id: string
   name: string
   icon?: string
@@ -13,22 +13,25 @@ export interface Workspace {
   status: 'active' | 'syncing' | 'error' | 'pending'
 }
 
-export function useWorkspaces() {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+export function useNotionConnection() {
+  const [connection, setConnection] = useState<NotionConnection | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { user } = useAuth()
+  
+  // Helper to check if user has Notion connected
+  const isConnected = !!connection
 
-  const fetchWorkspaces = async () => {
+  const fetchConnection = async () => {
     if (!user) {
-      setWorkspaces([])
+      setConnection(null)
       setLoading(false)
       return
     }
 
-    // If Supabase is not configured, return empty workspaces
+    // If Supabase is not configured, return no connection
     if (!supabase) {
-      setWorkspaces([])
+      setConnection(null)
       setLoading(false)
       return
     }
@@ -37,8 +40,8 @@ export function useWorkspaces() {
       setLoading(true)
       setError(null)
 
-      // Fetch workspaces with document counts
-      const { data: workspacesData, error: workspacesError } = await supabase
+      // Fetch the user's primary workspace (first active one) with document count
+      const { data: workspaceData, error: workspaceError } = await supabase
         .from('workspaces')
         .select(`
           id,
@@ -51,35 +54,47 @@ export function useWorkspaces() {
         `)
         .eq('user_id', user.id)
         .eq('is_active', true)
+        .limit(1)
+        .single()
 
-      if (workspacesError) throw workspacesError
+      if (workspaceError) {
+        // No workspace found is not an error, just means not connected
+        if (workspaceError.code === 'PGRST116') {
+          setConnection(null)
+          return
+        }
+        throw workspaceError
+      }
 
-      const workspacesWithCounts = workspacesData?.map(workspace => ({
-        id: workspace.id,
-        name: workspace.name,
-        icon: workspace.icon,
-        notion_workspace_id: workspace.notion_workspace_id,
-        is_active: workspace.is_active,
-        last_sync_at: workspace.last_sync_at,
-        document_count: workspace.documents?.[0]?.count || 0,
-        status: getWorkspaceStatus(workspace.last_sync_at)
-      })) || []
-
-      setWorkspaces(workspacesWithCounts)
+      if (workspaceData) {
+        const connectionData: NotionConnection = {
+          id: workspaceData.id,
+          name: workspaceData.name,
+          icon: workspaceData.icon,
+          notion_workspace_id: workspaceData.notion_workspace_id,
+          is_active: workspaceData.is_active,
+          last_sync_at: workspaceData.last_sync_at,
+          document_count: workspaceData.documents?.[0]?.count || 0,
+          status: getConnectionStatus(workspaceData.last_sync_at)
+        }
+        setConnection(connectionData)
+      } else {
+        setConnection(null)
+      }
     } catch (err) {
-      console.error('Error fetching workspaces:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch workspaces')
+      console.error('Error fetching Notion connection:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch Notion connection')
     } finally {
       setLoading(false)
     }
   }
 
-  const connectWorkspace = async (notionToken: string) => {
+  const connectNotion = async (notionToken: string) => {
     if (!user) throw new Error('User not authenticated')
     if (!supabase) throw new Error('Supabase not configured')
 
     try {
-      // Call backend API to connect workspace
+      // Call backend API to connect Notion workspace
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/notion/connect`, {
         method: 'POST',
         headers: {
@@ -92,59 +107,61 @@ export function useWorkspaces() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to connect workspace')
+        throw new Error('Failed to connect Notion')
       }
 
-      // Refresh workspaces after connecting
-      await fetchWorkspaces()
+      // Refresh connection after connecting
+      await fetchConnection()
     } catch (err) {
-      console.error('Error connecting workspace:', err)
+      console.error('Error connecting Notion:', err)
       throw err
     }
   }
 
-  const syncWorkspace = async (workspaceId: string) => {
+  const syncNotion = async () => {
     if (!supabase) throw new Error('Supabase not configured')
+    if (!connection) throw new Error('No Notion connection found')
     
     try {
-      // Call backend API to sync workspace
+      // Call backend API to sync the user's Notion workspace
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/notion/sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          workspace_id: workspaceId
+          workspace_id: connection.id
         })
       })
 
       if (!response.ok) {
-        throw new Error('Failed to sync workspace')
+        throw new Error('Failed to sync Notion')
       }
 
-      // Refresh workspaces after syncing
-      await fetchWorkspaces()
+      // Refresh connection after syncing
+      await fetchConnection()
     } catch (err) {
-      console.error('Error syncing workspace:', err)
+      console.error('Error syncing Notion:', err)
       throw err
     }
   }
 
   useEffect(() => {
-    fetchWorkspaces()
+    fetchConnection()
   }, [user])
 
   return {
-    workspaces,
+    connection,
+    isConnected,
     loading,
     error,
-    refetch: fetchWorkspaces,
-    connectWorkspace,
-    syncWorkspace
+    refetch: fetchConnection,
+    connectNotion,
+    syncNotion
   }
 }
 
-function getWorkspaceStatus(lastSyncAt?: string): 'active' | 'syncing' | 'error' | 'pending' {
+function getConnectionStatus(lastSyncAt?: string): 'active' | 'syncing' | 'error' | 'pending' {
   if (!lastSyncAt) return 'pending'
   
   const lastSync = new Date(lastSyncAt)
