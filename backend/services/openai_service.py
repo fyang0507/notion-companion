@@ -1,9 +1,13 @@
 from openai import OpenAI
 import os
+from dotenv import load_dotenv
 import asyncio
 from typing import List, Dict, Any, AsyncGenerator
 from models import EmbeddingResponse, ChatResponse
 from config.model_config import get_model_config
+
+# Load environment variables
+load_dotenv()
 
 class OpenAIService:
     def __init__(self):
