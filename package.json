@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "backend": "cd backend && python start.py",
+    "backend": "cd backend && .venv/bin/python start.py",
     "dev:full": "concurrently --kill-others-on-fail --kill-others \"npm run dev\" \"npm run backend\""
   },
   "dependencies": {
