@@ -81,7 +81,7 @@ export function WorkspaceList({ selectedWorkspace, onSelectWorkspace, onNewChat 
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium text-muted-foreground mb-3">Connected Workspaces</h3>
+      <h3 className="text-sm font-medium text-muted-foreground mb-3">Notion Workspace</h3>
       
       <div className="space-y-1">
         {workspaces.map((workspace) => (

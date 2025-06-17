@@ -26,32 +26,9 @@ interface RecentChatsProps {
 }
 
 export function RecentChats({ onChatSelect }: RecentChatsProps) {
-  const [chats, setChats] = useState<Chat[]>([
-    {
-      id: 'chat-1',
-      title: 'Product roadmap Q4',
-      lastMessage: 'What are the key milestones for...',
-      timestamp: '2h ago',
-      messageCount: 12,
-      workspaceId: 'ws-1'
-    },
-    {
-      id: 'chat-2',
-      title: 'API documentation',
-      lastMessage: 'How do I implement authentication...',
-      timestamp: '1d ago',
-      messageCount: 6,
-      workspaceId: 'ws-1'
-    },
-    {
-      id: 'chat-3',
-      title: 'Meeting notes analysis',
-      lastMessage: 'Summarize the key decisions from...',
-      timestamp: '3d ago',
-      messageCount: 4,
-      workspaceId: 'ws-2'
-    }
-  ]);
+  // For now, we'll show empty state until we implement real chat history
+  // In a real app, this would fetch from the database
+  const [chats, setChats] = useState<Chat[]>([]);
 
   const deleteChat = (chatId: string) => {
     setChats(chats.filter(chat => chat.id !== chatId));
@@ -73,14 +50,22 @@ export function RecentChats({ onChatSelect }: RecentChatsProps) {
         </div>
         
         <div className="space-y-1">
-          {chats.map((chat) => (
-            <ChatItem 
-              key={chat.id}
-              chat={chat}
-              onDelete={deleteChat}
-              onClick={() => handleChatClick(chat)}
-            />
-          ))}
+          {chats.length > 0 ? (
+            chats.map((chat) => (
+              <ChatItem 
+                key={chat.id}
+                chat={chat}
+                onDelete={deleteChat}
+                onClick={() => handleChatClick(chat)}
+              />
+            ))
+          ) : (
+            <div className="text-center p-4 text-muted-foreground">
+              <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No recent chats</p>
+              <p className="text-xs">Start a conversation to see your chat history</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

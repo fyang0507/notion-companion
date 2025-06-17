@@ -303,7 +303,7 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
   const aggregatedMetadata = getAggregatedMetadata();
 
   const getWorkspaceDisplayText = () => {
-    if (isGlobalMode) return 'All Workspaces';
+    if (isGlobalMode) return 'All Content';
     if (filters.workspaces.length === 1) {
       const workspace = availableWorkspaces.find(w => w.id === filters.workspaces[0]);
       return workspace?.name || 'Unknown Workspace';
@@ -369,7 +369,7 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Globe className="h-4 w-4" />
-                        <span>All Workspaces</span>
+                        <span>All Content</span>
                       </div>
                       <Badge variant="outline" className="text-xs">
                         {availableWorkspaces.reduce((sum, w) => sum + w.documentCount, 0)} docs
