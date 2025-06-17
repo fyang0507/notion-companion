@@ -1,0 +1,110 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Development Workflow & Coding Patterns
+
+## Development Flow
+
+### Starting Development
+1. Run `make install` to install all dependencies
+2. Run `make setup-env` to create environment templates
+3. Configure environment variables in `.env.local` and `backend/.env`
+4. Run `make dev` or `pnpm run dev:full` to start both servers
+
+### File Organization Patterns
+
+#### Frontend Components
+- Place reusable UI components in [components/ui/](mdc:components/ui/) (shadcn/ui)
+- Place feature-specific components in [components/](mdc:components/) root
+- Use TypeScript interfaces and define them in [types/](mdc:types/) when shared
+- Custom hooks go in [hooks/](mdc:hooks/) with descriptive names
+
+#### Backend Structure
+- API endpoints as routers in [backend/routers/](mdc:backend/routers/)
+- Business logic in [backend/services/](mdc:backend/services/)
+- Database models in [backend/models.py](mdc:backend/models.py)
+- Configuration files in [backend/config/](mdc:backend/config/)
+
+## Coding Standards
+
+### TypeScript Patterns
+```typescript
+// Use proper typing for components
+interface ComponentProps {
+  title: string;
+  onAction?: () => void;
+}
+
+// Custom hooks pattern (see use-auth.ts)
+export function useCustomHook() {
+  const [state, setState] = useState();
+  return { state, actions };
+}
+```
+
+### FastAPI Patterns
+```python
+# Router structure
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+router = APIRouter()
+
+class RequestModel(BaseModel):
+    field: str
+
+@router.post("/endpoint")
+async def endpoint(request: RequestModel):
+    # Implementation
+    return {"result": "success"}
+```
+
+## State Management
+
+### Frontend State
+- Use [use-auth.ts](mdc:hooks/use-auth.ts) for authentication state
+- Use [use-toast.ts](mdc:hooks/use-toast.ts) for notifications
+- Use [use-notion-connection.ts](mdc:hooks/use-notion-connection.ts) for Notion integration
+- Local component state with `useState` for simple cases
+
+### Backend Services
+- Database operations through service layer
+- OpenAI integration via [openai_service.py](mdc:backend/services/openai_service.py)
+- Notion API calls via [notion_service.py](mdc:backend/services/notion_service.py)
+
+## Common Development Tasks
+
+### Adding New API Endpoints
+1. Create new router in [backend/routers/](mdc:backend/routers/)
+2. Add business logic to appropriate service
+3. Include router in [backend/main.py](mdc:backend/main.py)
+4. Update frontend API client in [lib/api.ts](mdc:lib/api.ts)
+
+### Adding New UI Components
+1. Create component in [components/](mdc:components/)
+2. Add shadcn/ui components via `npx shadcn-ui@latest add component-name`
+3. Export from component file for easy imports
+4. Add TypeScript interfaces to [types/](mdc:types/) if shared
+
+### Database Changes
+1. Update [backend/schema.sql](mdc:backend/schema.sql)
+2. Update models in [backend/models.py](mdc:backend/models.py)
+3. Test with [backend/drop_schema.sql](mdc:backend/drop_schema.sql) if needed
+
+## Debugging & Testing
+
+### Frontend Debugging
+- Next.js dev server runs on port 3000
+- Use browser dev tools for React debugging
+- Check console for auth and API errors
+
+### Backend Debugging
+- FastAPI dev server runs on port 8000
+- Auto-generated docs at `http://localhost:8000/docs`
+- Use FastAPI's automatic validation errors
+- Check server logs for detailed error traces
+
+### Demo Mode
+The app automatically falls back to demo mode when Supabase isn't configured, making it easy to develop UI features without backend setup.

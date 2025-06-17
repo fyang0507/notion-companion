@@ -11,7 +11,17 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 
 **Frontend**: Next.js 13.5.1 with App Router, TypeScript, Tailwind CSS, shadcn/ui components
 **Backend**: FastAPI (Python with uv package manager), Supabase (PostgreSQL + pgvector), OpenAI integration
-**Key Features**: Vector search, streaming chat, Notion webhook synchronization, multi-workspace support
+**Package Management**: pnpm for Node.js dependencies, uv for Python dependencies
+**Key Features**: Vector search, streaming chat, Notion webhook synchronization, multi-workspace support, demo mode
+
+## Project Structure
+
+- [app/](mdc:app/) - Next.js App Router pages and layouts
+- [backend/](mdc:backend/) - FastAPI application with routers and services
+- [components/](mdc:components/) - React components including extensive shadcn/ui library
+- [hooks/](mdc:hooks/) - Custom React hooks for state management
+- [lib/](mdc:lib/) - Utility functions and API clients
+- [types/](mdc:types/) - TypeScript type definitions
 
 ## Development Commands
 
@@ -19,7 +29,7 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `npm run dev` - Frontend only (port 3000)
 - `npm run backend` - Backend only (port 8000) 
 - `npm run dev:full` - Both frontend and backend concurrently
-- `make dev` - Alternative using Makefile
+- `make dev` - Alternative using [Makefile](mdc:Makefile)
 
 ### Build & Lint
 - `npm run build` - Build Next.js for production
@@ -27,4 +37,9 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 
 ### Setup
 - `make install` - Install both Python (uv) and Node (pnpm) dependencies
-- `make setup-env` - Create environment file template
+- `make setup-env` - Create environment file templates
+- `make sync-notion` - Sync Notion databases using [sync_notion_databases.sh](mdc:backend/sync_notion_databases.sh)
+
+### Database & Backend
+- [backend/drop_schema.sql](mdc:backend/drop_schema.sql) - Drop database schema
+- [backend/schema.sql](mdc:backend/schema.sql) - Database schema definition

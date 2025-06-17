@@ -7,17 +7,54 @@ alwaysApply: false
 
 ## Required Environment Variables
 
-### Frontend Environment Variables
-- `NEXT_PUBLIC_API_BASE_URL` - Base URL for the backend API
+### Frontend Environment Variables (.env.local)
+- `NEXT_PUBLIC_API_BASE_URL` - Base URL for the backend API (default: http://localhost:8000)
 - `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
 
-### Backend Environment Variables
+### Backend Environment Variables (backend/.env)
 - `OPENAI_API_KEY` - OpenAI API key for embeddings and chat
 - Supabase credentials for database access
+- See [backend/.env.example](mdc:backend/.env.example) for complete configuration
+
+## Installation & Setup
+
+### Prerequisites
+- Node.js with pnpm package manager
+- Python with uv package manager
+- Supabase account and project
+
+### Quick Setup
+```bash
+make install      # Install all dependencies
+make setup-env    # Create environment file templates
+make dev          # Start development servers
+```
+
+### Manual Setup
+```bash
+# Install Python dependencies
+cd backend && uv venv .venv && uv pip install -r requirements.in
+
+# Install Node.js dependencies  
+pnpm install
+
+# Start development
+pnpm run dev:full  # or make dev
+```
+
+## Demo Mode
+The application supports demo mode when Supabase is not configured. The [use-auth.ts](mdc:hooks/use-auth.ts) hook automatically falls back to demo mode with mock user data.
 
 ## Testing & Quality Guidelines
 
 1. Always run `npm run lint` before committing changes
-2. The application uses static export configuration
+2. The application uses static export configuration in [next.config.js](mdc:next.config.js)
 3. Ensure all features work without server-side rendering
+4. Backend uses FastAPI with automatic OpenAPI documentation at `/docs`
+
+## Configuration Files
+- [package.json](mdc:package.json) - Node.js dependencies and scripts
+- [backend/requirements.txt](mdc:backend/requirements.txt) - Python dependencies
+- [tailwind.config.ts](mdc:tailwind.config.ts) - Tailwind CSS configuration
+- [components.json](mdc:components.json) - shadcn/ui component configuration
