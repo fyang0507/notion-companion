@@ -21,6 +21,10 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false);
   
   const hasWorkspaces = workspaces.length > 0;
+  
+  // Check if database is configured (Supabase setup)
+  const isDatabaseConfigured = process.env.NEXT_PUBLIC_SUPABASE_URL && 
+    process.env.NEXT_PUBLIC_SUPABASE_URL !== 'your_supabase_url_here';
 
   // Check if mobile on mount and resize
   useEffect(() => {
@@ -36,6 +40,13 @@ export default function Home() {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Auto-start global chat when database is configured and user is ready
+  useEffect(() => {
+    if (isDatabaseConfigured && user && initialized && !workspacesLoading && !selectedWorkspace) {
+      setSelectedWorkspace('global');
+    }
+  }, [isDatabaseConfigured, user, initialized, workspacesLoading, selectedWorkspace]);
 
 
   const handleNewChat = () => {
@@ -81,8 +92,9 @@ export default function Home() {
     return <LoadingScreen message="Checking your workspaces..." />;
   }
 
-  // Show welcome screen if user has no workspaces connected
-  if (!hasWorkspaces) {
+  // Show welcome screen only if database is not configured
+  // When database is configured, we auto-start the chat interface
+  if (!isDatabaseConfigured) {
     return (
       <div className="h-screen flex flex-col">
         <Header 
