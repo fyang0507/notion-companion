@@ -29,6 +29,7 @@ This directory contains scripts for syncing multiple Notion databases simultaneo
 ## Files Overview
 
 - `sync_databases.py` - Main Python script that handles the database synchronization
+- `check_active_databases.py` - Script to check active databases from Supabase
 - `../sync_notion_databases.sh` - Convenient wrapper shell script
 - `../config/databases.toml` - Configuration file defining which databases to sync (TOML format)
 - `../config/databases.example.toml` - Example configuration file
@@ -73,7 +74,26 @@ log_file = "database_sync.log"           # Log file location
 
 ## Usage Examples
 
-### Basic Usage
+### Database Check
+
+Check what databases are currently stored in Supabase:
+
+```bash
+# Check active databases
+cd backend
+python scripts/check_active_databases.py
+
+# Or run it directly
+./scripts/check_active_databases.py
+```
+
+This script will:
+- Connect to your Supabase database using environment variables
+- Display all workspaces and their status
+- Show all database schemas with document counts
+- Provide summary statistics
+
+### Basic Sync Usage
 
 ```bash
 # Basic sync (reads NOTION_ACCESS_TOKEN from environment or .env file)
