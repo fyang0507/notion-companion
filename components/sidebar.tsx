@@ -15,10 +15,12 @@ import {
   AlertCircle,
   Zap,
   MessageSquarePlus,
-  BarChart3
+  BarChart3,
+  Database
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
+import { useNotionDatabases } from '@/hooks/use-notion-databases';
 import { RecentChats } from '@/components/recent-chats';
 import Link from 'next/link';
 
@@ -32,6 +34,7 @@ interface SidebarProps {
 export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onStartGlobalChat }: SidebarProps) {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const { connection, isConnected, syncNotion } = useNotionConnection();
+  const { databases, loading: databasesLoading } = useNotionDatabases();
 
   const handleSync = async () => {
     if (!isConnected) return;
@@ -148,31 +151,69 @@ export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onSta
 
           <Separator />
 
-          {/* Notion Connection */}
+          {/* Databases */}
           <div className="space-y-2">
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Your Workspace</h3>
+            <h3 className="text-sm font-medium text-muted-foreground mb-2">Your Databases</h3>
             {isConnected && connection ? (
-              <div className="p-3 rounded-lg border bg-accent/50">
-                <div className="flex items-center gap-2 mb-1">
-                  <Book className="h-4 w-4" />
-                  <span className="font-medium text-sm">{connection.name}</span>
-                  <Badge variant="outline" className="text-xs">
-                    <CheckCircle className="h-3 w-3 mr-1 text-green-500" />
-                    Connected
-                  </Badge>
+              <div className="space-y-2">
+                {/* Workspace Header */}
+                <div className="p-3 rounded-lg border bg-accent/50">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Book className="h-4 w-4" />
+                    <span className="font-medium text-sm">{connection.name}</span>
+                    <Badge variant="outline" className="text-xs">
+                      <CheckCircle className="h-3 w-3 mr-1 text-green-500" />
+                      Connected
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {connection.document_count || 0} documents • {connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleDateString() : 'Never synced'}
+                  </p>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {connection.document_count || 0} documents • {connection.last_sync_at ? new Date(connection.last_sync_at).toLocaleDateString() : 'Never synced'}
-                </p>
+
+                {/* Databases List */}
+                {databasesLoading ? (
+                  <div className="p-3 rounded-lg border bg-muted/30">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Loading databases...</span>
+                    </div>
+                  </div>
+                ) : databases.length > 0 ? (
+                  <div className="space-y-1">
+                    {databases.map((database) => (
+                      <div key={database.database_id} className="p-2 rounded-lg border bg-background hover:bg-accent/30 transition-colors">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Database className="h-3 w-3 text-muted-foreground" />
+                          <span className="text-sm font-medium truncate">{database.database_name}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {database.document_count || 0} documents
+                          {database.last_analyzed_at && ` • ${new Date(database.last_analyzed_at).toLocaleDateString()}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg border bg-muted/30">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Database className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">No databases found</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Sync your databases to see available databases
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-3 rounded-lg border bg-muted/30">
                 <div className="flex items-center gap-2 mb-1">
                   <Book className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium text-sm text-muted-foreground">No workspace connected</span>
+                  <span className="font-medium text-sm text-muted-foreground">No databases connected</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Connect your Notion workspace to get started
+                  Connect your Notion databases to get started
                 </p>
               </div>
             )}

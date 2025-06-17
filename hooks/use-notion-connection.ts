@@ -40,22 +40,30 @@ export function useNotionConnection() {
       setLoading(true)
       setError(null)
 
-      // Fetch the user's primary workspace (first active one) with document count
+      // Fetch the active workspace (single-user application)
       const { data: workspaceData, error: workspaceError } = await supabase
         .from('workspaces')
         .select(`
           id,
           name,
-          icon,
-          notion_workspace_id,
+          notion_access_token,
           is_active,
-          last_sync_at,
-          documents(count)
+          last_sync_at
         `)
-        .eq('user_id', user.id)
         .eq('is_active', true)
         .limit(1)
         .single()
+
+      let documentCount = 0
+      if (workspaceData) {
+        // Get document count separately
+        const { count } = await supabase
+          .from('documents')
+          .select('*', { count: 'exact', head: true })
+          .eq('workspace_id', workspaceData.id)
+        
+        documentCount = count || 0
+      }
 
       if (workspaceError) {
         // No workspace found is not an error, just means not connected
@@ -70,11 +78,10 @@ export function useNotionConnection() {
         const connectionData: NotionConnection = {
           id: workspaceData.id,
           name: workspaceData.name,
-          icon: workspaceData.icon,
-          notion_workspace_id: workspaceData.notion_workspace_id,
+          notion_workspace_id: workspaceData.id, // Use workspace id as notion workspace id
           is_active: workspaceData.is_active,
           last_sync_at: workspaceData.last_sync_at,
-          document_count: workspaceData.documents?.[0]?.count || 0,
+          document_count: documentCount,
           status: getConnectionStatus(workspaceData.last_sync_at)
         }
         setConnection(connectionData)
@@ -94,14 +101,13 @@ export function useNotionConnection() {
     if (!supabase) throw new Error('Supabase not configured')
 
     try {
-      // Call backend API to connect Notion workspace
+      // Call backend API to connect Notion workspace (single-user app)
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/notion/connect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_id: user.id,
           notion_token: notionToken
         })
       })

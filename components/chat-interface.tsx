@@ -25,6 +25,8 @@ import { ChatFilterBar, ChatFilter } from '@/components/chat-filter-bar';
 import { ChatMessage } from '@/types/chat';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { apiClient } from '@/lib/api';
+import { useNotionConnection } from '@/hooks/use-notion-connection';
+import { useNotionDatabases } from '@/hooks/use-notion-databases';
 
 interface ChatInterfaceProps {
   onBackToHome?: () => void;
@@ -77,6 +79,9 @@ const availableModels: AIModel[] = [
 ];
 
 export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
+  const { connection, isConnected } = useNotionConnection();
+  const { databases } = useNotionDatabases();
+  
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -93,7 +98,7 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
   const [selectedModel, setSelectedModel] = useState<AIModel>(availableModels[0]); // Default to GPT-4.1 Mini
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [filters, setFilters] = useState<ChatFilter>({
-    workspaces: [], // No workspace selection needed - use user's connected workspace
+    workspaces: [], // Single workspace model - filters work within the connected workspace
     documentTypes: [],
     dateRange: {},
     authors: [],
@@ -113,12 +118,13 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Available workspaces (in a real app, this would come from props or API)
-  const availableWorkspaces = [
-    { id: 'ws-1', name: 'Product Documentation', documentCount: 156 },
-    { id: 'ws-2', name: 'Meeting Notes', documentCount: 43 },
-    { id: 'ws-3', name: 'Project Roadmap', documentCount: 12 }
-  ];
+  // Convert databases to workspace format for filter bar compatibility
+  // In single workspace model, each database acts like a "workspace" for filtering
+  const availableWorkspaces = databases.map(db => ({
+    id: db.database_id,
+    name: db.database_name,
+    documentCount: db.document_count || 0
+  }));
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -236,12 +242,14 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
     const activeFilters = [];
     
     if (filters.workspaces.length > 0) {
-      const workspaceNames = filters.workspaces.map(id => 
+      const databaseNames = filters.workspaces.map(id => 
         availableWorkspaces.find(w => w.id === id)?.name
       ).filter(Boolean);
-      activeFilters.push(`in ${workspaceNames.join(', ')}`);
+      activeFilters.push(`in ${databaseNames.join(', ')}`);
+    } else if (isConnected && connection) {
+      activeFilters.push(`across ${connection.name}`);
     } else {
-      activeFilters.push('across all workspaces');
+      activeFilters.push('across all content');
     }
 
     if (filters.documentTypes.length > 0) {
@@ -252,7 +260,7 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
       activeFilters.push(`matching "${filters.searchQuery}"`);
     }
 
-    return activeFilters.length > 0 ? `(${activeFilters.join(', ')})` : '';
+    return activeFilters.length > 0 ? ` (${activeFilters.join(', ')})` : '';
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -275,15 +283,15 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
 
   const getWorkspaceDisplayName = () => {
     if (filters.workspaces.length === 0) {
-      return 'AI Chat';
+      return isConnected && connection ? connection.name : 'AI Chat';
     }
     
     if (filters.workspaces.length === 1) {
-      const workspace = availableWorkspaces.find(w => w.id === filters.workspaces[0]);
-      return workspace ? `${workspace.name}` : 'AI Chat';
+      const database = availableWorkspaces.find(w => w.id === filters.workspaces[0]);
+      return database ? `${database.name}` : 'AI Chat';
     }
     
-    return `${filters.workspaces.length} Workspaces`;
+    return `${filters.workspaces.length} Databases`;
   };
 
   return (

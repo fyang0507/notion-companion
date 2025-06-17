@@ -303,12 +303,12 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
   const aggregatedMetadata = getAggregatedMetadata();
 
   const getWorkspaceDisplayText = () => {
-    if (isGlobalMode) return 'All Content';
+    if (isGlobalMode) return 'All Databases';
     if (filters.workspaces.length === 1) {
-      const workspace = availableWorkspaces.find(w => w.id === filters.workspaces[0]);
-      return workspace?.name || 'Unknown Workspace';
+      const database = availableWorkspaces.find(w => w.id === filters.workspaces[0]);
+      return database?.name || 'Unknown Database';
     }
-    return `${filters.workspaces.length} Workspaces`;
+    return `${filters.workspaces.length} Databases`;
   };
 
   // Determine if filters are active (excluding workspace selection)
@@ -343,7 +343,7 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
           <PopoverContent className="w-80" align="start">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h4 className="font-medium">Select Workspaces</h4>
+                <h4 className="font-medium">Select Databases</h4>
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" onClick={selectAllWorkspaces}>
                     Select All
@@ -355,21 +355,21 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
               </div>
               
               <div className="space-y-2 max-h-60 overflow-y-auto">
-                {/* All Workspaces Option */}
+                {/* All Databases Option */}
                 <div className="flex items-center space-x-2 p-2 rounded-lg border bg-muted/50">
                   <Checkbox
-                    id="all-workspaces"
+                    id="all-databases"
                     checked={isGlobalMode}
                     onCheckedChange={() => clearWorkspaces()}
                   />
                   <label
-                    htmlFor="all-workspaces"
+                    htmlFor="all-databases"
                     className="flex-1 text-sm font-medium leading-none cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <Globe className="h-4 w-4" />
-                        <span>All Content</span>
+                        <span>All Databases</span>
                       </div>
                       <Badge variant="outline" className="text-xs">
                         {availableWorkspaces.reduce((sum, w) => sum + w.documentCount, 0)} docs
@@ -380,25 +380,25 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
 
                 <Separator />
 
-                {/* Individual Workspaces */}
-                {availableWorkspaces.map(workspace => (
-                  <div key={workspace.id} className="flex items-center space-x-2">
+                {/* Individual Databases */}
+                {availableWorkspaces.map(database => (
+                  <div key={database.id} className="flex items-center space-x-2">
                     <Checkbox
-                      id={workspace.id}
-                      checked={filters.workspaces.includes(workspace.id)}
-                      onCheckedChange={() => toggleWorkspace(workspace.id)}
+                      id={database.id}
+                      checked={filters.workspaces.includes(database.id)}
+                      onCheckedChange={() => toggleWorkspace(database.id)}
                     />
                     <label
-                      htmlFor={workspace.id}
+                      htmlFor={database.id}
                       className="flex-1 text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           <Database className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <span className="truncate">{workspace.name}</span>
+                          <span className="truncate">{database.name}</span>
                         </div>
                         <Badge variant="outline" className="text-xs flex-shrink-0">
-                          {workspace.documentCount} docs
+                          {database.documentCount} docs
                         </Badge>
                       </div>
                     </label>
@@ -455,17 +455,17 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
       {/* Active Filters Display */}
       {activeFilterCount > 0 && (
         <div className="flex flex-wrap gap-2">
-          {filters.workspaces.map(workspaceId => {
-            const workspace = availableWorkspaces.find(w => w.id === workspaceId);
-            return workspace ? (
-              <Badge key={workspaceId} variant="secondary" className="gap-1 text-xs">
+          {filters.workspaces.map(databaseId => {
+            const database = availableWorkspaces.find(w => w.id === databaseId);
+            return database ? (
+              <Badge key={databaseId} variant="secondary" className="gap-1 text-xs">
                 <Database className="h-3 w-3" />
-                <span className="truncate max-w-[100px]">{workspace.name}</span>
+                <span className="truncate max-w-[100px]">{database.name}</span>
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-4 w-4 p-0 hover:bg-transparent"
-                  onClick={() => toggleWorkspace(workspaceId)}
+                  onClick={() => toggleWorkspace(databaseId)}
                 >
                   <X className="h-3 w-3" />
                 </Button>
