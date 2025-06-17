@@ -4,10 +4,11 @@ A production-ready AI-powered knowledge assistant that connects to your Notion w
 
 ## Features
 
-- **Real-time Notion Integration**: Automatic webhook-based synchronization with your Notion workspace
-- **Intelligent Search**: Hybrid vector and semantic search with Cohere reranking
-- **AI Chat Interface**: Stream-enabled chat with GPT-4 and source citations
-- **Token Management**: Per-user monthly quotas and usage tracking
+- **Single Workspace Integration**: Streamlined connection to your primary Notion workspace
+- **Database-Level Organization**: Filter and search across individual Notion databases
+- **Intelligent Search**: Hybrid vector and semantic search with embeddings
+- **AI Chat Interface**: Stream-enabled chat with multiple AI models and source citations
+- **Real-time Synchronization**: Automatic syncing of Notion content changes
 - **Responsive Design**: Modern UI with dark/light theme support
 - **Production Ready**: Built for scale with proper error handling and monitoring
 
@@ -80,37 +81,41 @@ npm run backend
 
 ### Database Setup
 
-The application uses Supabase with the following schema:
+The application uses Supabase with a single-user schema optimized for individual workspace management:
 
-- `users` - User accounts and token quotas
-- `workspaces` - Connected Notion workspaces
-- `documents` - Processed pages with embeddings
-- `chat_sessions` - Chat history and context
-- `api_usage` - Token usage tracking
+- `workspaces` - Your connected Notion workspace
+- `database_schemas` - Individual Notion databases within your workspace
+- `documents` - Processed pages with embeddings and metadata
+- `document_chunks` - Chunked content for large documents
+- `document_metadata` - Extracted fields from Notion properties
+- `multimedia_assets` - Images, files, and other media content
+- `search_analytics` - Query tracking and performance metrics
 
-Create the required tables and enable RLS policies using the Supabase dashboard.
+Deploy the schema using `backend/schema.sql` in your Supabase project before first sync.
 
 ## Usage
 
 ### Connecting Notion
 
 1. Navigate to the application and sign in
-2. Click "Connect Notion Workspace"
+2. Connect your primary Notion workspace
 3. Authorize the integration in Notion
-4. Select workspaces to sync
+4. Sync automatically discovers and imports your databases
 
 ### Chat Interface
 
-- Ask questions about your Notion content
+- Ask questions about your Notion content across all databases
+- Filter by specific databases for targeted search
 - Get responses with source citations
-- View real-time token usage
-- Access chat history
+- Stream-enabled chat with multiple AI model options
+- Access chat history and conversation context
 
-### Search
+### Database Management
 
-- Semantic search across all documents
-- Hybrid ranking with similarity scores
-- Filter by workspace or document type
+- View all connected Notion databases in the sidebar
+- See document counts and sync status for each database
+- Filter chat and search by specific databases
+- Real-time updates when Notion content changes
 
 ## API Endpoints
 
@@ -121,18 +126,18 @@ The FastAPI backend provides the following endpoints (served at `http://localhos
 POST /api/chat
 {
   "messages": [...],
-  "workspaceId": "workspace-id",
-  "userId": "user-id"
+  "database_filters": ["database-id"],
+  "user_id": "user-id"
 }
 ```
-Returns streaming SSE response with chat content.
+Returns streaming SSE response with chat content and citations.
 
 ### Search
 ```
 POST /api/search
 {
   "query": "search terms",
-  "workspaceId": "workspace-id",
+  "database_filters": ["database-id"],
   "limit": 10
 }
 ```
@@ -197,10 +202,11 @@ Processes Notion page updates, creation, and deletion events.
 
 ### Key Components
 
-- `ChatInterface` - Main chat UI with streaming
-- `Sidebar` - Workspace and chat navigation
+- `ChatInterface` - Main chat UI with streaming and database filtering
+- `ChatFilterBar` - Database selection and content filtering
+- `Sidebar` - Database listing and navigation
 - `MessageCitations` - Source reference display
-- `TokenUsageIndicator` - Usage tracking UI
+- `NotionDatabases` - Real-time database management
 
 ## Contributing
 

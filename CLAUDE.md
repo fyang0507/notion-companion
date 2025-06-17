@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Notion Companion is a production-ready AI-powered knowledge assistant that connects to Notion workspaces, providing intelligent search and chat capabilities with real-time synchronization. It's a full-stack RAG (Retrieval-Augmented Generation) application.
+Notion Companion is a production-ready AI-powered knowledge assistant that connects to your primary Notion workspace, providing intelligent search and chat capabilities with real-time synchronization. It's a full-stack RAG (Retrieval-Augmented Generation) application optimized for single-user, multi-database workflows.
 
 ## Tech Stack
 
 **Frontend**: Next.js 13.5.1 with App Router, TypeScript, Tailwind CSS, shadcn/ui components
 **Backend**: FastAPI (Python with uv package manager), Supabase (PostgreSQL + pgvector), OpenAI integration
-**Key Features**: Vector search, streaming chat, Notion webhook synchronization, multi-workspace support
+**Key Features**: Vector search, streaming chat, Notion webhook synchronization, single workspace with multi-database filtering
 
 ## Development Commands
 
@@ -66,7 +66,9 @@ Enhanced V2 schema with hybrid metadata approach:
 
 ### Frontend Patterns
 - React components with TypeScript and Tailwind CSS
-- Custom hooks for state management (`useAuth`, `useToast`)
+- Custom hooks for state management (`useAuth`, `useNotionConnection`, `useNotionDatabases`)
+- Real-time data fetching with Supabase integration
+- Database-level filtering in chat and search interfaces
 - Theme switching via next-themes (system/light/dark)
 - Responsive design with mobile-first approach
 
@@ -81,7 +83,35 @@ Configure models in `backend/config/models.toml`:
 - Set `ENVIRONMENT=production` for higher quality models in prod
 - Modify model selections directly in the TOML file
 
+## Recent Architecture Changes
+
+### Single Workspace Model (v2.0)
+The application has been simplified from a multi-workspace to a single workspace architecture:
+
+- **Frontend**: Removed workspace selection complexity, now focuses on database-level filtering
+- **Database**: Single workspace per user with multiple databases within that workspace
+- **Filtering**: Chat and search filters now work at the database level rather than workspace level
+- **Hooks**: `useNotionConnection` manages single workspace, `useNotionDatabases` handles database listing
+- **UI**: Sidebar shows connected databases with document counts instead of multiple workspaces
+
+### Key Components Updated
+- `ChatInterface` - Now uses real database connections instead of placeholder data
+- `ChatFilterBar` - Updated terminology from "workspaces" to "databases"
+- `Sidebar` - Shows actual connected databases with real-time data
+- Database queries - Fixed for single-user schema without user_id filtering
+
 ## Testing & Quality
 
 Always run `npm run lint` before committing changes.
 The application uses static export configuration, so ensure all features work without server-side rendering.
+
+## Future Considerations
+
+### Multi-Workspace Support
+The current single workspace model could be extended to support multiple workspaces in the future:
+- Add user_id back to workspace queries
+- Restore workspace selection UI components  
+- Update filtering logic to handle workspace + database combinations
+- Consider workspace-level permissions and access controls
+
+This simplified model was chosen for initial deployment and can be expanded based on user needs.
