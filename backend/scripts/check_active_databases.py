@@ -23,7 +23,7 @@ class DatabaseChecker:
     def init_connection(self):
         """Initialize Supabase connection using environment variables"""
         # Load environment variables from .env file
-        load_dotenv()
+        load_dotenv(dotenv_path="../../.env")
         
         supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
         supabase_key = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")

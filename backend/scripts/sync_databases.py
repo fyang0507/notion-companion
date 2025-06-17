@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 sys.path.append(str(Path(__file__).parent.parent))
 
 # Load environment variables
-load_dotenv()
+load_dotenv(dotenv_path="../../.env")
 
 from database import get_db, init_db
 from services.notion_service import NotionService

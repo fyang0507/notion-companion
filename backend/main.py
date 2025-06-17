@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from routers import chat, search, notion_webhook, bootstrap
 from database import init_db
 
-load_dotenv()
+load_dotenv(dotenv_path="../.env")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
