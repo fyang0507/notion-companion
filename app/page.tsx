@@ -20,9 +20,11 @@ export default function Home() {
   const [chatKey, setChatKey] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
   
-  // Check if database is configured (Supabase setup)
-  const isDatabaseConfigured = process.env.NEXT_PUBLIC_SUPABASE_URL && 
-    process.env.NEXT_PUBLIC_SUPABASE_URL !== 'your_supabase_url_here';
+  // Check if we have a backend configured (API base URL is set)
+  const isBackendConfigured = process.env.NEXT_PUBLIC_API_BASE_URL;
+  
+  // For now, since we have backend configured, always show chat interface
+  // Later we can add checks for actual Notion connection status
 
   // Check if mobile on mount and resize
   useEffect(() => {
@@ -39,12 +41,12 @@ export default function Home() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Auto-start global chat when database is configured and user is ready
+  // Auto-start global chat when backend is configured and user is ready
   useEffect(() => {
-    if (isDatabaseConfigured && user && initialized && !connectionLoading && !selectedWorkspace) {
+    if (isBackendConfigured && user && initialized && !connectionLoading && !selectedWorkspace) {
       setSelectedWorkspace('global');
     }
-  }, [isDatabaseConfigured, user, initialized, connectionLoading, selectedWorkspace]);
+  }, [isBackendConfigured, user, initialized, connectionLoading, selectedWorkspace]);
 
 
   const handleNewChat = () => {
@@ -90,9 +92,9 @@ export default function Home() {
     return <LoadingScreen message="Checking your Notion connection..." />;
   }
 
-  // Show welcome screen only if database is not configured
-  // When database is configured, we auto-start the chat interface
-  if (!isDatabaseConfigured) {
+  // Show welcome screen only if backend is not configured
+  // When backend is configured, we auto-start the chat interface
+  if (!isBackendConfigured) {
     return (
       <div className="h-screen flex flex-col">
         <Header 
