@@ -17,9 +17,7 @@ async def chat_endpoint(request: ChatRequest):
     
     try:
         logger.info("Chat request received", extra={
-            'message_count': len(request.messages),
-            'selected_databases': request.selected_databases,
-            'selected_workspaces': request.selected_workspaces
+            'message_count': len(request.messages)
         })
         
         db = get_db()
@@ -96,18 +94,47 @@ async def chat_endpoint(request: ChatRequest):
         all_sources.sort(key=lambda x: x['similarity'], reverse=True)
         top_sources = all_sources[:5]
         
+        # Check if no relevant documents were found
+        if not top_sources:
+            logger.info("No relevant documents found for user query", extra={
+                'query_preview': latest_user_message[:100] + "..." if len(latest_user_message) > 100 else latest_user_message,
+                'doc_results_count': len(doc_results),
+                'chunk_results_count': len(chunk_results)
+            })
+            
+            # Return response without routing to LLM
+            async def generate_no_results_stream() -> AsyncGenerator[str, None]:
+                no_results_message = "I couldn't find any relevant documents in your Notion workspace that match your query. Please try rephrasing your question or make sure the relevant content has been synced to your workspace."
+                yield f"data: {json.dumps({'content': no_results_message})}\n\n"
+                
+                total_duration = (time.time() - start_time) * 1000
+                logger.info("Chat request completed - no relevant documents", extra={
+                    'total_duration_ms': total_duration
+                })
+                
+                yield "data: [DONE]\n\n"
+            
+            return StreamingResponse(
+                generate_no_results_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                }
+            )
+        
         # Build context from top sources
         context = "\n\n".join([
             f"Source: {source['title']}\nContent: {source['content'][:500]}"
             for source in top_sources
-        ]) if top_sources else None
+        ])
         
         # Convert messages to dict format
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
         
         # Generate streaming response
         logger.info("Starting streaming response generation", extra={
-            'context_length': len(context) if context else 0,
+            'context_length': len(context),
             'top_sources_count': len(top_sources)
         })
         
@@ -123,7 +150,7 @@ async def chat_endpoint(request: ChatRequest):
                 stream_duration = (time.time() - stream_start) * 1000
                 log_performance("llm_streaming", stream_duration,
                                chunks_generated=chunks_generated,
-                               context_length=len(context) if context else 0)
+                               context_length=len(context))
                 
                 # After streaming content, send citations
                 if top_sources:
