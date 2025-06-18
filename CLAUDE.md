@@ -36,6 +36,20 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - Use quick server tests for full API testing (30 seconds max)
 - Test specific components instead of starting full servers when possible
 
+#### Comprehensive Logging System
+- **Log Files**: All logs stored in `logs/` directory with automatic rotation
+  - `app.log` - General application logs (JSON structured)
+  - `api.log` - API request/response logs with timing
+  - `errors.log` - Error-level logs only
+  - `performance.log` - Performance metrics and slow operations
+- **Frontend Logging**: Persistent localStorage logging with `lib/logger.ts`
+  - Use `<DebugLogs />` component to view/export frontend logs
+  - Request correlation IDs link frontend/backend logs
+- **Debugging Workflow**: When bugs occur, check log files first instead of restarting services
+  - Backend logs include request IDs, timing, context, and stack traces
+  - Frontend logs include API calls, component lifecycle, and errors
+  - Correlation IDs allow tracing requests across entire stack
+
 ### Setup
 - `make install` - Install both Python (uv) and Node (pnpm) dependencies
 - `make setup-env` - Create environment file template
