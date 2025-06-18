@@ -13,8 +13,6 @@ import {
   Loader2, 
   ExternalLink,
   Copy,
-  ThumbsUp,
-  ThumbsDown,
   ArrowLeft,
   ChevronDown,
   Check
@@ -106,6 +104,7 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
     searchQuery: ''
   });
   const [isMobile, setIsMobile] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -117,6 +116,17 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  const handleCopyMessage = async (text: string, messageId: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedMessageId(messageId);
+      // Reset the copied state after 1 second
+      setTimeout(() => setCopiedMessageId(null), 500);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
 
   // Convert databases to workspace format for filter bar compatibility
   // In single workspace model, each database acts like a "workspace" for filtering
@@ -434,14 +444,18 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
                 {/* Message Actions */}
                 {message.type === 'bot' && !streamingMessageId && message.content && !isMobile && (
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                      <Copy className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                      <ThumbsUp className="h-3 w-3" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6">
-                      <ThumbsDown className="h-3 w-3" />
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-6 w-6"
+                      onClick={() => handleCopyMessage(message.content, message.id)}
+                      title={copiedMessageId === message.id ? "Copied!" : "Copy message"}
+                    >
+                      {copiedMessageId === message.id ? (
+                        <Check className="h-3 w-3 text-600 animate-in fade-in-0 zoom-in-75 duration-50" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
                     </Button>
                   </div>
                 )}
