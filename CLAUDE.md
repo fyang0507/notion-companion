@@ -29,10 +29,18 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `npm run build` - Build Next.js for production
 - `npm run lint` - Run ESLint validation
 
+### Testing & Debugging
+- **See `backend/docs/TESTING_BEST_PRACTICES.md` for detailed testing patterns**
+- **IMPORTANT**: Avoid `uvicorn &` commands (cause 2-minute timeouts)
+- Use component testing for database/OpenAI integration (5-15 seconds)
+- Use quick server tests for full API testing (30 seconds max)
+- Test specific components instead of starting full servers when possible
+
 ### Setup
 - `make install` - Install both Python (uv) and Node (pnpm) dependencies
 - `make setup-env` - Create environment file template
 - Deploy `backend/schema.sql` in Supabase before first sync
+- **See `backend/docs/SCHEMA_DEPLOYMENT_TODO.md` for missing database functions**
 
 ## Architecture Patterns
 
@@ -118,4 +126,44 @@ This simplified model was chosen for initial deployment and can be expanded base
 
 ## Development Guidelines
 
+### Process Management
 - Every time you started a process to run, please kill the process at the end of investigation / message turn.
+- **NEVER use `uvicorn &` or similar background server commands** - they cause 2-minute timeouts
+
+### Testing Patterns
+- **Component Testing First**: Test database/OpenAI components directly before testing full API
+- **Incremental Testing**: Test only what changed, not everything at once
+- **Targeted Debugging**: Use specific test scripts for specific issues
+- **Reference**: See `backend/docs/TESTING_BEST_PRACTICES.md` for detailed patterns and examples
+
+### Common Testing Commands
+```bash
+# Database connectivity test (5 seconds)
+.venv/bin/python -c "import asyncio; from database import init_db; asyncio.run(init_db()); print('✓ DB OK')"
+
+# OpenAI integration test (10 seconds)  
+.venv/bin/python -c "import asyncio; from services.openai_service import get_openai_service; asyncio.run(get_openai_service().generate_embedding('test')); print('✓ OpenAI OK')"
+
+# Vector search test (15 seconds)
+.venv/bin/python -c "
+import asyncio
+from database import init_db, get_db
+from services.openai_service import get_openai_service
+
+async def test():
+    await init_db()
+    db = get_db()
+    openai_service = get_openai_service()
+    embedding = await openai_service.generate_embedding('test')
+    results = db.vector_search_for_single_workspace(embedding.embedding, 0.1, 3)
+    print(f'✓ Vector search: {len(results)} results')
+
+asyncio.run(test())
+"
+```
+
+### Documentation References
+- **Testing**: `backend/docs/TESTING_BEST_PRACTICES.md` - Avoid timeouts, test efficiently
+- **Schema Deployment**: `backend/docs/SCHEMA_DEPLOYMENT_TODO.md` - Missing database functions
+- **RAG Improvements**: `backend/docs/RAG_IMPROVEMENT_ROADMAP.md` - Future enhancements
+- **Multimedia Strategy**: `backend/docs/MULTIMEDIA_STRATEGY.md` - Media handling plans
