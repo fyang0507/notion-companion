@@ -514,3 +514,85 @@ AS $$
         (SELECT COUNT(*) FROM deleted_multimedia)
     )::integer;
 $$;
+
+-- ============================================================================
+-- SIMPLE SEARCH FUNCTIONS (for backward compatibility)
+-- ============================================================================
+
+-- Simple document similarity search function
+CREATE OR REPLACE FUNCTION match_documents(
+    query_embedding vector(1536),
+    workspace_id uuid,
+    match_threshold float DEFAULT 0.7,
+    match_count int DEFAULT 10
+)
+RETURNS TABLE (
+    id uuid,
+    title text,
+    content text,
+    similarity float,
+    metadata jsonb,
+    notion_page_id text,
+    page_url text
+)
+LANGUAGE sql STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT
+        d.id,
+        d.title,
+        CASE 
+            WHEN length(d.content) > 500 THEN left(d.content, 500) || '...'
+            ELSE d.content
+        END as content,
+        1 - (d.content_embedding <=> query_embedding) as similarity,
+        d.extracted_metadata as metadata,
+        d.notion_page_id,
+        d.page_url
+    FROM documents d
+    WHERE d.workspace_id = workspace_id
+        AND d.content_embedding IS NOT NULL
+        AND 1 - (d.content_embedding <=> query_embedding) > match_threshold
+    ORDER BY d.content_embedding <=> query_embedding
+    LIMIT match_count;
+$$;
+
+-- Simple chunk similarity search function
+CREATE OR REPLACE FUNCTION match_chunks(
+    query_embedding vector(1536),
+    workspace_id uuid,
+    match_threshold float DEFAULT 0.7,
+    match_count int DEFAULT 10
+)
+RETURNS TABLE (
+    chunk_id uuid,
+    document_id uuid,
+    chunk_content text,
+    chunk_index integer,
+    similarity float,
+    title text,
+    notion_page_id text,
+    page_url text
+)
+LANGUAGE sql STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT
+        dc.id as chunk_id,
+        dc.document_id,
+        dc.content as chunk_content,
+        dc.chunk_index,
+        1 - (dc.embedding <=> query_embedding) as similarity,
+        d.title,
+        d.notion_page_id,
+        d.page_url
+    FROM document_chunks dc
+    JOIN documents d ON dc.document_id = d.id
+    WHERE d.workspace_id = workspace_id
+        AND dc.embedding IS NOT NULL
+        AND 1 - (dc.embedding <=> query_embedding) > match_threshold
+    ORDER BY dc.embedding <=> query_embedding
+    LIMIT match_count;
+$$;

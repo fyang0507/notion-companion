@@ -7,14 +7,13 @@ export interface ChatMessage {
 
 export interface ChatRequest {
   messages: ChatMessage[];
-  workspaceId: string;
-  userId: string;
+  // Single-user, single-workspace app - no IDs needed
 }
 
 export interface SearchRequest {
   query: string;
-  workspaceId: string;
   limit?: number;
+  // Single-user, single-workspace app - no workspace ID needed
 }
 
 export interface SearchResult {

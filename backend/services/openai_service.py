@@ -7,7 +7,7 @@ from models import EmbeddingResponse, ChatResponse
 from config.model_config import get_model_config
 
 # Load environment variables
-load_dotenv(dotenv_path="../../.env")
+load_dotenv(dotenv_path="../.env")
 
 class OpenAIService:
     def __init__(self):

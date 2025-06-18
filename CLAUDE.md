@@ -115,3 +115,7 @@ The current single workspace model could be extended to support multiple workspa
 - Consider workspace-level permissions and access controls
 
 This simplified model was chosen for initial deployment and can be expanded based on user needs.
+
+## Development Guidelines
+
+- Every time you started a process to run, please kill the process at the end of investigation / message turn.

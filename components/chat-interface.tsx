@@ -184,8 +184,8 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
       }));
 
       const stream = await apiClient.sendChatMessage({
-        messages: apiMessages,
-        userId: 'user-1' // Replace with actual user ID
+        messages: apiMessages
+        // Single-user, single-workspace app - no IDs needed
       });
 
       const reader = stream.getReader();

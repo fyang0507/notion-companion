@@ -14,17 +14,15 @@ async def search_endpoint(request: SearchRequest):
         # Generate embedding for the search query
         embedding_response = await openai_service.generate_embedding(request.query)
         
-        # Search both documents and chunks
-        doc_results = db.vector_search(
+        # Search both documents and chunks (single-workspace app)
+        doc_results = db.vector_search_for_single_workspace(
             query_embedding=embedding_response.embedding,
-            workspace_id=request.workspaceId,
             match_threshold=0.7,
             match_count=request.limit
         )
         
-        chunk_results = db.vector_search_chunks(
+        chunk_results = db.vector_search_chunks_for_single_workspace(
             query_embedding=embedding_response.embedding,
-            workspace_id=request.workspaceId,
             match_threshold=0.7,
             match_count=request.limit
         )
