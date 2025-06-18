@@ -4,6 +4,8 @@ export interface Citation {
   url: string;
   preview: string;
   score: number;
+  type: 'document' | 'chunk';
+  metadata: Record<string, any>;
 }
 
 export interface ChatMessage {

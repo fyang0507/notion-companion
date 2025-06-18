@@ -42,10 +42,10 @@ interface AIModel {
 
 const availableModels: AIModel[] = [
   {
-    id: 'gpt-4.1-mini',
-    name: 'GPT-4.1 Mini',
+    id: 'gpt-4o-mini',
+    name: 'GPT-4o Mini',
     description: 'Fast and efficient for most tasks',
-    badge: 'GPT-4.1 Mini',
+    badge: 'GPT-4o Mini',
     cost: 'Low cost'
   },
   {
@@ -95,7 +95,7 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<AIModel>(availableModels[0]); // Default to GPT-4.1 Mini
+  const [selectedModel, setSelectedModel] = useState<AIModel>(availableModels[0]); // Default to GPT-4o Mini
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [filters, setFilters] = useState<ChatFilter>({
     workspaces: [], // Single workspace model - filters work within the connected workspace
@@ -154,22 +154,7 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
       type: 'bot',
       content: '',
       timestamp: new Date(),
-      citations: [
-        {
-          id: '1',
-          title: 'Product Roadmap Q4',
-          url: 'https://notion.so/example-page-1',
-          preview: 'Our Q4 roadmap focuses on three key areas: performance optimization, new integrations, and user experience improvements...',
-          score: 0.95
-        },
-        {
-          id: '2', 
-          title: 'API Documentation',
-          url: 'https://notion.so/example-page-2',
-          preview: 'The authentication endpoint requires a Bearer token in the Authorization header. Rate limits apply...',
-          score: 0.87
-        }
-      ]
+      citations: [] // Citations will be populated from API response
     };
 
     // Add the empty bot message and start streaming
@@ -214,6 +199,15 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
                   prev.map(msg => 
                     msg.id === botMessageId 
                       ? { ...msg, content: msg.content + parsed.content }
+                      : msg
+                  )
+                );
+              }
+              if (parsed.citations) {
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === botMessageId 
+                      ? { ...msg, citations: parsed.citations }
                       : msg
                   )
                 );

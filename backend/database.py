@@ -45,14 +45,18 @@ class Database:
     
     def vector_search(self, query_embedding: List[float], workspace_id: str, 
                           match_threshold: float = 0.7, match_count: int = 10) -> List[Dict[str, Any]]:
-        response = self.client.rpc('match_documents', {
-            'query_embedding': query_embedding,
-            'workspace_id': workspace_id,
-            'match_threshold': match_threshold,
-            'match_count': match_count
-        }).execute()
-        
-        return response.data
+        try:
+            # Try the hybrid_search_documents function that exists in the database
+            response = self.client.rpc('hybrid_search_documents', {
+                'query_embedding': query_embedding,
+                'workspace_id_param': workspace_id,
+                'match_threshold': match_threshold,
+                'match_count': match_count
+            }).execute()
+            return response.data
+        except Exception as e:
+            print(f"Error in vector_search: {e}")
+            return []
     
     def upsert_document(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
         response = self.client.table('documents').upsert(document_data).execute()
@@ -95,14 +99,14 @@ class Database:
     
     def vector_search_chunks(self, query_embedding: List[float], workspace_id: str, 
                                  match_threshold: float = 0.7, match_count: int = 10) -> List[Dict[str, Any]]:
-        response = self.client.rpc('match_chunks', {
-            'query_embedding': query_embedding,
-            'workspace_id': workspace_id,
-            'match_threshold': match_threshold,
-            'match_count': match_count
-        }).execute()
-        
-        return response.data
+        try:
+            # For now, return empty list since match_chunks function is not deployed
+            # User will need to deploy the full schema.sql to Supabase for chunk search
+            print(f"Chunk search not available - schema functions not deployed")
+            return []
+        except Exception as e:
+            print(f"Error in vector_search_chunks: {e}")
+            return []
     
     def vector_search_for_single_workspace(self, query_embedding: List[float], 
                                          match_threshold: float = 0.7, match_count: int = 10) -> List[Dict[str, Any]]:
