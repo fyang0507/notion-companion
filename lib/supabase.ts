@@ -25,36 +25,65 @@ export type Database = {
       workspaces: {
         Row: {
           id: string
-          user_id: string
-          notion_workspace_id: string
           name: string
-          icon?: string
-          is_active: boolean
-          last_sync_at?: string
+          notion_access_token: string
           created_at: string
           updated_at: string
+          last_sync_at?: string
+          is_active: boolean
         }
         Insert: {
           id?: string
-          user_id: string
-          notion_workspace_id: string
-          name: string
-          icon?: string
-          is_active?: boolean
-          last_sync_at?: string
+          name?: string
+          notion_access_token: string
           created_at?: string
           updated_at?: string
+          last_sync_at?: string
+          is_active?: boolean
         }
         Update: {
           id?: string
-          user_id?: string
-          notion_workspace_id?: string
           name?: string
-          icon?: string
-          is_active?: boolean
-          last_sync_at?: string
+          notion_access_token?: string
           created_at?: string
           updated_at?: string
+          last_sync_at?: string
+          is_active?: boolean
+        }
+      }
+      database_schemas: {
+        Row: {
+          database_id: string
+          workspace_id: string
+          database_name: string
+          notion_schema: any
+          field_definitions: any
+          queryable_fields: any
+          created_at: string
+          updated_at: string
+          last_analyzed_at?: string
+        }
+        Insert: {
+          database_id: string
+          workspace_id: string
+          database_name: string
+          notion_schema: any
+          field_definitions: any
+          queryable_fields: any
+          created_at?: string
+          updated_at?: string
+          last_analyzed_at?: string
+        }
+        Update: {
+          database_id?: string
+          workspace_id?: string
+          database_name?: string
+          notion_schema?: any
+          field_definitions?: any
+          queryable_fields?: any
+          created_at?: string
+          updated_at?: string
+          last_analyzed_at?: string
         }
       }
       documents: {

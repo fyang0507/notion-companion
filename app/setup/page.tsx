@@ -224,6 +224,8 @@ $$;`;
           </div>
         </div>
 
+
+
         {/* Prerequisites */}
         <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/50">
           <CardHeader>

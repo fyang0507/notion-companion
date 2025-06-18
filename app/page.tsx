@@ -10,7 +10,6 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { useAuth } from '@/hooks/use-auth';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
-import { AuthDialog } from '@/components/auth-dialog';
 
 export default function Home() {
   const { user, loading, initialized } = useAuth();
@@ -77,14 +76,9 @@ export default function Home() {
     setSidebarCollapsed(!sidebarCollapsed);
   };
 
-  // Show loading screen while checking authentication
+  // Show loading screen while initializing
   if (loading || !initialized) {
     return <LoadingScreen />;
-  }
-
-  // Show auth dialog if no user
-  if (!user) {
-    return <AuthDialog />;
   }
 
   // Show loading screen while checking Notion connection
