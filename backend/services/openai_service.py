@@ -141,6 +141,72 @@ Summary:"""
         summary = response.choices[0].message.content or ''
         return summary.strip()
     
+    async def generate_chat_title(self, messages: List[Dict[str, str]]) -> str:
+        """
+        Generate a concise, descriptive title for a chat session based on the conversation.
+        
+        Args:
+            messages: List of chat messages (user and assistant)
+            
+        Returns:
+            A concise title (max 50 characters) that describes the conversation topic
+        """
+        summarization_config = self.model_config.get_summarization_config()
+        performance_config = self.model_config.get_performance_config()
+        
+        # Add delay for rate limiting
+        await asyncio.sleep(performance_config.summarization_delay_seconds)
+        
+        # Take only the first few messages to determine the topic
+        first_messages = messages[:4]  # First 4 messages should be enough for topic identification
+        
+        # Build conversation context
+        conversation_text = ""
+        for msg in first_messages:
+            role = "User" if msg["role"] == "user" else "Assistant" 
+            conversation_text += f"{role}: {msg['content']}\n"
+        
+        prompt = f"""Based on this conversation, generate a concise, descriptive title that captures the main topic or question being discussed. 
+
+Guidelines:
+- Maximum 50 characters
+- Be specific and descriptive
+- Focus on the main topic/question
+- Use clear, simple language
+- No quotes or special formatting
+
+Conversation:
+{conversation_text}
+
+Title:"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=summarization_config.model,
+                messages=[{
+                    "role": "user", 
+                    "content": prompt
+                }],
+                temperature=0.3,  # Lower temperature for more consistent titles
+                max_tokens=20,    # Short response for titles
+            )
+            
+            title = response.choices[0].message.content or ''
+            title = title.strip().strip('"').strip("'")  # Remove quotes
+            
+            # Ensure it's not too long
+            if len(title) > 50:
+                title = title[:47] + "..."
+                
+            return title if title else "New Chat"
+            
+        except Exception as e:
+            # Fallback to simple title generation if AI fails
+            first_user_message = next((msg['content'] for msg in messages if msg['role'] == 'user'), '')
+            if first_user_message:
+                return first_user_message[:47] + "..." if len(first_user_message) > 50 else first_user_message
+            return "New Chat"
+    
     def get_token_limits(self) -> Dict[str, int]:
         """Get token limits for different operations."""
         limits_config = self.model_config.get_limits_config()

@@ -173,7 +173,6 @@ The current single workspace model could be extended to support multiple workspa
 This simplified model was chosen for initial deployment and can be expanded based on user needs.
 
 ## Documentation References
-- **Testing**: `backend/docs/TESTING_BEST_PRACTICES.md` - Avoid timeouts, test efficiently
 - **Schema Deployment**: `backend/docs/SCHEMA_DEPLOYMENT_TODO.md` - Missing database functions
 - **RAG Improvements**: `backend/docs/RAG_IMPROVEMENT_ROADMAP.md` - Future enhancements
 - **Multimedia Strategy**: `backend/docs/MULTIMEDIA_STRATEGY.md` - Media handling plans

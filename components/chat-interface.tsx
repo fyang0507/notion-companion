@@ -93,15 +93,16 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
     }
   ]);
 
-  // For now, let's use local state and sync with sessions when complete
-  const [messages, setMessages] = useState<ChatMessage[]>(
-    chatSessions?.currentMessages.length ? chatSessions.currentMessages : localMessages
-  );
-
-  // Sync messages when chat sessions change
+  // Use chat session messages when available, otherwise fall back to local state
+  const [fallbackMessages, setFallbackMessages] = useState<ChatMessage[]>(localMessages);
+  
+  // Get messages from chat sessions if available, otherwise use local state
+  const messages = chatSessions?.currentMessages || fallbackMessages;
+  
+  // Sync local messages when chat sessions change (for session loading)
   useEffect(() => {
-    if (chatSessions?.currentMessages.length) {
-      setMessages(chatSessions.currentMessages);
+    if (chatSessions?.currentMessages) {
+      setFallbackMessages(chatSessions.currentMessages);
     }
   }, [chatSessions?.currentMessages]);
   
@@ -172,7 +173,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
     if (chatSessions) {
       chatSessions.addMessage(userMessage);
     } else {
-      setMessages(prev => [...prev, userMessage]);
+      setFallbackMessages(prev => [...prev, userMessage]);
     }
     
     setInput('');
@@ -192,7 +193,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
     if (chatSessions) {
       chatSessions.addMessage(botMessage);
     } else {
-      setMessages(prev => [...prev, botMessage]);
+      setFallbackMessages(prev => [...prev, botMessage]);
     }
     setStreamingMessageId(botMessageId);
 
@@ -210,6 +211,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
 
       const reader = stream.getReader();
       const decoder = new TextDecoder();
+      let accumulatedContent = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -242,18 +244,16 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
             try {
               const parsed = JSON.parse(data);
               if (parsed.content) {
+                accumulatedContent += parsed.content;
                 if (chatSessions) {
-                  // Find current message content
-                  const currentMsg = chatSessions.currentMessages.find(m => m.id === botMessageId);
-                  const currentContent = currentMsg?.content || '';
                   chatSessions.updateMessage(botMessageId, { 
-                    content: currentContent + parsed.content 
+                    content: accumulatedContent 
                   });
                 } else {
-                  setMessages(prev => 
+                  setFallbackMessages(prev => 
                     prev.map(msg => 
                       msg.id === botMessageId 
-                        ? { ...msg, content: msg.content + parsed.content }
+                        ? { ...msg, content: accumulatedContent }
                         : msg
                     )
                   );
@@ -265,7 +265,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
                     citations: parsed.citations 
                   });
                 } else {
-                  setMessages(prev => 
+                  setFallbackMessages(prev => 
                     prev.map(msg => 
                       msg.id === botMessageId 
                         ? { ...msg, citations: parsed.citations }
@@ -287,7 +287,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       if (chatSessions) {
         chatSessions.updateMessage(botMessageId, { content: errorMessage });
       } else {
-        setMessages(prev => 
+        setFallbackMessages(prev => 
           prev.map(msg => 
             msg.id === botMessageId 
               ? { ...msg, content: errorMessage }

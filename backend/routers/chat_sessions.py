@@ -11,6 +11,7 @@ import uuid
 
 from database import get_db
 from logging_config import get_logger
+from services.openai_service import get_openai_service
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/chat-sessions", tags=["chat-sessions"])
@@ -93,10 +94,44 @@ def get_default_workspace_id(db):
         raise HTTPException(status_code=500, detail="Failed to get workspace")
 
 def generate_chat_title(first_message: str) -> str:
-    """Generate a chat title from the first user message."""
+    """Generate a simple chat title from the first user message (fallback)."""
     if len(first_message) <= 50:
         return first_message
     return first_message[:47] + "..."
+
+async def generate_ai_chat_title(session_id: str, db) -> str:
+    """Generate an AI-powered chat title based on conversation context."""
+    try:
+        # Get messages for this session
+        messages_query = """
+        SELECT role, content FROM chat_messages 
+        WHERE session_id = %s 
+        ORDER BY message_order ASC
+        LIMIT 6
+        """
+        
+        result = db.execute_query(messages_query, (session_id,))
+        
+        if not result or len(result) < 2:  # Need at least user + assistant message
+            return "New Chat"
+        
+        # Convert to format expected by OpenAI service
+        messages = [{"role": row['role'], "content": row['content']} for row in result]
+        
+        # Generate title using AI
+        openai_service = get_openai_service()
+        title = await openai_service.generate_chat_title(messages)
+        
+        return title
+        
+    except Exception as e:
+        logger.error(f"Failed to generate AI title for session {session_id}: {e}")
+        # Fallback to simple title if available
+        if result and len(result) > 0:
+            first_user_msg = next((row['content'] for row in result if row['role'] == 'user'), '')
+            if first_user_msg:
+                return generate_chat_title(first_user_msg)
+        return "New Chat"
 
 # ============================================================================
 # API ENDPOINTS
@@ -578,6 +613,36 @@ async def save_chat_session(
                     created_at=row['created_at'],
                     message_order=row['message_order']
                 ))
+        
+        # After saving messages, check if we should update the title
+        # Generate AI title if we have enough conversation context (at least 2 exchanges)
+        total_messages = start_order + len(messages)
+        if total_messages >= 3:  # At least user + assistant + user (or similar)
+            try:
+                # Check if title is still "New Chat" or generated from first message only
+                title_check_query = "SELECT title FROM chat_sessions WHERE id = %s"
+                title_result = db.execute_query(title_check_query, (session_id,))
+                
+                if title_result:
+                    current_title = title_result[0]['title']
+                    # Update title if it's default or looks like a simple first-message title
+                    if (current_title == "New Chat" or 
+                        (len(current_title) <= 50 and not current_title.endswith("..."))):
+                        
+                        # Generate AI-powered title
+                        ai_title = await generate_ai_chat_title(session_id, db)
+                        if ai_title and ai_title != "New Chat":
+                            update_title_query = """
+                            UPDATE chat_sessions 
+                            SET title = %s, updated_at = NOW()
+                            WHERE id = %s
+                            """
+                            db.execute_query(update_title_query, (ai_title, session_id))
+                            logger.info(f"Updated session {session_id} title to: {ai_title}")
+                            
+            except Exception as e:
+                logger.error(f"Failed to update AI title for session {session_id}: {e}")
+                # Don't fail the whole request if title generation fails
         
         logger.info(f"Saved {len(saved_messages)} messages to session {session_id}")
         return {"message": f"Saved {len(saved_messages)} messages", "messages": saved_messages}
