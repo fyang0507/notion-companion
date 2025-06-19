@@ -33,6 +33,70 @@ export interface SearchResponse {
   total: number;
 }
 
+export interface ChatSessionMessage {
+  id: string;
+  session_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  model_used?: string;
+  tokens_used?: number;
+  response_time_ms?: number;
+  citations: any[];
+  context_used: Record<string, any>;
+  created_at: string;
+  message_order: number;
+}
+
+export interface ChatSession {
+  id: string;
+  workspace_id: string;
+  title: string;
+  summary?: string;
+  status: string;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+  session_context: Record<string, any>;
+}
+
+export interface ChatSessionWithMessages {
+  session: ChatSession;
+  messages: ChatSessionMessage[];
+}
+
+export interface RecentChatSummary {
+  id: string;
+  title: string;
+  summary?: string;
+  message_count: number;
+  last_message_at: string;
+  created_at: string;
+  last_message_preview?: string;
+}
+
+export interface ChatSessionCreate {
+  title?: string;
+  summary?: string;
+  session_context?: Record<string, any>;
+}
+
+export interface ChatSessionUpdate {
+  title?: string;
+  summary?: string;
+  status?: string;
+}
+
+export interface ChatMessageCreate {
+  role: 'user' | 'assistant';
+  content: string;
+  model_used?: string;
+  tokens_used?: number;
+  response_time_ms?: number;
+  citations?: any[];
+  context_used?: Record<string, any>;
+}
+
 export class ApiClient {
   private baseUrl: string;
 
@@ -171,6 +235,42 @@ export class ApiClient {
 
   async processNotionWebhook(payload: any): Promise<{ success: boolean }> {
     const { data } = await this.makeRequest<{ success: boolean }>('POST', '/api/notion/webhook', payload);
+    return data;
+  }
+
+  // Chat Session Management
+  async getRecentChats(limit: number = 20): Promise<RecentChatSummary[]> {
+    const { data } = await this.makeRequest<RecentChatSummary[]>('GET', `/api/chat-sessions/recent?limit=${limit}`);
+    return data;
+  }
+
+  async createChatSession(sessionData: ChatSessionCreate): Promise<ChatSession> {
+    const { data } = await this.makeRequest<ChatSession>('POST', '/api/chat-sessions/', sessionData);
+    return data;
+  }
+
+  async getChatSession(sessionId: string): Promise<ChatSessionWithMessages> {
+    const { data } = await this.makeRequest<ChatSessionWithMessages>('GET', `/api/chat-sessions/${sessionId}`);
+    return data;
+  }
+
+  async updateChatSession(sessionId: string, updates: ChatSessionUpdate): Promise<ChatSession> {
+    const { data } = await this.makeRequest<ChatSession>('PUT', `/api/chat-sessions/${sessionId}`, updates);
+    return data;
+  }
+
+  async deleteChatSession(sessionId: string, softDelete: boolean = true): Promise<{ message: string }> {
+    const { data } = await this.makeRequest<{ message: string }>('DELETE', `/api/chat-sessions/${sessionId}?soft_delete=${softDelete}`);
+    return data;
+  }
+
+  async addMessageToSession(sessionId: string, message: ChatMessageCreate): Promise<ChatSessionMessage> {
+    const { data } = await this.makeRequest<ChatSessionMessage>('POST', `/api/chat-sessions/${sessionId}/messages`, message);
+    return data;
+  }
+
+  async saveChatSession(sessionId: string, messages: ChatMessageCreate[]): Promise<{ message: string; messages: ChatSessionMessage[] }> {
+    const { data } = await this.makeRequest<{ message: string; messages: ChatSessionMessage[] }>('POST', `/api/chat-sessions/${sessionId}/save`, messages);
     return data;
   }
 }

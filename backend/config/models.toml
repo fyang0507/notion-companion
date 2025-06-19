@@ -15,7 +15,7 @@ batch_size = 100
 
 [models.chat]
 # Primary chat model for user interactions
-model = "gpt-4o-mini"
+model = "gpt-4.1-mini"
 max_tokens = 4096
 temperature = 0.7
 
@@ -27,7 +27,7 @@ temperature = 0.7
 
 [models.summarization]
 # Model for document summarization
-model = "gpt-4o-mini"
+model = "gpt-4.1-mini"
 max_tokens = 800
 temperature = 0.3  # Lower temperature for consistent summaries
 
@@ -69,8 +69,8 @@ retry_delay_seconds = 2.0          # Delay between retries
 # Environment-specific overrides
 [environment.development]
 # Use cheaper models in development
-chat_model = "gpt-4o-mini"
-summarization_model = "gpt-4o-mini"
+chat_model = "gpt-4.1-mini"
+summarization_model = "gpt-4.1-mini"
 embedding_batch_size = 10
 
 [environment.production]
@@ -80,7 +80,7 @@ log_costs = true
 
 [environment.testing]
 # Testing environment
-chat_model = "gpt-4o-mini"
-summarization_model = "gpt-4o-mini"
+chat_model = "gpt-4.1-mini"
+summarization_model = "gpt-4.1-mini"
 embedding_batch_size = 5
 max_retries = 1

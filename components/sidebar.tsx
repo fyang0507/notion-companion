@@ -29,9 +29,10 @@ interface SidebarProps {
   onSelectWorkspace: (id: string) => void;
   onNewChat?: () => void;
   onStartGlobalChat?: () => void;
+  onChatSelect?: (chatId: string) => void;
 }
 
-export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onStartGlobalChat }: SidebarProps) {
+export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onStartGlobalChat, onChatSelect }: SidebarProps) {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const { connection, isConnected, syncNotion } = useNotionConnection();
   const { databases, loading: databasesLoading } = useNotionDatabases();
@@ -65,15 +66,9 @@ export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onSta
   };
 
   const handleChatSelect = (chatId: string, workspaceId?: string) => {
-    // If the chat has a workspace, select that workspace first
-    if (workspaceId) {
-      onSelectWorkspace(workspaceId);
-    }
-    
-    // In a real app, you would load the specific chat history here
-    // For now, we'll just start a new chat in the workspace
-    if (onNewChat) {
-      onNewChat();
+    // In single workspace model, we don't need workspaceId
+    if (onChatSelect) {
+      onChatSelect(chatId);
     }
   };
 

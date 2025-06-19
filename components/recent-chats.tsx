@@ -1,42 +1,92 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { 
   MessageCircle, 
   Clock,
   MoreHorizontal,
-  Trash2
+  Trash2,
+  RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-
-interface Chat {
-  id: string;
-  title: string;
-  lastMessage: string;
-  timestamp: string;
-  messageCount: number;
-  workspaceId?: string;
-}
+import { apiClient, RecentChatSummary } from '@/lib/api';
 
 interface RecentChatsProps {
   onChatSelect?: (chatId: string, workspaceId?: string) => void;
 }
 
 export function RecentChats({ onChatSelect }: RecentChatsProps) {
-  // For now, we'll show empty state until we implement real chat history
-  // In a real app, this would fetch from the database
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [chats, setChats] = useState<RecentChatSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const deleteChat = (chatId: string) => {
-    setChats(chats.filter(chat => chat.id !== chatId));
+  // Load recent chats on component mount
+  useEffect(() => {
+    loadRecentChats();
+  }, []);
+
+  const loadRecentChats = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Add timeout to the API call
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), 5000);
+      });
+      
+      const recentChats = await Promise.race([
+        apiClient.getRecentChats(20),
+        timeoutPromise
+      ]);
+      
+      setChats(recentChats);
+    } catch (err) {
+      console.error('Failed to load recent chats:', err);
+      
+      // For any error (timeout, network, server, etc.), just show empty state
+      setError(null);
+      setChats([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleChatClick = (chat: Chat) => {
+  const deleteChat = async (chatId: string) => {
+    try {
+      await apiClient.deleteChatSession(chatId, true); // Soft delete
+      setChats(chats.filter(chat => chat.id !== chatId));
+    } catch (err) {
+      console.error('Failed to delete chat:', err);
+      // Optionally show error message to user
+    }
+  };
+
+  const handleChatClick = (chat: RecentChatSummary) => {
     if (onChatSelect) {
-      onChatSelect(chat.id, chat.workspaceId);
+      // In single workspace model, we don't need workspace ID
+      onChatSelect(chat.id);
+    }
+  };
+
+  const formatTimestamp = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInHours = diffInMs / (1000 * 60 * 60);
+    const diffInDays = diffInMs / (1000 * 60 * 60 * 24);
+
+    if (diffInHours < 1) {
+      return 'Just now';
+    } else if (diffInHours < 24) {
+      return `${Math.floor(diffInHours)}h ago`;
+    } else if (diffInDays < 7) {
+      return `${Math.floor(diffInDays)}d ago`;
+    } else {
+      return date.toLocaleDateString();
     }
   };
 
@@ -44,26 +94,62 @@ export function RecentChats({ onChatSelect }: RecentChatsProps) {
     <div className="space-y-4">
       {/* Recent Chats */}
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Clock className="h-3 w-3 text-muted-foreground" />
-          <h3 className="text-sm font-medium text-muted-foreground">Recent</h3>
+        <div className="flex items-center gap-2 justify-between">
+          <div className="flex items-center gap-2">
+            <Clock className="h-3 w-3 text-muted-foreground" />
+            <h3 className="text-sm font-medium text-muted-foreground">Recent</h3>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={loadRecentChats}
+            disabled={loading}
+          >
+            <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
+          </Button>
         </div>
         
         <div className="space-y-1">
-          {chats.length > 0 ? (
+          {loading ? (
+            <div className="text-center p-4 text-muted-foreground">
+              <RefreshCw className="h-6 w-6 mx-auto mb-2 animate-spin" />
+              <p className="text-sm">Loading chats...</p>
+            </div>
+          ) : error ? (
+            <div className="text-center p-4 text-muted-foreground">
+              <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm text-red-500">{error}</p>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={loadRecentChats}
+                className="mt-2"
+              >
+                Try again
+              </Button>
+            </div>
+          ) : chats.length > 0 ? (
             chats.map((chat) => (
               <ChatItem 
                 key={chat.id}
                 chat={chat}
                 onDelete={deleteChat}
                 onClick={() => handleChatClick(chat)}
+                formatTimestamp={formatTimestamp}
               />
             ))
           ) : (
             <div className="text-center p-4 text-muted-foreground">
               <MessageCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
               <p className="text-sm">No recent chats</p>
-              <p className="text-xs">Start a conversation to see your chat history</p>
+              <p className="text-xs">
+                Start a conversation to see your chat history here
+              </p>
+              <div className="mt-3 p-2 bg-muted/30 rounded text-xs">
+                <p className="font-medium text-foreground mb-1">💡 Enable chat history</p>
+                <p>Deploy the chat sessions schema in Supabase to save and continue conversations</p>
+              </div>
             </div>
           )}
         </div>
@@ -73,12 +159,13 @@ export function RecentChats({ onChatSelect }: RecentChatsProps) {
 }
 
 interface ChatItemProps {
-  chat: Chat;
+  chat: RecentChatSummary;
   onDelete: (chatId: string) => void;
   onClick: () => void;
+  formatTimestamp: (timestamp: string) => string;
 }
 
-function ChatItem({ chat, onDelete, onClick }: ChatItemProps) {
+function ChatItem({ chat, onDelete, onClick, formatTimestamp }: ChatItemProps) {
   return (
     <div 
       className="group relative rounded-lg border p-3 hover:bg-accent cursor-pointer transition-colors"
@@ -94,13 +181,13 @@ function ChatItem({ chat, onDelete, onClick }: ChatItemProps) {
             </div>
             
             <p className="text-xs text-muted-foreground truncate mb-1">
-              {chat.lastMessage}
+              {chat.last_message_preview || 'No preview available'}
             </p>
             
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>{chat.messageCount} messages</span>
+              <span>{chat.message_count} messages</span>
               <span>•</span>
-              <span>{chat.timestamp}</span>
+              <span>{formatTimestamp(chat.last_message_at)}</span>
             </div>
           </div>
         </div>

@@ -25,9 +25,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { apiClient } from '@/lib/api';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { useNotionDatabases } from '@/hooks/use-notion-databases';
+import { ChatSessionHook } from '@/hooks/use-chat-sessions';
 
 interface ChatInterfaceProps {
   onBackToHome?: () => void;
+  chatSessions?: ChatSessionHook;
 }
 
 interface AIModel {
@@ -76,11 +78,12 @@ const availableModels: AIModel[] = [
   }
 ];
 
-export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
+export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps) {
   const { connection, isConnected } = useNotionConnection();
   const { databases } = useNotionDatabases();
   
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  // Use messages from chat sessions if available, otherwise use local state
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>([
     {
       id: '1',
       type: 'bot',
@@ -89,6 +92,18 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
       citations: []
     }
   ]);
+
+  // For now, let's use local state and sync with sessions when complete
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    chatSessions?.currentMessages.length ? chatSessions.currentMessages : localMessages
+  );
+
+  // Sync messages when chat sessions change
+  useEffect(() => {
+    if (chatSessions?.currentMessages.length) {
+      setMessages(chatSessions.currentMessages);
+    }
+  }, [chatSessions?.currentMessages]);
   
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -199,6 +214,27 @@ export function ChatInterface({ onBackToHome }: ChatInterfaceProps) {
             if (data === '[DONE]') {
               setIsLoading(false);
               setStreamingMessageId(null);
+              
+              // Auto-save the conversation to current session
+              if (chatSessions?.currentSession) {
+                setTimeout(async () => {
+                  try {
+                    // Get the latest messages and convert to API format
+                    const messagesToSave = [userMessage, botMessage].map(msg => ({
+                      role: msg.type === 'user' ? 'user' : 'assistant',
+                      content: msg.content,
+                      citations: msg.citations || [],
+                      context_used: {}
+                    }));
+                    
+                    await apiClient.saveChatSession(chatSessions.currentSession.id, messagesToSave);
+                    await chatSessions.refreshRecentSessions();
+                  } catch (err) {
+                    console.error('Failed to auto-save conversation:', err);
+                  }
+                }, 500); // Small delay to ensure all state updates are complete
+              }
+              
               break;
             }
 

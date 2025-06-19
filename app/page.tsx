@@ -10,10 +10,12 @@ import { LoadingScreen } from '@/components/loading-screen';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { useAuth } from '@/hooks/use-auth';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
+import { useChatSessions } from '@/hooks/use-chat-sessions';
 
 export default function Home() {
   const { user, loading, initialized } = useAuth();
   const { connection, isConnected, loading: connectionLoading } = useNotionConnection();
+  const chatSessions = useChatSessions();
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | 'global' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatKey, setChatKey] = useState(0);
@@ -40,6 +42,9 @@ export default function Home() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Note: Recent chats are loaded by the RecentChats component itself
+  // No need to load them here to avoid redundant API calls
+
   // Auto-start global chat when backend is configured and user is ready
   useEffect(() => {
     if (isBackendConfigured && user && initialized && !connectionLoading && !selectedWorkspace) {
@@ -47,9 +52,15 @@ export default function Home() {
     }
   }, [isBackendConfigured, user, initialized, connectionLoading, selectedWorkspace]);
 
-
-  const handleNewChat = () => {
-    setChatKey(prev => prev + 1);
+  const handleNewChat = async () => {
+    try {
+      await chatSessions.createNewSession();
+      setChatKey(prev => prev + 1);
+    } catch (err) {
+      console.error('Failed to create new chat session:', err);
+      // Fallback to regular chat reset - this ensures the app always works
+      setChatKey(prev => prev + 1);
+    }
   };
 
   const handleSelectWorkspace = (workspaceId: string | 'global') => {
@@ -60,9 +71,34 @@ export default function Home() {
     }
   };
 
-  const handleStartGlobalChat = () => {
-    setSelectedWorkspace('global');
+  const handleStartGlobalChat = async () => {
+    try {
+      await chatSessions.createNewSession();
+      setSelectedWorkspace('global');
+      setChatKey(prev => prev + 1);
+    } catch (err) {
+      console.error('Failed to create new chat session:', err);
+      // Fallback to regular chat start - this ensures the app always works
+      setSelectedWorkspace('global');
+      setChatKey(prev => prev + 1);
+    }
+    
     // Auto-collapse sidebar on mobile when starting chat
+    if (isMobile) {
+      setSidebarCollapsed(true);
+    }
+  };
+
+  const handleChatSelect = async (chatId: string) => {
+    try {
+      await chatSessions.loadSession(chatId);
+      setSelectedWorkspace('global');
+      setChatKey(prev => prev + 1);
+    } catch (err) {
+      console.error('Failed to load chat session:', err);
+    }
+    
+    // Auto-collapse sidebar on mobile when selecting chat
     if (isMobile) {
       setSidebarCollapsed(true);
     }
@@ -128,6 +164,7 @@ export default function Home() {
                   onSelectWorkspace={setSelectedWorkspace}
                   onNewChat={handleNewChat}
                   onStartGlobalChat={handleStartGlobalChat}
+                  onChatSelect={handleChatSelect}
                 />
               </div>
             </>
@@ -139,6 +176,7 @@ export default function Home() {
               <ChatInterface 
                 key={chatKey} 
                 onBackToHome={handleBackToHome}
+                chatSessions={chatSessions}
               />
             ) : (
               <DashboardHome 
@@ -172,6 +210,7 @@ export default function Home() {
                   onSelectWorkspace={setSelectedWorkspace}
                   onNewChat={handleNewChat}
                   onStartGlobalChat={handleStartGlobalChat}
+                  onChatSelect={handleChatSelect}
                 />
               </ResizablePanel>
               <ResizableHandle />
@@ -184,6 +223,7 @@ export default function Home() {
                 <ChatInterface 
                   key={chatKey} 
                   onBackToHome={handleBackToHome}
+                  chatSessions={chatSessions}
                 />
               ) : (
                 <DashboardHome 
