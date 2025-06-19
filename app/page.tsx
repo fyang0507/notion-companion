@@ -11,6 +11,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/componen
 import { useAuth } from '@/hooks/use-auth';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { useChatSessions } from '@/hooks/use-chat-sessions';
+import { toast } from 'sonner';
 
 export default function Home() {
   const { user, loading, initialized } = useAuth();
@@ -72,6 +73,19 @@ export default function Home() {
   };
 
   const handleStartGlobalChat = async () => {
+    // Check if current chat session is empty (no messages)
+    if (chatSessions.currentMessages.length === 0 && selectedWorkspace === 'global') {
+      toast.info("You're already in a new chat session", {
+        description: 'This chat is empty and ready for your first message.'
+      });
+      
+      // Still auto-collapse sidebar on mobile
+      if (isMobile) {
+        setSidebarCollapsed(true);
+      }
+      return;
+    }
+
     try {
       await chatSessions.createNewSession();
       setSelectedWorkspace('global');
