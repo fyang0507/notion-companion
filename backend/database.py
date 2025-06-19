@@ -180,6 +180,28 @@ class Database:
                 response = self.client.table('chat_sessions').select('id').eq('id', session_id).execute()
                 return response.data
             
+            # Handle chat session soft delete (UPDATE)
+            elif "UPDATE chat_sessions" in query and "SET status = 'deleted'" in query and params:
+                from datetime import datetime
+                session_id = params[0]
+                response = self.client.table('chat_sessions').update({
+                    'status': 'deleted',
+                    'updated_at': datetime.utcnow().isoformat()
+                }).eq('id', session_id).execute()
+                # Return the response with id field to match RETURNING id expectation
+                if response.data:
+                    return [{'id': row['id']} for row in response.data]
+                return []
+            
+            # Handle chat session hard delete
+            elif "DELETE FROM chat_sessions WHERE id =" in query and params:
+                session_id = params[0]
+                response = self.client.table('chat_sessions').delete().eq('id', session_id).execute()
+                # Return the response with id field to match RETURNING id expectation
+                if response.data:
+                    return [{'id': row['id']} for row in response.data]
+                return []
+            
             # Handle recent chats query (fallback)
             elif "FROM chat_sessions cs" in query and "ORDER BY cs.last_message_at DESC" in query:
                 if params and len(params) >= 2:
