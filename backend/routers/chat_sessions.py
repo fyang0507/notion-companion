@@ -9,8 +9,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 import uuid
 
-from ..database import get_db
-from ..services.logger import get_logger
+from database import get_db
+from logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/chat-sessions", tags=["chat-sessions"])
@@ -83,11 +83,9 @@ class RecentChatSummary(BaseModel):
 def get_default_workspace_id(db):
     """Get the default workspace ID for single-workspace model."""
     try:
-        result = db.execute_query(
-            "SELECT id FROM workspaces WHERE is_active = true ORDER BY created_at DESC LIMIT 1"
-        )
-        if result:
-            return result[0]['id']
+        workspace_id = db.get_active_workspace_id()
+        if workspace_id:
+            return workspace_id
         else:
             raise HTTPException(status_code=404, detail="No active workspace found")
     except Exception as e:

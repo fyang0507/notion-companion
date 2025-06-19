@@ -168,7 +168,13 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       citations: []
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    // Add message through chat sessions if available
+    if (chatSessions) {
+      chatSessions.addMessage(userMessage);
+    } else {
+      setMessages(prev => [...prev, userMessage]);
+    }
+    
     setInput('');
     setIsLoading(true);
 
@@ -183,7 +189,11 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
     };
 
     // Add the empty bot message and start streaming
-    setMessages(prev => [...prev, botMessage]);
+    if (chatSessions) {
+      chatSessions.addMessage(botMessage);
+    } else {
+      setMessages(prev => [...prev, botMessage]);
+    }
     setStreamingMessageId(botMessageId);
 
     try {
@@ -219,16 +229,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
               if (chatSessions?.currentSession) {
                 setTimeout(async () => {
                   try {
-                    // Get the latest messages and convert to API format
-                    const messagesToSave = [userMessage, botMessage].map(msg => ({
-                      role: msg.type === 'user' ? 'user' : 'assistant',
-                      content: msg.content,
-                      citations: msg.citations || [],
-                      context_used: {}
-                    }));
-                    
-                    await apiClient.saveChatSession(chatSessions.currentSession.id, messagesToSave);
-                    await chatSessions.refreshRecentSessions();
+                    await chatSessions.saveCurrentSession();
                   } catch (err) {
                     console.error('Failed to auto-save conversation:', err);
                   }
@@ -241,22 +242,37 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
             try {
               const parsed = JSON.parse(data);
               if (parsed.content) {
-                setMessages(prev => 
-                  prev.map(msg => 
-                    msg.id === botMessageId 
-                      ? { ...msg, content: msg.content + parsed.content }
-                      : msg
-                  )
-                );
+                if (chatSessions) {
+                  // Find current message content
+                  const currentMsg = chatSessions.currentMessages.find(m => m.id === botMessageId);
+                  const currentContent = currentMsg?.content || '';
+                  chatSessions.updateMessage(botMessageId, { 
+                    content: currentContent + parsed.content 
+                  });
+                } else {
+                  setMessages(prev => 
+                    prev.map(msg => 
+                      msg.id === botMessageId 
+                        ? { ...msg, content: msg.content + parsed.content }
+                        : msg
+                    )
+                  );
+                }
               }
               if (parsed.citations) {
-                setMessages(prev => 
-                  prev.map(msg => 
-                    msg.id === botMessageId 
-                      ? { ...msg, citations: parsed.citations }
-                      : msg
-                  )
-                );
+                if (chatSessions) {
+                  chatSessions.updateMessage(botMessageId, { 
+                    citations: parsed.citations 
+                  });
+                } else {
+                  setMessages(prev => 
+                    prev.map(msg => 
+                      msg.id === botMessageId 
+                        ? { ...msg, citations: parsed.citations }
+                        : msg
+                    )
+                  );
+                }
               }
             } catch (e) {
               // Skip invalid JSON
@@ -266,13 +282,19 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       }
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === botMessageId 
-            ? { ...msg, content: 'Sorry, I encountered an error. Please try again.' }
-            : msg
-        )
-      );
+      const errorMessage = 'Sorry, I encountered an error. Please try again.';
+      
+      if (chatSessions) {
+        chatSessions.updateMessage(botMessageId, { content: errorMessage });
+      } else {
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === botMessageId 
+              ? { ...msg, content: errorMessage }
+              : msg
+          )
+        );
+      }
       setIsLoading(false);
       setStreamingMessageId(null);
     }

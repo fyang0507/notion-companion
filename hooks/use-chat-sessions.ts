@@ -19,6 +19,7 @@ export interface ChatSessionHook {
   
   // Message management
   addMessage: (message: ChatMessage) => void;
+  updateMessage: (messageId: string, updates: Partial<ChatMessage>) => void;
   clearMessages: () => void;
   
   // Recent sessions
@@ -176,6 +177,23 @@ export function useChatSessions(): ChatSessionHook {
     unsavedMessages.current.push(message);
   }, []);
 
+  const updateMessage = useCallback((messageId: string, updates: Partial<ChatMessage>): void => {
+    setCurrentMessages(prev => 
+      prev.map(msg => 
+        msg.id === messageId ? { ...msg, ...updates } : msg
+      )
+    );
+    
+    // Also update unsaved messages if the message exists there
+    const unsavedIndex = unsavedMessages.current.findIndex(msg => msg.id === messageId);
+    if (unsavedIndex !== -1) {
+      unsavedMessages.current[unsavedIndex] = {
+        ...unsavedMessages.current[unsavedIndex],
+        ...updates
+      };
+    }
+  }, []);
+
   const clearMessages = useCallback((): void => {
     setCurrentMessages([]);
     unsavedMessages.current = [];
@@ -217,6 +235,7 @@ export function useChatSessions(): ChatSessionHook {
     saveCurrentSession,
     deleteSession,
     addMessage,
+    updateMessage,
     clearMessages,
     recentSessions,
     loadRecentSessions,
