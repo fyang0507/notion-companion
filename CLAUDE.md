@@ -25,6 +25,37 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `cd backend && .venv/bin/python scripts/sync_databases.py --dry-run` - Test sync configuration
 - `cd backend && .venv/bin/python scripts/model_config_demo.py` - Test model configuration
 
+### Backend Server Starting Methods
+**✅ WORKING METHODS FOR DEVELOPMENT:**
+- `npm run backend` - Uses package.json script (PREFERRED for regular development)
+- `make dev` - Uses Makefile 
+- `npm run dev:full` - Starts both frontend and backend
+
+**✅ WORKING METHODS FOR CLAUDE CODE TESTING:**
+- `cd backend && .venv/bin/python start.py &` - Background process for testing
+- `NEXT_PUBLIC_SUPABASE_URL=... NEXT_PUBLIC_SUPABASE_ANON_KEY=... backend/.venv/bin/uvicorn backend.main:app --reload --port 8000 &` - With explicit env vars
+
+**❌ NON-WORKING METHODS:**
+- `npm run backend` - DOES NOT WORK in Claude Code (doesn't persist, process gets killed)
+- `uvicorn main:app` without `&` - Process blocks and gets terminated
+- `cd backend && .venv/bin/uvicorn main:app` - Wrong directory context
+- Manual uvicorn commands without proper environment variables
+
+**🔧 CLAUDE CODE TESTING GUIDELINES:**
+- **NEVER start backend services yourself in Claude Code** - commands with `&` cause 2-minute timeouts
+- **Instead: ASK USER to start backend when testing is needed**
+- **User should run**: `npm run backend` or `npm run dev:full` 
+- **Claude can then test APIs** with curl commands while user's backend runs
+- Kill background processes with `pkill -f uvicorn` or `pkill -f python` when done
+- `npm run backend` works for users but NOT for Claude Code testing due to process persistence issues
+
+**PREFERRED TESTING WORKFLOW:**
+1. Claude identifies need to test backend API
+2. Claude asks: "Please start the backend with `npm run backend` so I can test the [feature]"
+3. User starts backend in their environment  
+4. Claude runs curl tests against localhost:8000
+5. Claude asks user to stop backend when testing is complete
+
 ### Build & Lint
 - `npm run build` - Build Next.js for production
 - `npm run lint` - Run ESLint validation
