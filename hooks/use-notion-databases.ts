@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from './use-auth'
 import { useNotionConnection } from './use-notion-connection'
+import { logger } from '@/lib/logger'
+import { useFrontendErrorLogger } from '@/lib/frontend-error-logger'
 
 export interface NotionDatabase {
   database_id: string
@@ -20,6 +22,7 @@ export function useNotionDatabases() {
   const [error, setError] = useState<string | null>(null)
   const { user } = useAuth()
   const { connection, isConnected } = useNotionConnection()
+  const errorLogger = useFrontendErrorLogger('use-notion-databases')
 
   const fetchDatabases = async () => {
     if (!user || !isConnected || !connection) {
@@ -39,19 +42,18 @@ export function useNotionDatabases() {
       setLoading(true)
       setError(null)
 
-      // Fetch databases for the connected workspace with document counts
+      // Fetch databases (V3 schema - single workspace model)
       const { data: databaseData, error: databaseError } = await supabase
-        .from('database_schemas')
+        .from('notion_databases')
         .select(`
           database_id,
           database_name,
           field_definitions,
           queryable_fields,
           created_at,
-          updated_at,
-          last_analyzed_at
+          last_sync_at
         `)
-        .eq('workspace_id', connection.id)
+        .eq('is_active', true)
 
       if (databaseError) throw databaseError
 
@@ -61,7 +63,7 @@ export function useNotionDatabases() {
           const { count } = await supabase
             .from('documents')
             .select('*', { count: 'exact', head: true })
-            .eq('database_id', db.database_id)
+            .eq('notion_database_id', db.database_id)
 
           return {
             database_id: db.database_id,
@@ -69,8 +71,8 @@ export function useNotionDatabases() {
             field_definitions: db.field_definitions,
             queryable_fields: db.queryable_fields,
             created_at: db.created_at,
-            updated_at: db.updated_at,
-            last_analyzed_at: db.last_analyzed_at,
+            updated_at: db.created_at,
+            last_analyzed_at: db.last_sync_at,
             document_count: count || 0
           }
         })
@@ -78,8 +80,18 @@ export function useNotionDatabases() {
 
       setDatabases(databasesWithCounts)
     } catch (err) {
-      console.error('Error fetching Notion databases:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch databases')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch databases'
+      logger.error('Error fetching Notion databases', 'use-notion-databases', {
+        error_message: errorMessage,
+        user_id: user?.id,
+        connection_id: connection?.id
+      }, err instanceof Error ? err : undefined)
+      errorLogger.logHookError('Failed to fetch Notion databases', err instanceof Error ? err : undefined, {
+        user_id: user?.id,
+        connection_id: connection?.id,
+        error_message: errorMessage
+      })
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }

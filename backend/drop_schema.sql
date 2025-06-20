@@ -16,6 +16,9 @@ DROP TABLE IF EXISTS document_chunks;
 DROP TABLE IF EXISTS document_metadata;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS database_schemas;
+DROP TABLE IF EXISTS chat_messages;
+DROP TABLE IF EXISTS chat_sessions;
 DROP TABLE IF EXISTS workspaces;
+
 
 -- Note: Extensions (vector, pg_trgm) are kept as they're managed by Supabase

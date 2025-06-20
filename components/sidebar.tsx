@@ -136,10 +136,10 @@ export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onSta
               </Button>
             )}
             
-            <Link href="/workspaces">
+            <Link href="/setup">
               <Button className="w-full justify-start" variant="ghost">
                 <Plus className="mr-2 h-4 w-4" />
-                Connect Notion
+                Connect Databases
               </Button>
             </Link>
           </div>

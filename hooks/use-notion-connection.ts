@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from './use-auth'
+import { logger } from '@/lib/logger'
+import { useFrontendErrorLogger } from '@/lib/frontend-error-logger'
 
 export interface NotionConnection {
   id: string
   name: string
   icon?: string
-  notion_workspace_id: string
+  database_id: string
   is_active: boolean
   last_sync_at?: string
   document_count?: number
@@ -18,6 +20,7 @@ export function useNotionConnection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { user } = useAuth()
+  const errorLogger = useFrontendErrorLogger('use-notion-connection')
   
   // Helper to check if user has Notion connected
   const isConnected = !!connection
@@ -40,57 +43,66 @@ export function useNotionConnection() {
       setLoading(true)
       setError(null)
 
-      // Fetch the active workspace (single-user application)
-      const { data: workspaceData, error: workspaceError } = await supabase
-        .from('workspaces')
+      // Fetch the primary notion database (V3 schema)
+      const { data: databaseData, error: databaseError } = await supabase
+        .from('notion_databases')
         .select(`
-          id,
-          name,
+          database_id,
+          database_name,
           notion_access_token,
           is_active,
           last_sync_at
         `)
         .eq('is_active', true)
+        .order('created_at', { ascending: false })
         .limit(1)
         .single()
 
       let documentCount = 0
-      if (workspaceData) {
+      if (databaseData) {
         // Get document count separately
         const { count } = await supabase
           .from('documents')
           .select('*', { count: 'exact', head: true })
-          .eq('workspace_id', workspaceData.id)
+          .eq('notion_database_id', databaseData.database_id)
         
         documentCount = count || 0
       }
 
-      if (workspaceError) {
-        // No workspace found is not an error, just means not connected
-        if (workspaceError.code === 'PGRST116') {
+      if (databaseError) {
+        // No database found is not an error, just means not connected
+        if (databaseError.code === 'PGRST116') {
           setConnection(null)
           return
         }
-        throw workspaceError
+        throw databaseError
       }
 
-      if (workspaceData) {
+      if (databaseData) {
         const connectionData: NotionConnection = {
-          id: workspaceData.id,
-          name: workspaceData.name,
-          notion_workspace_id: workspaceData.id, // Use workspace id as notion workspace id
-          is_active: workspaceData.is_active,
-          last_sync_at: workspaceData.last_sync_at,
+          id: databaseData.database_id,
+          name: databaseData.database_name,
+          database_id: databaseData.database_id,
+          is_active: databaseData.is_active,
+          last_sync_at: databaseData.last_sync_at,
           document_count: documentCount,
-          status: getConnectionStatus(workspaceData.last_sync_at)
+          status: getConnectionStatus(databaseData.last_sync_at)
         }
         setConnection(connectionData)
       } else {
         setConnection(null)
       }
     } catch (err) {
-      console.error('Error fetching Notion connection:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch Notion connection')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch Notion connection'
+      logger.error('Error fetching Notion connection', 'use-notion-connection', {
+        error_message: errorMessage,
+        user_id: user?.id
+      }, err instanceof Error ? err : undefined)
+      errorLogger.logHookError('Failed to fetch Notion connection', err instanceof Error ? err : undefined, {
+        user_id: user?.id,
+        error_message: errorMessage
+      })
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -119,7 +131,12 @@ export function useNotionConnection() {
       // Refresh connection after connecting
       await fetchConnection()
     } catch (err) {
-      console.error('Error connecting Notion:', err)
+      logger.error('Error connecting Notion', 'use-notion-connection', {
+        user_id: user?.id
+      }, err instanceof Error ? err : undefined)
+      errorLogger.logApiError('Failed to connect Notion', err instanceof Error ? err : undefined, {
+        user_id: user?.id
+      })
       throw err
     }
   }
@@ -136,7 +153,7 @@ export function useNotionConnection() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          workspace_id: connection.id
+          database_id: connection.database_id
         })
       })
 
@@ -147,7 +164,14 @@ export function useNotionConnection() {
       // Refresh connection after syncing
       await fetchConnection()
     } catch (err) {
-      console.error('Error syncing Notion:', err)
+      logger.error('Error syncing Notion', 'use-notion-connection', {
+        connection_id: connection.id,
+        database_id: connection.database_id
+      }, err instanceof Error ? err : undefined)
+      errorLogger.logApiError('Failed to sync Notion', err instanceof Error ? err : undefined, {
+        connection_id: connection.id,
+        database_id: connection.database_id
+      })
       throw err
     }
   }

@@ -9,13 +9,13 @@ export interface ChatMessage {
 
 export interface ChatRequest {
   messages: ChatMessage[];
-  // Single-user, single-workspace app - no IDs needed
+  database_filters?: string[];  // Filter by specific Notion databases
 }
 
 export interface SearchRequest {
   query: string;
   limit?: number;
-  // Single-user, single-workspace app - no workspace ID needed
+  database_filters?: string[];  // Filter by specific Notion databases
 }
 
 export interface SearchResult {
@@ -49,7 +49,6 @@ export interface ChatSessionMessage {
 
 export interface ChatSession {
   id: string;
-  workspace_id: string;
   title: string;
   summary?: string;
   status: string;

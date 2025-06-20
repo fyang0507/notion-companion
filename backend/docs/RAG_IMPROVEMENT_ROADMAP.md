@@ -280,6 +280,250 @@ class CrossEncoderReranker:
 
 ---
 
+### Phase 4.5: Multilingual & Cross-Language RAG Support (High Impact, Medium Effort)
+
+#### Current: Basic Bilingual Support
+```sql
+-- Schema V3: Using 'simple' text search configuration
+NEW.search_vector = to_tsvector('simple', coalesce(NEW.title, '') || ' ' || coalesce(NEW.content, ''));
+```
+
+```python
+# Single embedding model for all languages
+embedding_model = "text-embedding-3-small"  # Works for EN/CN but not optimized
+```
+
+#### Problem: Multilingual Content Challenges
+- **Language mixing in documents** - English and Chinese often mixed in same document
+- **Query-document language mismatch** - User queries in Chinese, relevant content in English
+- **Embedding model limitations** - Single model may not capture cross-lingual semantics optimally
+- **Search quality degradation** - 'simple' text search loses language-specific features
+- **Ranking issues** - No language-aware relevance scoring
+
+#### Proposed: Advanced Multilingual RAG Architecture
+
+```python
+class MultilingualRAGSystem:
+    def __init__(self):
+        self.language_detector = LanguageDetector()
+        self.embedding_service = MultilingualEmbeddingService()
+        self.cross_lingual_retriever = CrossLingualRetriever()
+        self.multilingual_reranker = MultilingualReranker()
+    
+    async def process_document(self, content: str, title: str):
+        # 1. Language detection at document and section level
+        doc_languages = await self.language_detector.detect_languages(content)
+        sections = await self.split_by_language_boundaries(content, doc_languages)
+        
+        # 2. Language-specific processing
+        processed_sections = []
+        for section in sections:
+            lang = section.primary_language
+            processed = await self.process_section_by_language(section, lang)
+            processed_sections.append(processed)
+        
+        # 3. Multi-representation embeddings
+        embeddings = await self.embedding_service.generate_multilingual_embeddings(
+            content=content,
+            languages=doc_languages,
+            sections=processed_sections
+        )
+        
+        return {
+            'content': content,
+            'languages': doc_languages,
+            'sections': processed_sections,
+            'embeddings': embeddings
+        }
+
+class MultilingualEmbeddingService:
+    def __init__(self):
+        self.models = {
+            'universal': 'text-embedding-3-large',  # Best cross-lingual model
+            'chinese': 'text-embedding-chinese-large',  # If available
+            'english': 'text-embedding-3-small',  # English-optimized
+            'multilingual': 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+        }
+    
+    async def generate_multilingual_embeddings(self, content, languages, sections):
+        embeddings = {}
+        
+        # 1. Universal embedding for cross-lingual search
+        embeddings['universal'] = await self.embed_with_model(
+            content, self.models['universal']
+        )
+        
+        # 2. Language-specific embeddings for within-language search
+        for lang in languages:
+            if lang in self.models:
+                embeddings[f'lang_{lang}'] = await self.embed_with_model(
+                    content, self.models[lang]
+                )
+        
+        # 3. Section-level embeddings preserving language context
+        embeddings['sections'] = []
+        for section in sections:
+            section_embedding = await self.embed_section_with_context(section)
+            embeddings['sections'].append(section_embedding)
+        
+        return embeddings
+
+class CrossLingualRetriever:
+    async def search(self, query: str, top_k: int = 20):
+        # 1. Detect query language
+        query_lang = await self.language_detector.detect(query)
+        
+        # 2. Multi-strategy retrieval
+        results = await asyncio.gather(
+            self.universal_search(query),           # Cross-lingual semantics
+            self.same_language_search(query, query_lang),  # Within-language precision
+            self.translated_search(query, query_lang),     # Query translation approach
+            self.code_mixed_search(query)           # Handle mixed-language queries
+        )
+        
+        # 3. Fusion and initial ranking
+        fused_results = await self.fusion_with_language_awareness(results, query_lang)
+        
+        return fused_results[:top_k * 2]  # Return more for reranking
+
+class MultilingualReranker:
+    def __init__(self):
+        self.cross_lingual_model = "cross-encoder/ms-marco-MiniLM-L-12-v2"
+        self.language_penalty_weights = {
+            'same_language': 1.0,
+            'cross_language_high_confidence': 0.9,
+            'cross_language_medium_confidence': 0.7,
+            'mixed_language': 0.85
+        }
+    
+    async def rerank(self, query: str, documents: List[Document]):
+        query_lang = await self.detect_language(query)
+        
+        reranked_docs = []
+        for doc in documents:
+            # 1. Cross-lingual semantic scoring
+            semantic_score = await self.cross_lingual_semantic_score(query, doc)
+            
+            # 2. Language alignment scoring
+            lang_alignment = await self.compute_language_alignment(query_lang, doc)
+            
+            # 3. Content quality scoring (translation quality, mixed-language fluency)
+            content_quality = await self.assess_content_quality(doc, query_lang)
+            
+            # 4. Combined scoring with language-aware weights
+            final_score = self.combine_scores(
+                semantic_score, lang_alignment, content_quality, query_lang
+            )
+            
+            reranked_docs.append((doc, final_score))
+        
+        return sorted(reranked_docs, key=lambda x: x[1], reverse=True)
+```
+
+#### Enhanced Database Schema for Multilingual Support
+
+```sql
+-- Add language metadata to documents
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS primary_language TEXT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS detected_languages JSONB DEFAULT '[]';
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS language_sections JSONB DEFAULT '[]';
+
+-- Multiple embedding vectors for different language strategies
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS universal_embedding vector(1536);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS chinese_embedding vector(1536);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS english_embedding vector(1536);
+
+-- Language-aware search function
+CREATE OR REPLACE FUNCTION multilingual_search(
+    query_embedding vector(1536),
+    query_language text,
+    database_filter text[] DEFAULT NULL,
+    cross_lingual_weight float DEFAULT 0.8,
+    match_threshold float DEFAULT 0.7,
+    match_count int DEFAULT 10
+)
+RETURNS TABLE (
+    id uuid,
+    title text,
+    content text,
+    similarity real,
+    language_match_type text,
+    adjusted_score real
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    WITH language_scored_docs AS (
+        SELECT 
+            d.id,
+            d.title,
+            d.content,
+            -- Choose embedding based on query language and document language
+            CASE 
+                WHEN query_language = d.primary_language THEN
+                    1 - (d.content_embedding <=> query_embedding)
+                WHEN d.primary_language IS NULL THEN
+                    1 - (d.universal_embedding <=> query_embedding)
+                ELSE
+                    (1 - (d.universal_embedding <=> query_embedding)) * cross_lingual_weight
+            END as similarity,
+            CASE 
+                WHEN query_language = d.primary_language THEN 'same_language'
+                WHEN d.primary_language IS NULL THEN 'unknown_language'
+                ELSE 'cross_language'
+            END as language_match_type
+        FROM documents d
+        WHERE d.content_embedding IS NOT NULL
+            AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
+    )
+    SELECT 
+        lsd.*,
+        lsd.similarity as adjusted_score
+    FROM language_scored_docs lsd
+    WHERE lsd.similarity > match_threshold
+    ORDER BY lsd.similarity DESC
+    LIMIT match_count;
+END;
+$$;
+```
+
+**Implementation Tasks:**
+- [ ] **Language Detection Pipeline**
+  - [ ] Document-level language detection
+  - [ ] Section-level language boundary detection
+  - [ ] Mixed-language content handling
+- [ ] **Multilingual Embedding Strategy**
+  - [ ] Evaluate cross-lingual embedding models
+  - [ ] Implement multi-embedding storage and retrieval
+  - [ ] Build language-aware embedding selection
+- [ ] **Cross-Lingual Search Enhancement**
+  - [ ] Query translation approaches
+  - [ ] Language-aware result fusion
+  - [ ] Cross-lingual semantic matching
+- [ ] **Multilingual Reranking**
+  - [ ] Language alignment scoring
+  - [ ] Translation quality assessment
+  - [ ] Mixed-language fluency evaluation
+- [ ] **Testing & Validation**
+  - [ ] Build bilingual test dataset
+  - [ ] Cross-lingual search quality metrics
+  - [ ] User study with Chinese/English queries
+
+**Expected Impact:**
+- 🌍 **Better cross-language search** - Find relevant English content with Chinese queries and vice versa
+- 🎯 **Improved precision** - Language-aware ranking gives better results
+- 🔄 **Seamless bilingual experience** - Users can query in their preferred language
+- 📈 **Higher search satisfaction** - More relevant results across language boundaries
+
+**Specific Bilingual EN/CN Considerations:**
+- **Code-mixing handling** - Chinese documents often contain English technical terms
+- **Script awareness** - Simplified vs Traditional Chinese, pinyin handling
+- **Cultural context** - Different ways of expressing concepts across languages
+- **Technical terminology** - Programming/business terms often kept in English
+
+---
+
 ### Phase 5: Advanced Features (Future Enhancements)
 
 #### 5.1 Real-Time Learning & Adaptation
@@ -326,7 +570,11 @@ class MultiModalProcessor:
 | 2. Advanced Chunking | Medium | High | 🔥🔥 | **Short-term** |
 | 3. Multi-Level Embeddings | High | Medium | 🔥🔥🔥 | **Medium-term** |
 | 4. Hybrid Search | Very High | High | 🔥🔥🔥 | **Long-term** |
+| 4.5. Multilingual Support | High | Medium | 🔥🔥🔥 | **High Priority** |
 | 5. Advanced Features | High | Very High | 🔥 | **Future** |
+
+### 🌍 **Note on Multilingual Priority**
+Given the bilingual English/Chinese content requirement, Phase 4.5 (Multilingual Support) should be prioritized alongside or before Phase 4 (Hybrid Search) for optimal user experience. The current schema V3 provides basic bilingual support with 'simple' text search configuration as a foundation.
 
 ## 🎯 Success Metrics
 
@@ -341,6 +589,12 @@ class MultiModalProcessor:
 - **User Satisfaction**: User rating >4.5/5 for search results
 - **Content Coverage**: 95% of user queries should find relevant content
 - **Freshness**: Updates reflected in search within 10 seconds
+
+### Multilingual Quality Metrics
+- **Cross-Language Retrieval**: >80% relevant results when query language ≠ document language
+- **Language Detection Accuracy**: >95% for document language identification
+- **Bilingual Query Satisfaction**: >4.0/5 rating for Chinese queries finding English content and vice versa
+- **Code-Mixed Content Handling**: >85% accuracy for documents with mixed EN/CN content
 
 ## 🛠️ Technical Debt & Refactoring
 

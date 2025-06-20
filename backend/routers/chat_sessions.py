@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 import uuid
 
-from database import get_db
+from database_v3 import get_db
 from logging_config import get_logger
 from services.openai_service import get_openai_service
 
@@ -54,7 +54,6 @@ class ChatSessionUpdate(BaseModel):
 
 class ChatSession(BaseModel):
     id: str
-    workspace_id: str
     title: str
     summary: Optional[str] = None
     status: str
@@ -81,17 +80,7 @@ class RecentChatSummary(BaseModel):
 # HELPER FUNCTIONS
 # ============================================================================
 
-def get_default_workspace_id(db):
-    """Get the default workspace ID for single-workspace model."""
-    try:
-        workspace_id = db.get_active_workspace_id()
-        if workspace_id:
-            return workspace_id
-        else:
-            raise HTTPException(status_code=404, detail="No active workspace found")
-    except Exception as e:
-        logger.error(f"Error getting default workspace: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get workspace")
+# Removed workspace-related functions for V3 simplified schema
 
 def generate_chat_title(first_message: str) -> str:
     """Generate a simple chat title from the first user message (fallback)."""
@@ -142,70 +131,10 @@ async def get_recent_chats(
     limit: int = 20,
     db=Depends(get_db)
 ):
-    """Get recent chat sessions for the current workspace."""
+    """Get recent chat sessions (V3 simplified - no workspace concept)."""
     try:
-        # First check if chat_sessions table exists
-        table_check_query = """
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = 'chat_sessions'
-        );
-        """
-        
-        table_exists_result = db.execute_query(table_check_query)
-        if not table_exists_result or not table_exists_result[0]['exists']:
-            logger.info("Chat sessions table does not exist, returning empty list")
-            return []
-        
-        # Only try to get workspace ID after confirming tables exist
-        try:
-            workspace_id = get_default_workspace_id(db)
-        except HTTPException:
-            # If no workspace exists, return empty list
-            logger.info("No workspace found, returning empty chat list")
-            return []
-        
-        # Check if the function exists
-        function_check_query = """
-        SELECT EXISTS (
-            SELECT FROM information_schema.routines 
-            WHERE routine_schema = 'public' 
-            AND routine_name = 'get_recent_chat_sessions'
-        );
-        """
-        
-        function_exists_result = db.execute_query(function_check_query)
-        if function_exists_result and function_exists_result[0]['exists']:
-            # Use the database function to get recent chats
-            query = """
-            SELECT * FROM get_recent_chat_sessions(%s, %s)
-            """
-            result = db.execute_query(query, (workspace_id, limit))
-        else:
-            # Fallback to direct table query if function doesn't exist
-            logger.warning("get_recent_chat_sessions function not found, using direct query")
-            query = """
-            SELECT 
-                cs.id,
-                cs.title,
-                cs.summary,
-                cs.message_count,
-                cs.last_message_at,
-                cs.created_at,
-                (
-                    SELECT cm.content
-                    FROM chat_messages cm
-                    WHERE cm.session_id = cs.id
-                    ORDER BY cm.message_order DESC
-                    LIMIT 1
-                ) as last_message_preview
-            FROM chat_sessions cs
-            WHERE cs.workspace_id = %s AND cs.status = 'active'
-            ORDER BY cs.last_message_at DESC
-            LIMIT %s
-            """
-            result = db.execute_query(query, (workspace_id, limit))
+        # Use V3 database method
+        result = db.get_recent_chat_sessions(limit)
         
         recent_chats = []
         for row in result:
@@ -216,18 +145,15 @@ async def get_recent_chats(
                 message_count=row['message_count'],
                 last_message_at=row['last_message_at'],
                 created_at=row['created_at'],
-                last_message_preview=row['last_message_preview']
+                last_message_preview=row.get('last_message_preview')
             ))
         
         logger.info(f"Retrieved {len(recent_chats)} recent chats")
         return recent_chats
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error getting recent chats: {e}")
         # Return empty list instead of raising error for better UX
-        logger.info("Returning empty chat list due to error")
         return []
 
 @router.post("/", response_model=ChatSession)
@@ -235,63 +161,36 @@ async def create_chat_session(
     session_data: ChatSessionCreate,
     db=Depends(get_db)
 ):
-    """Create a new chat session."""
+    """Create a new chat session (V3 simplified)."""
     try:
-        # Check if chat_sessions table exists
-        table_check_query = """
-        SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = 'chat_sessions'
-        );
-        """
+        # Prepare session data
+        session_data_dict = {
+            'title': session_data.title or "New Chat",
+            'summary': session_data.summary,
+            'session_context': session_data.session_context or {}
+        }
         
-        table_exists_result = db.execute_query(table_check_query)
-        if not table_exists_result or not table_exists_result[0]['exists']:
-            raise HTTPException(
-                status_code=503, 
-                detail="Chat sessions feature not available. Please deploy the chat sessions database schema first."
-            )
-        
-        workspace_id = get_default_workspace_id(db)
-        session_id = str(uuid.uuid4())
-        
-        # Default title if not provided
-        title = session_data.title or "New Chat"
-        
-        query = """
-        INSERT INTO chat_sessions (id, workspace_id, title, summary, session_context)
-        VALUES (%s, %s, %s, %s, %s)
-        RETURNING *
-        """
-        
-        result = db.execute_query(
-            query, 
-            (session_id, workspace_id, title, session_data.summary, session_data.session_context)
-        )
+        # Use V3 database method
+        result = db.create_chat_session(session_data_dict)
         
         if not result:
             raise HTTPException(status_code=500, detail="Failed to create chat session")
         
-        row = result[0]
         chat_session = ChatSession(
-            id=str(row['id']),
-            workspace_id=str(row['workspace_id']),
-            title=row['title'],
-            summary=row['summary'],
-            status=row['status'],
-            message_count=row['message_count'],
-            created_at=row['created_at'],
-            updated_at=row['updated_at'],
-            last_message_at=row['last_message_at'],
-            session_context=row['session_context'] or {}
+            id=str(result['id']),
+            title=result['title'],
+            summary=result['summary'],
+            status=result['status'],
+            message_count=result['message_count'],
+            created_at=result['created_at'],
+            updated_at=result['updated_at'],
+            last_message_at=result['last_message_at'],
+            session_context=result['session_context'] or {}
         )
         
-        logger.info(f"Created new chat session: {session_id}")
+        logger.info(f"Created new chat session: {result['id']}")
         return chat_session
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error creating chat session: {e}")
         raise HTTPException(status_code=500, detail="Failed to create chat session")
@@ -301,24 +200,20 @@ async def get_chat_session(
     session_id: str,
     db=Depends(get_db)
 ):
-    """Get a chat session with all its messages."""
+    """Get a chat session with all its messages (V3 simplified)."""
     try:
-        # Use the database function to get session with messages
-        query = "SELECT get_chat_session_with_messages(%s) as session_data"
-        result = db.execute_query(query, (session_id,))
+        # Use V3 database method
+        result = db.get_chat_session_with_messages(session_id)
         
-        if not result or not result[0]['session_data']:
+        if not result:
             raise HTTPException(status_code=404, detail="Chat session not found")
         
-        session_data = result[0]['session_data']
-        
         # Parse the session data
-        session_info = session_data['session']
-        messages_info = session_data['messages']
+        session_info = result['session']
+        messages_info = result['messages']
         
         session = ChatSession(
             id=str(session_info['id']),
-            workspace_id=str(session_info['workspace_id']),
             title=session_info['title'],
             summary=session_info['summary'],
             status=session_info['status'],
