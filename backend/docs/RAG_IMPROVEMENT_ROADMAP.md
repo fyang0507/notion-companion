@@ -284,7 +284,7 @@ class CrossEncoderReranker:
 
 #### Current: Basic Bilingual Support
 ```sql
--- Schema V3: Using 'simple' text search configuration
+-- Schema: Using 'simple' text search configuration
 NEW.search_vector = to_tsvector('simple', coalesce(NEW.title, '') || ' ' || coalesce(NEW.content, ''));
 ```
 
@@ -574,7 +574,7 @@ class MultiModalProcessor:
 | 5. Advanced Features | High | Very High | 🔥 | **Future** |
 
 ### 🌍 **Note on Multilingual Priority**
-Given the bilingual English/Chinese content requirement, Phase 4.5 (Multilingual Support) should be prioritized alongside or before Phase 4 (Hybrid Search) for optimal user experience. The current schema V3 provides basic bilingual support with 'simple' text search configuration as a foundation.
+Given the bilingual English/Chinese content requirement, Phase 4.5 (Multilingual Support) should be prioritized alongside or before Phase 4 (Hybrid Search) for optimal user experience. The current schema provides basic bilingual support with 'simple' text search configuration as a foundation.
 
 ## 🎯 Success Metrics
 

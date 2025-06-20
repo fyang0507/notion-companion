@@ -42,7 +42,7 @@ export function useNotionDatabases() {
       setLoading(true)
       setError(null)
 
-      // Fetch databases (V3 schema - single workspace model)
+      // Fetch databases (single workspace model)
       const { data: databaseData, error: databaseError } = await supabase
         .from('notion_databases')
         .select(`

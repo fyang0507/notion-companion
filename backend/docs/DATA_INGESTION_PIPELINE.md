@@ -11,7 +11,7 @@ graph TD
     A[Notion Database] --> B[NotionService]
     B --> C[DocumentProcessor]
     C --> D[OpenAIService]
-    D --> E[DatabaseV3]
+    D --> E[Database]
     E --> F[Vector Search]
     E --> G[Chat RAG]
     
@@ -45,7 +45,7 @@ graph TD
 └─────────────────────────────────┘
            │
            ▼
-┌─ DatabaseV3 ───────────────────┐
+┌─ Database ─────────────────────┐
 │ • Stores documents & chunks    │
 │ • Manages vector data          │
 │ • Tracks sync timestamps       │
@@ -58,8 +58,8 @@ graph TD
 
 **Main Entry Points:**
 ```bash
-# V3 Schema sync script
-./backend/scripts/sync_databases_v3.py
+# Schema sync script
+./backend/scripts/sync_databases.py
 
 # Convenience wrapper 
 ./backend/sync_notion_databases.sh
@@ -69,16 +69,16 @@ graph TD
 ```bash
 # Basic sync
 cd backend
-.venv/bin/python scripts/sync_databases_v3.py
+.venv/bin/python scripts/sync_databases.py
 
 # Dry run (preview changes)
-.venv/bin/python scripts/sync_databases_v3.py --dry-run
+.venv/bin/python scripts/sync_databases.py --dry-run
 
 # Specific database
-.venv/bin/python scripts/sync_databases_v3.py --database-id 1519782c4f4a80dc9deff9768446a113
+.venv/bin/python scripts/sync_databases.py --database-id 1519782c4f4a80dc9deff9768446a113
 
 # Custom config
-.venv/bin/python scripts/sync_databases_v3.py --config /path/to/config.toml
+.venv/bin/python scripts/sync_databases.py --config /path/to/config.toml
 ```
 
 ### 2. Frontend-Triggered Sync
@@ -286,7 +286,7 @@ if config.chunk_content and len(content) > 1000:
 ### Comprehensive Logging
 ```
 logs/
-├── sync_v3.log          # Detailed sync operations
+├── sync.log          # Detailed sync operations
 ├── api.log              # API request/response timing  
 ├── errors.log           # Error tracking
 ├── performance.log      # Performance metrics
@@ -352,7 +352,7 @@ for attempt in range(config.max_retries):
 
 ### Chinese Content Handling
 ```python
-# Bilingual support in V3 schema
+# Bilingual support in schema
 CREATE INDEX documents_content_search_idx ON documents 
 USING gin(to_tsvector('simple', content));
 
@@ -378,7 +378,7 @@ embedding_response = await openai_service.generate_embedding(embedding_text)
 0 2 * * * /path/to/backend/sync_notion_databases.sh >> /var/log/notion-sync.log 2>&1
 
 # Hourly incremental sync
-0 * * * * /path/to/backend/scripts/sync_databases_v3.py --config /path/to/config.toml
+0 * * * * /path/to/backend/scripts/sync_databases.py --config /path/to/config.toml
 ```
 
 ### CI/CD Integration
@@ -411,7 +411,7 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.OPENAI_KEY }}
       run: |
         cd backend
-        python scripts/sync_databases_v3.py
+        python scripts/sync_databases.py
 ```
 
 ## 🔍 Troubleshooting
@@ -445,7 +445,7 @@ requests_per_second = 1  # Slower rate
 cd backend
 .venv/bin/python -c "
 import asyncio
-from database_v3 import init_db, get_db
+from database import init_db, get_db
 asyncio.run(init_db())
 print('✅ Database connection OK')
 "
@@ -454,7 +454,7 @@ print('✅ Database connection OK')
 ### Debug Mode
 ```bash
 # Enable verbose logging
-python scripts/sync_databases_v3.py --verbose
+python scripts/sync_databases.py --verbose
 
 # Or modify config
 [global_settings]
@@ -469,7 +469,7 @@ service = NotionService("your_token")
 pages = await service.get_database_pages("database_id")
 
 # Test database connection  
-from database_v3 import init_db, get_db
+from database import init_db, get_db
 await init_db()
 db = get_db()
 databases = db.get_notion_databases()

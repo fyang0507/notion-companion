@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Test script for V3 schema data ingestion.
-This script tests the basic functionality of the new schema and sync process.
+Test script for schema data ingestion.
+This script tests the basic functionality of the schema and sync process.
 """
 
 import asyncio
@@ -18,7 +18,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 load_dotenv(dotenv_path="../.env")  # Backend .env
 load_dotenv(dotenv_path="../../.env")  # Root .env
 
-from database_v3 import init_db, get_db
+from database import init_db, get_db
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -66,10 +66,10 @@ async def test_sync_single_database():
     
     try:
         # Import and run the sync
-        from sync_databases_v3 import NotionDatabaseSyncerV3, create_single_database_config
+        from sync_databases import NotionDatabaseSyncer, create_single_database_config
         
         config = create_single_database_config(database_id)
-        syncer = NotionDatabaseSyncerV3(dry_run=True)  # Use dry run for testing
+        syncer = NotionDatabaseSyncer(dry_run=True)  # Use dry run for testing
         
         await syncer.initialize()
         
@@ -158,7 +158,7 @@ async def test_chat_sessions():
 
 async def run_all_tests():
     """Run all tests."""
-    logger.info("🚀 Starting V3 schema ingestion tests...")
+    logger.info("🚀 Starting schema ingestion tests...")
     
     tests = [
         ("Database Connection", test_database_connection),
@@ -202,7 +202,7 @@ async def run_all_tests():
     logger.info(f"\nOverall: {passed}/{total} tests passed")
     
     if passed == total:
-        logger.info("🎉 All tests passed! V3 schema is ready for ingestion.")
+        logger.info("🎉 All tests passed! Schema is ready for ingestion.")
         return True
     else:
         logger.error("⚠️  Some tests failed. Please check the configuration.")
@@ -212,9 +212,9 @@ async def run_all_tests():
 def print_usage():
     """Print usage instructions."""
     print("""
-🚀 V3 Schema Ingestion Test
+🚀 Schema Ingestion Test
 
-This script tests the new V3 schema and ingestion capabilities.
+This script tests the new schema and ingestion capabilities.
 
 Environment Variables:
   NOTION_ACCESS_TOKEN     - Your Notion integration token (required for sync test)
@@ -223,17 +223,17 @@ Environment Variables:
   NEXT_PUBLIC_SUPABASE_ANON_KEY - Your Supabase anon key
 
 Usage:
-  python test_v3_ingestion.py
+  python test_ingestion.py
 
 What this tests:
-  1. Database connection to V3 schema
+  1. Database connection to schema
   2. Basic CRUD operations
   3. Vector search functions
   4. Chat session functionality  
   5. Notion database sync (if NOTION_DATABASE_ID provided)
 
 To run a full sync after testing:
-  python sync_databases_v3.py --database-id YOUR_DATABASE_ID
+  python sync_databases.py --database-id YOUR_DATABASE_ID
 """)
 
 
@@ -247,9 +247,9 @@ async def main():
     
     if success:
         logger.info("\n🎯 Next steps:")
-        logger.info("1. Run actual sync: python sync_databases_v3.py --database-id YOUR_DATABASE_ID")
+        logger.info("1. Run actual sync: python sync_databases.py --database-id YOUR_DATABASE_ID")
         logger.info("2. Test frontend with new backend")
-        logger.info("3. Update API endpoints to use V3 schema")
+        logger.info("3. Update API endpoints to use simplified schema")
         sys.exit(0)
     else:
         logger.error("\n🔧 Fix the failing tests before proceeding with ingestion")

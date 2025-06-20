@@ -6,7 +6,7 @@ import time
 from dotenv import load_dotenv
 
 from routers import chat, search, notion_webhook, bootstrap, chat_sessions
-from database_v3 import init_db
+from database import init_db
 from logging_config import setup_logging, set_request_id, log_api_request, get_logger
 
 load_dotenv(dotenv_path="../.env")

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from database_v3 import get_db
+from database import get_db
 from services.openai_service import get_openai_service
 from models import ChatRequest
 from logging_config import get_logger, log_performance
@@ -37,7 +37,7 @@ async def chat_endpoint(request: ChatRequest):
         log_performance("embedding_generation", embedding_duration, 
                        message_length=len(latest_user_message))
         
-        # Find relevant documents and chunks using vector search (V3)
+        # Find relevant documents and chunks using vector search
         search_start = time.time()
         doc_results = db.vector_search_documents(
             query_embedding=embedding_response.embedding,

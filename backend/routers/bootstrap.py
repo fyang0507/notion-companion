@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from database_v3 import get_db
+from database import get_db
 from services.openai_service import get_openai_service
 from services.document_processor import get_document_processor
 from services.notion_service import get_notion_service

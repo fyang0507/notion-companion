@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 import uuid
 
-from database_v3 import get_db
+from database import get_db
 from logging_config import get_logger
 from services.openai_service import get_openai_service
 
@@ -80,7 +80,7 @@ class RecentChatSummary(BaseModel):
 # HELPER FUNCTIONS
 # ============================================================================
 
-# Removed workspace-related functions for V3 simplified schema
+# Removed workspace-related functions for simplified schema
 
 def generate_chat_title(first_message: str) -> str:
     """Generate a simple chat title from the first user message (fallback)."""
@@ -131,9 +131,9 @@ async def get_recent_chats(
     limit: int = 20,
     db=Depends(get_db)
 ):
-    """Get recent chat sessions (V3 simplified - no workspace concept)."""
+    """Get recent chat sessions (simplified - no workspace concept)."""
     try:
-        # Use V3 database method
+        # Use database method
         result = db.get_recent_chat_sessions(limit)
         
         recent_chats = []
@@ -161,7 +161,7 @@ async def create_chat_session(
     session_data: ChatSessionCreate,
     db=Depends(get_db)
 ):
-    """Create a new chat session (V3 simplified)."""
+    """Create a new chat session (simplified)."""
     try:
         # Prepare session data
         session_data_dict = {
@@ -170,7 +170,7 @@ async def create_chat_session(
             'session_context': session_data.session_context or {}
         }
         
-        # Use V3 database method
+        # Use database method
         result = db.create_chat_session(session_data_dict)
         
         if not result:
@@ -200,9 +200,9 @@ async def get_chat_session(
     session_id: str,
     db=Depends(get_db)
 ):
-    """Get a chat session with all its messages (V3 simplified)."""
+    """Get a chat session with all its messages (simplified)."""
     try:
-        # Use V3 database method
+        # Use database method
         result = db.get_chat_session_with_messages(session_id)
         
         if not result:

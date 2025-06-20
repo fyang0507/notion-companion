@@ -1,598 +1,608 @@
--- Schema V2 for Notion Companion RAG application
--- Hybrid approach: Single-user, flexible metadata handling, multimedia support
+-- Schema for Notion Companion - Simplified Single Workspace Architecture
+-- Removes confusing "workspace" terminology and aligns with Notion concepts
 --
 -- Design Principles:
--- 1. Single-user application (no user table complexity)
--- 2. Hybrid metadata: JSONB + extracted common fields for performance
--- 3. Database-aware schema management
--- 4. Multimedia-ready architecture
+-- 1. Single Notion workspace/user (no workspace table needed)
+-- 2. Notion databases are the primary organizational unit
+-- 3. Clear terminology matching Notion's API concepts
+-- 4. Simplified architecture for single-user deployment
+-- 5. Bilingual support (English/Chinese) using 'simple' text search configuration
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;  -- For text search improvements
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- ============================================================================
 -- CORE TABLES
 -- ============================================================================
 
--- Workspaces table (simplified for single workspace)
-CREATE TABLE IF NOT EXISTS workspaces (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL DEFAULT 'Default Workspace',
-    notion_access_token TEXT NOT NULL,  -- Encrypted in production
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    last_sync_at TIMESTAMP WITH TIME ZONE,
-    is_active BOOLEAN DEFAULT TRUE
-);
-
--- Database schemas registry - tracks Notion database structures
-CREATE TABLE IF NOT EXISTS database_schemas (
-    database_id TEXT PRIMARY KEY,
-    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+-- Notion databases registry - tracks connected Notion databases
+CREATE TABLE IF NOT EXISTS notion_databases (
+    database_id TEXT PRIMARY KEY,  -- Notion database ID
     database_name TEXT NOT NULL,
     
-    -- Schema definition from Notion API
-    notion_schema JSONB NOT NULL,  -- Raw Notion database schema
+    -- Notion API access (single workspace model)
+    notion_access_token TEXT NOT NULL,  -- Encrypted in production
     
-    -- Processed schema for our application
+    -- Database schema from Notion API
+    notion_schema JSONB NOT NULL,  -- Raw Notion database schema
     field_definitions JSONB NOT NULL,  -- Field types, constraints, etc.
     queryable_fields JSONB NOT NULL,   -- Fields we extract to dedicated columns
     
-    -- Metadata
+    -- Sync and status tracking
+    is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_sync_at TIMESTAMP WITH TIME ZONE,
     last_analyzed_at TIMESTAMP WITH TIME ZONE
 );
 
--- Core documents table with hybrid metadata approach
+-- Core documents table - pages from Notion databases
 CREATE TABLE IF NOT EXISTS documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-    database_id TEXT NOT NULL REFERENCES database_schemas(database_id) ON DELETE CASCADE,
+    notion_database_id TEXT NOT NULL REFERENCES notion_databases(database_id) ON DELETE CASCADE,
     
     -- Notion identifiers
-    notion_page_id TEXT NOT NULL,
-    notion_database_id TEXT NOT NULL,
+    notion_page_id TEXT NOT NULL UNIQUE,
+    notion_database_id_ref TEXT NOT NULL,  -- Redundant but useful for constraints
     
-    -- Core content
+    -- Content and metadata
     title TEXT NOT NULL,
-    content TEXT NOT NULL,
+    content TEXT,  -- Full page content
+    content_type TEXT DEFAULT 'page',
     
-    -- Embeddings for different granularities
-    title_embedding vector(1536),      -- Title-only embedding for broad matching
-    content_embedding vector(1536),    -- Full content embedding (for small docs)
-    summary_embedding vector(1536),    -- Summary embedding (for large docs)
-    
-    -- Common metadata fields (extracted for performance)
+    -- Extracted common metadata
+    created_time TIMESTAMP WITH TIME ZONE,
+    last_edited_time TIMESTAMP WITH TIME ZONE,
+    created_by TEXT,
+    last_edited_by TEXT,
     page_url TEXT,
-    parent_page_id TEXT,
     
-    -- Temporal data (commonly queried)
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    notion_created_time TIMESTAMP WITH TIME ZONE,
-    notion_last_edited_time TIMESTAMP WITH TIME ZONE,
+    -- Full Notion metadata (flexible storage)
+    notion_properties JSONB NOT NULL DEFAULT '{}',
+    extracted_metadata JSONB DEFAULT '{}',  -- Processed/computed metadata
     
-    -- Content classification
-    content_type TEXT,  -- 'document', 'note', 'project', 'meeting', etc.
-    content_length INTEGER,
-    token_count INTEGER,
+    -- Vector embeddings
+    content_embedding vector(1536),  -- OpenAI embedding
+    summary TEXT,  -- AI-generated summary for large documents
+    summary_embedding vector(1536),  -- Summary embedding for hybrid search
     
-    -- Processing status
-    processing_status TEXT DEFAULT 'pending',  -- 'pending', 'processing', 'completed', 'failed'
-    is_chunked BOOLEAN DEFAULT FALSE,
-    chunk_count INTEGER DEFAULT 0,
-    
-    -- Database-specific metadata (JSONB for flexibility)
-    notion_properties JSONB DEFAULT '{}',  -- Raw Notion properties
-    extracted_metadata JSONB DEFAULT '{}', -- Processed/normalized metadata
-    
-    -- Multimedia references
+    -- Content processing
+    token_count INTEGER DEFAULT 0,
     has_multimedia BOOLEAN DEFAULT FALSE,
-    multimedia_refs JSONB DEFAULT '[]',  -- References to multimedia content
+    multimedia_refs JSONB DEFAULT '[]',
+    
+    -- Timestamps
+    indexed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    -- Search optimization
+    search_vector tsvector,
     
     -- Constraints
-    UNIQUE(workspace_id, notion_page_id),
-    UNIQUE(database_id, notion_page_id)
+    CONSTRAINT documents_notion_page_unique UNIQUE(notion_page_id),
+    CONSTRAINT documents_database_page_unique UNIQUE(notion_database_id, notion_page_id)
 );
 
--- Extracted metadata for common/queryable fields
-CREATE TABLE IF NOT EXISTS document_metadata (
-    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    field_name TEXT NOT NULL,
-    field_type TEXT NOT NULL,  -- 'text', 'number', 'date', 'select', 'multi_select', 'checkbox', etc.
-    
-    -- Typed values for efficient querying
-    text_value TEXT,
-    number_value DECIMAL,
-    date_value DATE,
-    datetime_value TIMESTAMP WITH TIME ZONE,
-    boolean_value BOOLEAN,
-    array_value TEXT[],
-    
-    -- Original raw value
-    raw_value JSONB,
-    
-    -- Metadata about the field
-    is_indexed BOOLEAN DEFAULT TRUE,
-    field_priority INTEGER DEFAULT 0,  -- Higher priority = more important for search
-    
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    
-    PRIMARY KEY (document_id, field_name)
-);
-
--- Document chunks for large documents
+-- Document chunks for granular search
 CREATE TABLE IF NOT EXISTS document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    chunk_index INTEGER NOT NULL,
     
     -- Chunk content
     content TEXT NOT NULL,
+    chunk_order INTEGER NOT NULL,
+    start_char INTEGER,
+    end_char INTEGER,
+    
+    -- Vector embedding
     embedding vector(1536),
-    token_count INTEGER,
     
-    -- Chunk context
-    section_header TEXT,        -- Parent section title
-    hierarchy_path TEXT[],      -- ['Chapter 1', 'Section 1.1', 'Subsection 1.1.1']
-    context_before TEXT,        -- Previous chunk overlap
-    context_after TEXT,         -- Next chunk overlap
+    -- Metadata inheritance from parent document
+    chunk_metadata JSONB DEFAULT '{}',
     
-    -- Chunk metadata
-    start_position INTEGER,     -- Character position in original document
-    end_position INTEGER,
-    content_type TEXT,          -- 'text', 'code', 'table', 'list', etc.
-    
+    -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
-    UNIQUE(document_id, chunk_index)
+    -- Constraints
+    UNIQUE(document_id, chunk_order)
 );
 
--- ============================================================================
--- MULTIMEDIA SUPPORT TABLES
--- ============================================================================
+-- Extracted metadata for queryable fields (performance optimization)
+CREATE TABLE IF NOT EXISTS document_metadata (
+    document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+    notion_database_id TEXT NOT NULL REFERENCES notion_databases(database_id) ON DELETE CASCADE,
+    
+    -- Common queryable fields (can be extended per database)
+    status TEXT,
+    tags TEXT[],
+    priority TEXT,
+    assignee TEXT,
+    due_date DATE,
+    completion_date DATE,
+    
+    -- Flexible additional metadata
+    custom_fields JSONB DEFAULT '{}',
+    
+    -- Search optimization
+    metadata_search tsvector,
+    
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
--- Multimedia assets referenced in documents
+-- Multimedia assets support
 CREATE TABLE IF NOT EXISTS multimedia_assets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Asset identification
-    notion_asset_id TEXT,           -- Notion's internal asset ID
-    notion_url TEXT,                -- Original Notion URL
-    asset_type TEXT NOT NULL,       -- 'image', 'video', 'audio', 'file', 'embed'
+    notion_file_id TEXT,  -- From Notion API
+    asset_type TEXT NOT NULL,  -- 'image', 'file', 'video', etc.
+    file_name TEXT,
+    file_size BIGINT,
     mime_type TEXT,
-    file_size_bytes BIGINT,
     
-    -- Asset content
-    original_filename TEXT,
-    stored_path TEXT,               -- Local/cloud storage path
-    thumbnail_path TEXT,            -- Thumbnail for images/videos
+    -- Storage
+    file_url TEXT,  -- Notion CDN URL or local storage path
+    local_path TEXT,  -- If stored locally
     
-    -- Extracted content
-    extracted_text TEXT,            -- OCR from images, transcripts from audio/video
+    -- Content analysis
+    extracted_text TEXT,  -- OCR or document text extraction
+    content_embedding vector(1536),  -- Embedding of extracted content
+    
+    -- Metadata
     extracted_metadata JSONB DEFAULT '{}',
     
-    -- Embeddings for multimedia content
-    content_embedding vector(1536), -- Embedding of extracted text/description
-    visual_embedding vector(512),   -- Image/video visual embedding (future)
-    
-    -- Processing status
-    processing_status TEXT DEFAULT 'pending',
-    extraction_completed_at TIMESTAMP WITH TIME ZONE,
-    
+    -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Links between documents and multimedia assets
+-- Link multimedia assets to documents
 CREATE TABLE IF NOT EXISTS document_multimedia (
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     asset_id UUID NOT NULL REFERENCES multimedia_assets(id) ON DELETE CASCADE,
     
-    -- Context of the multimedia in the document
-    position_in_document INTEGER,   -- Order/position in the document
-    context_before TEXT,            -- Text before the multimedia
-    context_after TEXT,             -- Text after the multimedia
-    caption TEXT,                   -- Alt text or caption
-    
-    -- Relationship metadata
-    relationship_type TEXT,         -- 'embedded', 'referenced', 'attached'
-    is_primary BOOLEAN DEFAULT FALSE, -- Is this a primary/hero image?
-    
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    -- Context within document
+    context_description TEXT,
+    position_in_document INTEGER,
     
     PRIMARY KEY (document_id, asset_id)
 );
 
--- ============================================================================
--- SEARCH & ANALYTICS TABLES
--- ============================================================================
-
--- Search queries and results for learning/improvement
+-- Search analytics and optimization
 CREATE TABLE IF NOT EXISTS search_analytics (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     
     -- Query information
     query_text TEXT NOT NULL,
-    query_type TEXT,  -- 'semantic', 'keyword', 'hybrid', 'filter'
-    query_intent TEXT, -- 'factual', 'procedural', 'exploratory'
+    query_embedding vector(1536),
     
-    -- Search parameters
-    search_parameters JSONB,
-    filters_applied JSONB,
+    -- Filters and context
+    database_filters TEXT[],
+    metadata_filters JSONB DEFAULT '{}',
     
-    -- Results
+    -- Results and performance
     result_count INTEGER,
-    top_result_ids UUID[],
+    top_result_similarity REAL,
     response_time_ms INTEGER,
     
-    -- User feedback (if available)
-    user_clicked_result_id UUID,
-    user_rating INTEGER,  -- 1-5 rating
+    -- User interaction (if applicable)
+    clicked_result_ids UUID[],
+    user_satisfaction_score INTEGER,  -- 1-5 if provided
     
+    -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Chat sessions (simplified - no workspace reference needed)
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Session metadata
+    title TEXT NOT NULL DEFAULT 'New Chat',
+    summary TEXT,  -- AI-generated summary
+    
+    -- Session state
+    status TEXT DEFAULT 'active',  -- 'active', 'archived', 'deleted'
+    message_count INTEGER DEFAULT 0,
+    
+    -- Context and filters used in this session
+    session_context JSONB DEFAULT '{}',  -- Database filters, models, etc.
+    
+    -- Timestamps
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_message_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    deleted_at TIMESTAMP WITH TIME ZONE,  -- For soft delete
+    
+    -- Search index
+    search_vector tsvector
+);
+
+-- Chat messages
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    
+    -- Message content
+    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+    content TEXT NOT NULL,
+    
+    -- AI metadata (for assistant messages)
+    model_used TEXT,
+    tokens_used INTEGER,
+    response_time_ms INTEGER,
+    
+    -- Context and citations
+    citations JSONB DEFAULT '[]',
+    context_used JSONB DEFAULT '{}',  -- Database filters, search results used
+    
+    -- Ordering and timestamps
+    message_order INTEGER NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    -- Constraints
+    UNIQUE(session_id, message_order)
 );
 
 -- ============================================================================
 -- INDEXES FOR PERFORMANCE
 -- ============================================================================
 
--- Document indexes
-CREATE INDEX IF NOT EXISTS idx_documents_database_id ON documents(database_id);
-CREATE INDEX IF NOT EXISTS idx_documents_notion_page_id ON documents(notion_page_id);
+-- Document search indexes
+CREATE INDEX IF NOT EXISTS idx_documents_database_id ON documents(notion_database_id);
+CREATE INDEX IF NOT EXISTS idx_documents_last_edited ON documents(last_edited_time DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_content_type ON documents(content_type);
-CREATE INDEX IF NOT EXISTS idx_documents_notion_last_edited_time ON documents(notion_last_edited_time);
-CREATE INDEX IF NOT EXISTS idx_documents_processing_status ON documents(processing_status);
-CREATE INDEX IF NOT EXISTS idx_documents_has_multimedia ON documents(has_multimedia);
+CREATE INDEX IF NOT EXISTS idx_documents_search_vector ON documents USING GIN(search_vector);
 
--- Text search indexes
-CREATE INDEX IF NOT EXISTS idx_documents_title_gin ON documents USING gin(title gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_documents_content_gin ON documents USING gin(content gin_trgm_ops);
+-- Vector similarity indexes
+CREATE INDEX IF NOT EXISTS idx_documents_content_embedding ON documents USING ivfflat (content_embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_documents_summary_embedding ON documents USING ivfflat (summary_embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- Metadata indexes
-CREATE INDEX IF NOT EXISTS idx_document_metadata_field_name ON document_metadata(field_name);
-CREATE INDEX IF NOT EXISTS idx_document_metadata_field_type ON document_metadata(field_type);
-CREATE INDEX IF NOT EXISTS idx_document_metadata_text_value ON document_metadata(text_value);
-CREATE INDEX IF NOT EXISTS idx_document_metadata_date_value ON document_metadata(date_value);
-CREATE INDEX IF NOT EXISTS idx_document_metadata_number_value ON document_metadata(number_value);
+CREATE INDEX IF NOT EXISTS idx_document_metadata_status ON document_metadata(status);
+CREATE INDEX IF NOT EXISTS idx_document_metadata_tags ON document_metadata USING GIN(tags);
+CREATE INDEX IF NOT EXISTS idx_document_metadata_due_date ON document_metadata(due_date);
+CREATE INDEX IF NOT EXISTS idx_document_metadata_search ON document_metadata USING GIN(metadata_search);
 
--- Vector indexes (using HNSW for better performance)
-CREATE INDEX IF NOT EXISTS idx_documents_content_embedding ON documents 
-    USING hnsw (content_embedding vector_cosine_ops) 
-    WITH (m = 16, ef_construction = 64);
+-- Chat indexes
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_status ON chat_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_last_message ON chat_sessions(last_message_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_order ON chat_messages(session_id, message_order);
 
-CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding ON document_chunks 
-    USING hnsw (embedding vector_cosine_ops) 
-    WITH (m = 16, ef_construction = 64);
-
-CREATE INDEX IF NOT EXISTS idx_multimedia_content_embedding ON multimedia_assets 
-    USING hnsw (content_embedding vector_cosine_ops) 
-    WITH (m = 16, ef_construction = 64);
-
--- Chunk indexes
-CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
-CREATE INDEX IF NOT EXISTS idx_document_chunks_content_type ON document_chunks(content_type);
-
--- Multimedia indexes
-CREATE INDEX IF NOT EXISTS idx_multimedia_assets_type ON multimedia_assets(asset_type);
-CREATE INDEX IF NOT EXISTS idx_multimedia_assets_processing_status ON multimedia_assets(processing_status);
-CREATE INDEX IF NOT EXISTS idx_document_multimedia_document_id ON document_multimedia(document_id);
+-- Analytics indexes
+CREATE INDEX IF NOT EXISTS idx_search_analytics_created ON search_analytics(created_at DESC);
+-- Use 'simple' configuration for bilingual query indexing
+CREATE INDEX IF NOT EXISTS idx_search_analytics_query ON search_analytics USING GIN(to_tsvector('simple', query_text));
 
 -- ============================================================================
--- FUNCTIONS FOR SEARCH AND RETRIEVAL
+-- HELPER FUNCTIONS
 -- ============================================================================
 
--- Enhanced vector similarity search with metadata filtering
-CREATE OR REPLACE FUNCTION hybrid_search_documents(
+-- Simple document similarity search
+CREATE OR REPLACE FUNCTION match_documents(
     query_embedding vector(1536),
-    workspace_id_param uuid,
+    database_filter text[] DEFAULT NULL,
+    match_threshold float DEFAULT 0.7,
+    match_count int DEFAULT 10
+)
+RETURNS TABLE (
+    id uuid,
+    title text,
+    content text,
+    similarity real,
+    metadata jsonb,
+    notion_page_id text,
+    page_url text
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        d.id,
+        d.title,
+        d.content,
+        (1 - (d.content_embedding <=> query_embedding))::real as similarity,
+        d.extracted_metadata as metadata,
+        d.notion_page_id,
+        d.page_url
+    FROM documents d
+    WHERE d.content_embedding IS NOT NULL
+        AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
+        AND 1 - (d.content_embedding <=> query_embedding) > match_threshold
+    ORDER BY d.content_embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
+
+-- Chunk similarity search
+CREATE OR REPLACE FUNCTION match_chunks(
+    query_embedding vector(1536),
+    database_filter text[] DEFAULT NULL,
+    match_threshold float DEFAULT 0.7,
+    match_count int DEFAULT 10
+)
+RETURNS TABLE (
+    chunk_id uuid,
+    content text,
+    similarity real,
+    document_id uuid,
+    title text,
+    notion_page_id text,
+    page_url text
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        dc.id as chunk_id,
+        dc.content,
+        (1 - (dc.embedding <=> query_embedding))::real as similarity,
+        d.id as document_id,
+        d.title,
+        d.notion_page_id,
+        d.page_url
+    FROM document_chunks dc
+    JOIN documents d ON dc.document_id = d.id
+    WHERE dc.embedding IS NOT NULL
+        AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
+        AND 1 - (dc.embedding <=> query_embedding) > match_threshold
+    ORDER BY dc.embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
+
+-- Hybrid search combining documents and chunks
+CREATE OR REPLACE FUNCTION hybrid_search(
+    query_embedding vector(1536),
     database_filter text[] DEFAULT NULL,
     content_type_filter text[] DEFAULT NULL,
-    date_range_start date DEFAULT NULL,
-    date_range_end date DEFAULT NULL,
     metadata_filters jsonb DEFAULT '{}',
     match_threshold float DEFAULT 0.7,
     match_count int DEFAULT 10
 )
 RETURNS TABLE (
+    result_type text,
     id uuid,
-    database_id text,
-    notion_page_id text,
     title text,
     content text,
-    similarity float,
-    extracted_metadata jsonb,
-    content_type text,
-    notion_last_edited_time timestamp with time zone,
+    similarity real,
+    metadata jsonb,
+    notion_page_id text,
     page_url text
 )
-LANGUAGE sql STABLE
-SECURITY DEFINER
-SET search_path = public
+LANGUAGE plpgsql
 AS $$
-    WITH filtered_docs AS (
-        SELECT d.*
-        FROM documents d
-        WHERE d.workspace_id = workspace_id_param
-            AND d.content_embedding IS NOT NULL
-            AND (database_filter IS NULL OR d.database_id = ANY(database_filter))
-            AND (content_type_filter IS NULL OR d.content_type = ANY(content_type_filter))
-            AND (date_range_start IS NULL OR d.notion_last_edited_time::date >= date_range_start)
-            AND (date_range_end IS NULL OR d.notion_last_edited_time::date <= date_range_end)
-            AND (metadata_filters = '{}' OR d.extracted_metadata @> metadata_filters)
-    )
-    SELECT
-        d.id,
-        d.database_id,
-        d.notion_page_id,
-        d.title,
-        CASE 
-            WHEN length(d.content) > 500 THEN left(d.content, 500) || '...'
-            ELSE d.content
-        END as content,
-        1 - (d.content_embedding <=> query_embedding) as similarity,
-        d.extracted_metadata,
-        d.content_type,
-        d.notion_last_edited_time,
-        d.page_url
-    FROM filtered_docs d
-    WHERE 1 - (d.content_embedding <=> query_embedding) > match_threshold
-    ORDER BY d.content_embedding <=> query_embedding
-    LIMIT match_count;
-$$;
-
--- Search function that includes multimedia content
-CREATE OR REPLACE FUNCTION search_with_multimedia(
-    query_embedding vector(1536),
-    workspace_id_param uuid,
-    include_multimedia boolean DEFAULT TRUE,
-    match_threshold float DEFAULT 0.7,
-    match_count int DEFAULT 10
-)
-RETURNS TABLE (
-    id uuid,
-    type text,  -- 'document' or 'multimedia'
-    title text,
-    content text,
-    similarity float,
-    metadata jsonb,
-    asset_type text  -- NULL for documents
-)
-LANGUAGE sql STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
+BEGIN
+    RETURN QUERY
     WITH document_results AS (
         SELECT 
+            'document'::text as result_type,
             d.id,
-            'document'::text as type,
             d.title,
             d.content,
-            1 - (d.content_embedding <=> query_embedding) as similarity,
+            (1 - (d.content_embedding <=> query_embedding))::real as similarity,
             d.extracted_metadata as metadata,
-            NULL::text as asset_type
+            d.notion_page_id,
+            d.page_url
         FROM documents d
-        WHERE d.workspace_id = workspace_id_param
-            AND d.content_embedding IS NOT NULL
+        WHERE d.content_embedding IS NOT NULL
+            AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
+            AND (content_type_filter IS NULL OR d.content_type = ANY(content_type_filter))
             AND 1 - (d.content_embedding <=> query_embedding) > match_threshold
     ),
-    multimedia_results AS (
+    chunk_results AS (
         SELECT 
-            ma.id,
-            'multimedia'::text as type,
-            COALESCE(ma.original_filename, 'Multimedia Asset') as title,
-            COALESCE(ma.extracted_text, '') as content,
-            1 - (ma.content_embedding <=> query_embedding) as similarity,
-            ma.extracted_metadata as metadata,
-            ma.asset_type
-        FROM multimedia_assets ma
-        JOIN document_multimedia dm ON ma.id = dm.asset_id
-        JOIN documents d ON dm.document_id = d.id
-        WHERE d.workspace_id = workspace_id_param
-            AND ma.content_embedding IS NOT NULL
-            AND include_multimedia = TRUE
-            AND 1 - (ma.content_embedding <=> query_embedding) > match_threshold
+            'chunk'::text as result_type,
+            dc.id,
+            d.title,
+            dc.content,
+            (1 - (dc.embedding <=> query_embedding))::real as similarity,
+            d.extracted_metadata as metadata,
+            d.notion_page_id,
+            d.page_url
+        FROM document_chunks dc
+        JOIN documents d ON dc.document_id = d.id
+        WHERE dc.embedding IS NOT NULL
+            AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
+            AND (content_type_filter IS NULL OR d.content_type = ANY(content_type_filter))
+            AND 1 - (dc.embedding <=> query_embedding) > match_threshold
     )
     SELECT * FROM (
         SELECT * FROM document_results
         UNION ALL
-        SELECT * FROM multimedia_results
+        SELECT * FROM chunk_results
     ) combined_results
     ORDER BY similarity DESC
     LIMIT match_count;
+END;
 $$;
 
--- Function to get document with all related multimedia
-CREATE OR REPLACE FUNCTION get_document_with_multimedia(document_id_param uuid)
-RETURNS JSONB
-LANGUAGE sql STABLE
-SECURITY DEFINER
-SET search_path = public
+-- Get recent chat sessions
+CREATE OR REPLACE FUNCTION get_recent_chat_sessions(
+    session_limit int DEFAULT 20
+)
+RETURNS TABLE (
+    id uuid,
+    title text,
+    summary text,
+    message_count integer,
+    last_message_at timestamp with time zone,
+    created_at timestamp with time zone,
+    last_message_preview text
+)
+LANGUAGE plpgsql
 AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        cs.id,
+        cs.title,
+        cs.summary,
+        cs.message_count,
+        cs.last_message_at,
+        cs.created_at,
+        (
+            SELECT cm.content
+            FROM chat_messages cm
+            WHERE cm.session_id = cs.id
+            ORDER BY cm.message_order DESC
+            LIMIT 1
+        ) as last_message_preview
+    FROM chat_sessions cs
+    WHERE cs.status = 'active'
+    ORDER BY cs.last_message_at DESC
+    LIMIT session_limit;
+END;
+$$;
+
+-- Get chat session with messages
+CREATE OR REPLACE FUNCTION get_chat_session_with_messages(session_id_param uuid)
+RETURNS jsonb
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    result jsonb;
+BEGIN
     SELECT jsonb_build_object(
-        'document', row_to_json(d),
-        'multimedia_assets', COALESCE(multimedia_array.assets, '[]'::jsonb)
+        'session', to_jsonb(cs.*),
+        'messages', COALESCE(
+            (
+                SELECT jsonb_agg(to_jsonb(cm.*) ORDER BY cm.message_order)
+                FROM chat_messages cm
+                WHERE cm.session_id = session_id_param
+            ),
+            '[]'::jsonb
+        )
     )
-    FROM documents d
-    LEFT JOIN (
-        SELECT 
-            dm.document_id,
-            jsonb_agg(
-                jsonb_build_object(
-                    'asset', row_to_json(ma),
-                    'context', jsonb_build_object(
-                        'position', dm.position_in_document,
-                        'caption', dm.caption,
-                        'relationship_type', dm.relationship_type
-                    )
-                )
-            ) as assets
-        FROM document_multimedia dm
-        JOIN multimedia_assets ma ON dm.asset_id = ma.id
-        WHERE dm.document_id = document_id_param
-        GROUP BY dm.document_id
-    ) multimedia_array ON d.id = multimedia_array.document_id
-    WHERE d.id = document_id_param;
+    INTO result
+    FROM chat_sessions cs
+    WHERE cs.id = session_id_param;
+    
+    RETURN result;
+END;
 $$;
 
 -- ============================================================================
--- ROW LEVEL SECURITY (simplified for single user)
+-- TRIGGERS FOR AUTOMATIC UPDATES
+-- ============================================================================
+
+-- Update document timestamps and search vector (bilingual EN/CN support)
+CREATE OR REPLACE FUNCTION update_document_on_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    -- Use 'simple' configuration for bilingual English/Chinese content
+    -- This avoids language-specific stemming and works better with mixed languages
+    NEW.search_vector = to_tsvector('simple', coalesce(NEW.title, '') || ' ' || coalesce(NEW.content, ''));
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER documents_update_trigger
+    BEFORE INSERT OR UPDATE ON documents
+    FOR EACH ROW
+    EXECUTE FUNCTION update_document_on_change();
+
+-- Update document metadata search vector (bilingual EN/CN support)
+CREATE OR REPLACE FUNCTION update_document_metadata_search()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    -- Use 'simple' configuration for bilingual metadata
+    NEW.metadata_search = to_tsvector('simple', 
+        coalesce(NEW.status, '') || ' ' || 
+        coalesce(array_to_string(NEW.tags, ' '), '') || ' ' ||
+        coalesce(NEW.priority, '') || ' ' ||
+        coalesce(NEW.assignee, '')
+    );
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER document_metadata_update_trigger
+    BEFORE INSERT OR UPDATE ON document_metadata
+    FOR EACH ROW
+    EXECUTE FUNCTION update_document_metadata_search();
+
+-- Update chat session search vector (bilingual EN/CN support)
+CREATE OR REPLACE FUNCTION update_chat_session_search()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    -- Use 'simple' configuration for bilingual chat titles/summaries
+    NEW.search_vector = to_tsvector('simple', coalesce(NEW.title, '') || ' ' || coalesce(NEW.summary, ''));
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER chat_sessions_update_trigger
+    BEFORE INSERT OR UPDATE ON chat_sessions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_chat_session_search();
+
+-- Update chat session metadata when messages change
+CREATE OR REPLACE FUNCTION update_chat_session_on_message_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        UPDATE chat_sessions 
+        SET 
+            message_count = message_count + 1,
+            last_message_at = NEW.created_at,
+            updated_at = NOW()
+        WHERE id = NEW.session_id;
+        RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+        UPDATE chat_sessions 
+        SET 
+            message_count = GREATEST(message_count - 1, 0),
+            updated_at = NOW()
+        WHERE id = OLD.session_id;
+        RETURN OLD;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER chat_messages_update_session
+    AFTER INSERT OR DELETE ON chat_messages
+    FOR EACH ROW
+    EXECUTE FUNCTION update_chat_session_on_message_change();
+
+-- ============================================================================
+-- ROW LEVEL SECURITY (Simplified for single user)
 -- ============================================================================
 
 -- Enable RLS on all tables
-ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
-ALTER TABLE database_schemas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notion_databases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_metadata ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE multimedia_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_multimedia ENABLE ROW LEVEL SECURITY;
 ALTER TABLE search_analytics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 
--- Simple policies (can be expanded later for multi-user)
-CREATE POLICY "Allow all operations" ON workspaces FOR ALL USING (true);
-CREATE POLICY "Allow all operations" ON database_schemas FOR ALL USING (true);
+-- Simple policies (single user, allow all operations)
+CREATE POLICY "Allow all operations" ON notion_databases FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON documents FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON document_metadata FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON document_chunks FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON multimedia_assets FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON document_multimedia FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON search_analytics FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON chat_sessions FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON chat_messages FOR ALL USING (true);
 
 -- ============================================================================
--- HELPER FUNCTIONS FOR MAINTENANCE
+-- INITIAL SETUP
 -- ============================================================================
 
--- Update document statistics
-CREATE OR REPLACE FUNCTION update_document_stats()
-RETURNS void
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-    UPDATE documents SET
-        chunk_count = (
-            SELECT COUNT(*) 
-            FROM document_chunks 
-            WHERE document_id = documents.id
-        ),
-        has_multimedia = (
-            SELECT COUNT(*) > 0
-            FROM document_multimedia
-            WHERE document_id = documents.id
-        )
-    WHERE processing_status = 'completed';
-$$;
-
--- Clean up orphaned records
-CREATE OR REPLACE FUNCTION cleanup_orphaned_records()
-RETURNS integer
-LANGUAGE sql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-    WITH deleted_chunks AS (
-        DELETE FROM document_chunks
-        WHERE document_id NOT IN (SELECT id FROM documents)
-        RETURNING 1
-    ),
-    deleted_metadata AS (
-        DELETE FROM document_metadata
-        WHERE document_id NOT IN (SELECT id FROM documents)
-        RETURNING 1
-    ),
-    deleted_multimedia AS (
-        DELETE FROM document_multimedia
-        WHERE document_id NOT IN (SELECT id FROM documents)
-        RETURNING 1
-    )
-    SELECT (
-        (SELECT COUNT(*) FROM deleted_chunks) +
-        (SELECT COUNT(*) FROM deleted_metadata) + 
-        (SELECT COUNT(*) FROM deleted_multimedia)
-    )::integer;
-$$;
-
--- ============================================================================
--- SIMPLE SEARCH FUNCTIONS (for backward compatibility)
--- ============================================================================
-
--- Simple document similarity search function
-CREATE OR REPLACE FUNCTION match_documents(
-    query_embedding vector(1536),
-    workspace_id uuid,
-    match_threshold float DEFAULT 0.7,
-    match_count int DEFAULT 10
-)
-RETURNS TABLE (
-    id uuid,
-    title text,
-    content text,
-    similarity float,
-    metadata jsonb,
-    notion_page_id text,
-    page_url text
-)
-LANGUAGE sql STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-    SELECT
-        d.id,
-        d.title,
-        CASE 
-            WHEN length(d.content) > 500 THEN left(d.content, 500) || '...'
-            ELSE d.content
-        END as content,
-        1 - (d.content_embedding <=> query_embedding) as similarity,
-        d.extracted_metadata as metadata,
-        d.notion_page_id,
-        d.page_url
-    FROM documents d
-    WHERE d.workspace_id = workspace_id
-        AND d.content_embedding IS NOT NULL
-        AND 1 - (d.content_embedding <=> query_embedding) > match_threshold
-    ORDER BY d.content_embedding <=> query_embedding
-    LIMIT match_count;
-$$;
-
--- Simple chunk similarity search function
-CREATE OR REPLACE FUNCTION match_chunks(
-    query_embedding vector(1536),
-    workspace_id uuid,
-    match_threshold float DEFAULT 0.7,
-    match_count int DEFAULT 10
-)
-RETURNS TABLE (
-    chunk_id uuid,
-    document_id uuid,
-    chunk_content text,
-    chunk_index integer,
-    similarity float,
-    title text,
-    notion_page_id text,
-    page_url text
-)
-LANGUAGE sql STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-    SELECT
-        dc.id as chunk_id,
-        dc.document_id,
-        dc.content as chunk_content,
-        dc.chunk_index,
-        1 - (dc.embedding <=> query_embedding) as similarity,
-        d.title,
-        d.notion_page_id,
-        d.page_url
-    FROM document_chunks dc
-    JOIN documents d ON dc.document_id = d.id
-    WHERE d.workspace_id = workspace_id
-        AND dc.embedding IS NOT NULL
-        AND 1 - (dc.embedding <=> query_embedding) > match_threshold
-    ORDER BY dc.embedding <=> query_embedding
-    LIMIT match_count;
-$$;
+-- Note: This schema removes the concept of "workspaces" entirely
+-- The application operates within a single Notion workspace/user context
+-- Notion databases are the primary organizational unit for content

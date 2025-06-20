@@ -43,7 +43,7 @@ export function useNotionConnection() {
       setLoading(true)
       setError(null)
 
-      // Fetch the primary notion database (V3 schema)
+      // Fetch the primary notion database
       const { data: databaseData, error: databaseError } = await supabase
         .from('notion_databases')
         .select(`

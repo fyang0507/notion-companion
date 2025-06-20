@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from database_v3 import get_db
+from database import get_db
 from services.openai_service import get_openai_service
 from models import SearchRequest, SearchResponse, SearchResult
 
@@ -14,7 +14,7 @@ async def search_endpoint(request: SearchRequest):
         # Generate embedding for the search query
         embedding_response = await openai_service.generate_embedding(request.query)
         
-        # Search both documents and chunks (V3 simplified)
+        # Search both documents and chunks
         doc_results = db.vector_search_documents(
             query_embedding=embedding_response.embedding,
             database_filter=request.database_filters,
