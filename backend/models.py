@@ -7,11 +7,13 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
-    # Single-user, single-workspace app - no IDs needed
+    database_filters: Optional[List[str]] = None
+    # Single-user, single-workspace app - no workspace ID needed
 
 class SearchRequest(BaseModel):
     query: str
     limit: int = 10
+    database_filters: Optional[List[str]] = None
     # Single-user, single-workspace app - no workspace ID needed
 
 class SearchResult(BaseModel):
