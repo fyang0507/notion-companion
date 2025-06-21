@@ -40,7 +40,7 @@ export function RecentChats({ onChatSelect, refreshTrigger }: RecentChatsProps) 
       });
       
       const recentChats = await Promise.race([
-        apiClient.getRecentChats(20),
+        apiClient.getRecentChats(5),
         timeoutPromise
       ]);
       
@@ -178,10 +178,10 @@ function ChatItem({ chat, onDelete, onClick, formatTimestamp }: ChatItemProps) {
           
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <p className="font-medium text-sm truncate">{chat.title}</p>
+              <p className="font-medium text-sm break-words line-clamp-2">{chat.title}</p>
             </div>
             
-            <p className="text-xs text-muted-foreground truncate mb-1">
+            <p className="text-xs text-muted-foreground break-words line-clamp-2 mb-1">
               {chat.last_message_preview || 'No preview available'}
             </p>
             
