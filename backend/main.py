@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from routers import chat, search, notion_webhook, bootstrap, chat_sessions, logs
 from database import init_db
 from logging_config import setup_logging, set_request_id, log_api_request, get_logger
+from services.chat_session_service import get_chat_session_service
 
 load_dotenv(dotenv_path="../.env")
 
@@ -21,8 +22,17 @@ async def lifespan(app: FastAPI):
     logger.warning("Starting Notion Companion API")  # Changed to warning for visibility
     await init_db()
     logger.warning("Database initialized successfully")  # Changed to warning for visibility
+    
+    # Start chat session idle monitoring
+    chat_service = get_chat_session_service()
+    await chat_service.start_idle_monitoring()
+    logger.warning("Chat session idle monitoring started")  # Changed to warning for visibility
+    
     yield
+    
     # Shutdown
+    await chat_service.stop_idle_monitoring()
+    logger.warning("Chat session idle monitoring stopped")  # Changed to warning for visibility
     logger.warning("Shutting down Notion Companion API")  # Changed to warning for visibility
 
 app = FastAPI(

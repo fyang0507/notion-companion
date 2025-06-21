@@ -12,6 +12,12 @@ import uuid
 from database import get_db
 from logging_config import get_logger
 from services.openai_service import get_openai_service
+from services.chat_session_service import (
+    get_chat_session_service, 
+    generate_title_from_first_message,
+    generate_ai_chat_title,
+    generate_ai_chat_summary
+)
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/chat-sessions", tags=["chat-sessions"])
@@ -81,99 +87,6 @@ class RecentChatSummary(BaseModel):
 # ============================================================================
 
 # Removed workspace-related functions for simplified schema
-
-async def generate_title_from_first_message(first_message: str) -> str:
-    """Generate a concise title from the first user message using LLM (max 10 words)."""
-    try:
-        openai_service = get_openai_service()
-        
-        # If message is very short (≤10 words), use it as-is
-        word_count = len(first_message.strip().split())
-        if word_count <= 10:
-            return first_message.strip()
-        
-        # Otherwise, use LLM to create a concise title
-        messages = [{"role": "user", "content": first_message}]
-        
-        # Use the existing generate_chat_title method but with stricter word limit
-        title = await openai_service.generate_chat_title(messages, max_words=10)
-        
-        return title if title and title != "New Chat" else first_message.strip()
-        
-    except Exception as e:
-        logger.error(f"Failed to generate title from first message: {e}")
-        # Fallback: use first 10 words
-        words = first_message.strip().split()
-        if len(words) <= 10:
-            return first_message.strip()
-        return ' '.join(words[:10])
-
-async def generate_ai_chat_title(session_id: str, db) -> str:
-    """Generate an AI-powered chat title based on conversation context."""
-    try:
-        # Get messages for this session
-        messages_query = """
-        SELECT role, content FROM chat_messages 
-        WHERE session_id = %s 
-        ORDER BY message_order ASC
-        LIMIT 6
-        """
-        
-        result = db.execute_query(messages_query, (session_id,))
-        
-        if not result or len(result) < 2:  # Need at least user + assistant message
-            return "New Chat"
-        
-        # Convert to format expected by OpenAI service
-        messages = [{"role": row['role'], "content": row['content']} for row in result]
-        
-        # Generate title using AI with 10-word limit
-        openai_service = get_openai_service()
-        title = await openai_service.generate_chat_title(messages, max_words=10)
-        
-        return title
-        
-    except Exception as e:
-        logger.error(f"Failed to generate AI title for session {session_id}: {e}")
-        # Fallback to simple title if available
-        if result and len(result) > 0:
-            first_user_msg = next((row['content'] for row in result if row['role'] == 'user'), '')
-            if first_user_msg:
-                words = first_user_msg.split()
-                if len(words) <= 10:
-                    return first_user_msg
-                else:
-                    return ' '.join(words[:10])
-        return "New Chat"
-
-async def generate_ai_chat_summary(session_id: str, db) -> str:
-    """Generate an AI-powered chat summary based on conversation context."""
-    try:
-        # Get messages for this session
-        messages_query = """
-        SELECT role, content FROM chat_messages 
-        WHERE session_id = %s 
-        ORDER BY message_order ASC
-        LIMIT 12
-        """
-        
-        result = db.execute_query(messages_query, (session_id,))
-        
-        if not result or len(result) < 2:  # Need at least user + assistant message
-            return ""
-        
-        # Convert to format expected by OpenAI service
-        messages = [{"role": row['role'], "content": row['content']} for row in result]
-        
-        # Generate summary using AI
-        openai_service = get_openai_service()
-        summary = await openai_service.generate_chat_summary(messages)
-        
-        return summary
-        
-    except Exception as e:
-        logger.error(f"Failed to generate AI summary for session {session_id}: {e}")
-        return ""
 
 # ============================================================================
 # API ENDPOINTS
@@ -612,3 +525,102 @@ async def finalize_chat_session(
     except Exception as e:
         logger.error(f"Error finalizing session {session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to finalize session")
+
+@router.post("/{session_id}/conclude")
+async def conclude_chat_session(
+    session_id: str,
+    reason: str = "manual",
+    db=Depends(get_db)
+):
+    """
+    Conclude a chat session with automatic title/summary regeneration.
+    
+    Reasons: 'new_chat', 'window_close', 'window_refresh', 'resume_other', 'idle', 'manual'
+    """
+    try:
+        chat_service = get_chat_session_service()
+        result = await chat_service.conclude_session(session_id, reason)
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error concluding session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to conclude session")
+
+@router.post("/conclude-current")
+async def conclude_current_and_start_new(
+    current_session_id: Optional[str] = None,
+    db=Depends(get_db)
+):
+    """
+    Conclude current session when starting a new chat.
+    Used when user clicks 'New Chat' button.
+    """
+    try:
+        chat_service = get_chat_session_service()
+        
+        if current_session_id:
+            result = await chat_service.handle_new_chat_trigger(current_session_id)
+            return result
+        else:
+            return {"message": "No current session to conclude"}
+        
+    except Exception as e:
+        logger.error(f"Error handling new chat trigger: {e}")
+        raise HTTPException(status_code=500, detail="Failed to handle new chat")
+
+@router.post("/{session_id}/conclude-for-resume")
+async def conclude_for_resume(
+    session_id: str,
+    resuming_session_id: str,
+    db=Depends(get_db)
+):
+    """
+    Conclude current session when resuming another conversation.
+    Used when user selects a chat from 'Recent' history.
+    """
+    try:
+        chat_service = get_chat_session_service()
+        result = await chat_service.handle_resume_other_trigger(session_id, resuming_session_id)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error handling resume trigger: {e}")
+        raise HTTPException(status_code=500, detail="Failed to handle resume")
+
+@router.post("/{session_id}/window-close")
+async def handle_window_close(
+    session_id: str,
+    db=Depends(get_db)
+):
+    """
+    Handle session conclusion when user closes the webapp window.
+    Should be called by frontend beforeunload event.
+    """
+    try:
+        chat_service = get_chat_session_service()
+        result = await chat_service.handle_window_close_trigger(session_id)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error handling window close: {e}")
+        raise HTTPException(status_code=500, detail="Failed to handle window close")
+
+@router.post("/{session_id}/window-refresh")
+async def handle_window_refresh(
+    session_id: str,
+    db=Depends(get_db)
+):
+    """
+    Handle session conclusion when user refreshes the webapp window.
+    Should be called by frontend before page refresh.
+    """
+    try:
+        chat_service = get_chat_session_service()
+        result = await chat_service.handle_window_refresh_trigger(session_id)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error handling window refresh: {e}")
+        raise HTTPException(status_code=500, detail="Failed to handle window refresh")
