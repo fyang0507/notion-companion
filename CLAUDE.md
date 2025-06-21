@@ -27,6 +27,13 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `cd backend && .venv/bin/python scripts/sync_databases.py --dry-run` - Test sync configuration
 - `cd backend && .venv/bin/python scripts/model_config_demo.py` - Test model configuration
 
+### Python Environment Management
+**IMPORTANT: Always use uv-managed virtual environment for Python operations**
+- **Activate environment**: `cd backend && source .venv/bin/activate`
+- **Direct execution**: Use `.venv/bin/python` instead of `python` or `python3`
+- **Package management**: `uv add package_name` (not pip install)
+- **All Python scripts**: Must run from backend directory with `.venv/bin/python path/to/script.py`
+
 ### Claude Code Testing Guidelines
 
 **🚫 CRITICAL: NEVER start backend services in Claude Code**

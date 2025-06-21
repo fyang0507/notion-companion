@@ -47,22 +47,39 @@ class StructuredFormatter(logging.Formatter):
             
         return json.dumps(log_entry, ensure_ascii=False)
 
-def setup_logging():
+def clear_dev_logs():
+    """Clear all log files for fresh development session"""
+    log_dir = os.path.join(os.path.dirname(__file__), '../logs')
+    if os.path.exists(log_dir):
+        import glob
+        log_files = glob.glob(os.path.join(log_dir, '*.log*'))
+        for log_file in log_files:
+            try:
+                os.remove(log_file)
+                print(f"Cleared log file: {log_file}")
+            except OSError as e:
+                print(f"Warning: Could not remove {log_file}: {e}")
+
+def setup_logging(clear_logs: bool = False):
     """Configure logging for the application"""
     # Create logs directory if it doesn't exist
     log_dir = os.path.join(os.path.dirname(__file__), '../logs')
     os.makedirs(log_dir, exist_ok=True)
     
+    # Clear existing logs if requested (for development)
+    if clear_logs:
+        clear_dev_logs()
+    
     # Configure root logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.WARNING)  # Changed from INFO to WARNING
     
     # Clear any existing handlers
     root_logger.handlers.clear()
     
     # Console handler for development
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(logging.WARNING)  # Changed from INFO to WARNING
     console_formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
@@ -76,7 +93,7 @@ def setup_logging():
         backupCount=5,
         encoding='utf-8'
     )
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.WARNING)  # Changed from DEBUG to WARNING
     file_handler.setFormatter(StructuredFormatter())
     root_logger.addHandler(file_handler)
     
@@ -98,13 +115,13 @@ def setup_logging():
         backupCount=5,
         encoding='utf-8'
     )
-    api_handler.setLevel(logging.INFO)
+    api_handler.setLevel(logging.WARNING)  # Changed from INFO to WARNING
     api_handler.setFormatter(StructuredFormatter())
     
     # Create API logger
     api_logger = logging.getLogger('api')
     api_logger.addHandler(api_handler)
-    api_logger.setLevel(logging.INFO)
+    api_logger.setLevel(logging.WARNING)  # Changed from INFO to WARNING
     
     # Performance logs for slow operations
     perf_handler = logging.handlers.RotatingFileHandler(
@@ -113,20 +130,20 @@ def setup_logging():
         backupCount=3,
         encoding='utf-8'
     )
-    perf_handler.setLevel(logging.INFO)
+    perf_handler.setLevel(logging.WARNING)  # Changed from INFO to WARNING
     perf_handler.setFormatter(StructuredFormatter())
     
     perf_logger = logging.getLogger('performance')
     perf_logger.addHandler(perf_handler)
-    perf_logger.setLevel(logging.INFO)
+    perf_logger.setLevel(logging.WARNING)  # Changed from INFO to WARNING
     
     # Reduce noise from third-party libraries
     logging.getLogger('httpx').setLevel(logging.WARNING)
     logging.getLogger('httpcore').setLevel(logging.WARNING)
-    logging.getLogger('openai').setLevel(logging.INFO)
-    logging.getLogger('supabase').setLevel(logging.INFO)
+    logging.getLogger('openai').setLevel(logging.WARNING)  # Changed from INFO to WARNING
+    logging.getLogger('supabase').setLevel(logging.WARNING)  # Changed from INFO to WARNING
     
-    logging.info("Logging system initialized", extra={
+    logging.warning("Logging system initialized", extra={  # Changed from info to warning for visibility
         'log_dir': log_dir,
         'handlers': [h.__class__.__name__ for h in root_logger.handlers]
     })

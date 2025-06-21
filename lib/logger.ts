@@ -20,10 +20,26 @@ class FrontendLogger {
   private maxLogEntries = 1000; // Keep last 1000 log entries
   private logKey = 'notion-companion-logs';
   private currentRequestId: string | null = null;
+  private pendingLogs: LogEntry[] = [];
+  private batchTimeout: NodeJS.Timeout | null = null;
+  private maxBatchSize = 50;
+  private batchDelayMs = 2000; // Send logs every 2 seconds
   
   constructor() {
-    // Clean up old logs on startup
-    this.cleanupOldLogs();
+    // Clear all logs if in development mode (fresh start for testing sessions)
+    if (typeof window !== 'undefined' && (
+      process.env.NODE_ENV === 'development' || 
+      window.location.hostname === 'localhost'
+    )) {
+      this.clearLogs();
+      console.log('🧹 Frontend logs cleared for development session');
+    } else {
+      // Clean up old logs on startup for production
+      this.cleanupOldLogs();
+    }
+    
+    // Start periodic log sending for important logs
+    this.startLogSending();
   }
 
   private getCurrentTimestamp(): string {
@@ -108,6 +124,12 @@ class FrontendLogger {
     logs.push(entry);
     this.storeLogs(logs);
 
+    // Add to pending logs for backend if it's warning or error level
+    if (level === 'warn' || level === 'error') {
+      this.pendingLogs.push(entry);
+      this.scheduleBatchSend();
+    }
+
     // Also log to console for development
     const consoleMessage = `[${level.toUpperCase()}] ${module ? `(${module}) ` : ''}${message}`;
     const consoleExtra = {
@@ -187,14 +209,17 @@ class FrontendLogger {
     durationMs: number,
     extra?: Record<string, any>
   ): void {
-    const level = statusCode >= 400 ? 'error' : 'info';
-    this.log(level, `API ${method} ${url} -> ${statusCode}`, 'api', {
-      method,
-      url,
-      status_code: statusCode,
-      duration_ms: durationMs,
-      ...extra,
-    });
+    // Only log errors and warnings (400+ status codes) to reduce noise
+    if (statusCode >= 400) {
+      const level = statusCode >= 500 ? 'error' : 'warn';
+      this.log(level, `API ${method} ${url} -> ${statusCode}`, 'api', {
+        method,
+        url,
+        status_code: statusCode,
+        duration_ms: durationMs,
+        ...extra,
+      });
+    }
   }
 
   // Get all logs (for debugging/export)
@@ -220,6 +245,100 @@ class FrontendLogger {
   // Clear all logs
   clearLogs(): void {
     localStorage.removeItem(this.logKey);
+  }
+
+  // Start periodic log sending
+  private startLogSending(): void {
+    // Only start if we're in the browser
+    if (typeof window === 'undefined') return;
+    
+    // Send logs on page unload
+    window.addEventListener('beforeunload', () => {
+      this.sendLogsToBackend(true); // Synchronous send on unload
+    });
+    
+    // Send logs on visibility change (user switches tabs)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden' && this.pendingLogs.length > 0) {
+        this.sendLogsToBackend();
+      }
+    });
+  }
+
+  // Schedule batch send of logs
+  private scheduleBatchSend(): void {
+    // If we have enough logs or there's no existing timeout, send immediately
+    if (this.pendingLogs.length >= this.maxBatchSize) {
+      this.sendLogsToBackend();
+      return;
+    }
+
+    // Otherwise, schedule a send if not already scheduled
+    if (!this.batchTimeout) {
+      this.batchTimeout = setTimeout(() => {
+        this.sendLogsToBackend();
+      }, this.batchDelayMs);
+    }
+  }
+
+  // Send logs to backend API
+  private async sendLogsToBackend(sync: boolean = false): Promise<void> {
+    if (this.pendingLogs.length === 0) return;
+    
+    const logsToSend = [...this.pendingLogs];
+    this.pendingLogs = [];
+    
+    // Clear timeout
+    if (this.batchTimeout) {
+      clearTimeout(this.batchTimeout);
+      this.batchTimeout = null;
+    }
+
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+    const url = `${apiBaseUrl}/api/logs/frontend`;
+    
+    const payload = {
+      logs: logsToSend.map(log => ({
+        timestamp: log.timestamp,
+        level: log.level,
+        message: log.message,
+        module: log.module,
+        requestId: log.requestId,
+        extra: log.extra,
+        error: log.error,
+      })),
+      source: 'frontend'
+    };
+
+    try {
+      if (sync) {
+        // Use sendBeacon for synchronous sending during page unload
+        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+        navigator.sendBeacon(url, blob);
+      } else {
+        // Use fetch for normal async sending
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          console.warn('Failed to send logs to backend:', response.statusText);
+          // Re-add logs to pending if send failed (but don't infinitely retry)
+        }
+      }
+    } catch (error) {
+      console.warn('Error sending logs to backend:', error);
+      // Could implement retry logic here if needed
+    }
+  }
+
+  // Force send all pending logs immediately
+  flushLogs(): Promise<void> {
+    return this.sendLogsToBackend();
   }
 
   // Get log statistics

@@ -5,7 +5,7 @@ import os
 import time
 from dotenv import load_dotenv
 
-from routers import chat, search, notion_webhook, bootstrap, chat_sessions
+from routers import chat, search, notion_webhook, bootstrap, chat_sessions, logs
 from database import init_db
 from logging_config import setup_logging, set_request_id, log_api_request, get_logger
 
@@ -14,14 +14,16 @@ load_dotenv(dotenv_path="../.env")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    setup_logging()
+    # Check if this is a development session and clear logs
+    is_dev = os.getenv("NODE_ENV") == "development" or os.getenv("CLEAR_LOGS", "").lower() == "true"
+    setup_logging(clear_logs=is_dev)
     logger = get_logger(__name__)
-    logger.info("Starting Notion Companion API")
+    logger.warning("Starting Notion Companion API")  # Changed to warning for visibility
     await init_db()
-    logger.info("Database initialized successfully")
+    logger.warning("Database initialized successfully")  # Changed to warning for visibility
     yield
     # Shutdown
-    logger.info("Shutting down Notion Companion API")
+    logger.warning("Shutting down Notion Companion API")  # Changed to warning for visibility
 
 app = FastAPI(
     title="Notion Companion API",
@@ -48,30 +50,23 @@ async def log_requests(request: Request, call_next):
     # Track request start time
     start_time = time.time()
     
-    # Log incoming request
+    # Only log request start for debugging purposes (now filtered at WARNING level)
     logger = get_logger("api")
-    logger.info(f"Request started: {request.method} {request.url.path}", extra={
-        'method': request.method,
-        'path': request.url.path,
-        'query_params': str(request.query_params),
-        'client_ip': request.client.host if request.client else None,
-        'user_agent': request.headers.get('user-agent'),
-        'request_id': request_id
-    })
     
     # Process request
     try:
         response = await call_next(request)
         duration_ms = (time.time() - start_time) * 1000
         
-        # Log successful response
-        log_api_request(
-            method=request.method,
-            path=request.url.path,
-            status_code=response.status_code,
-            duration_ms=duration_ms,
-            request_id=request_id
-        )
+        # Only log errors and slow requests (>1s) to reduce noise
+        if response.status_code >= 400 or duration_ms > 1000:
+            log_api_request(
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_ms=duration_ms,
+                request_id=request_id
+            )
         
         # Add request ID to response headers
         response.headers["X-Request-ID"] = request_id
@@ -97,6 +92,7 @@ app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(notion_webhook.router, prefix="/api/notion", tags=["notion"])
 app.include_router(bootstrap.router, prefix="/api/bootstrap", tags=["bootstrap"])
 app.include_router(chat_sessions.router)
+app.include_router(logs.router, prefix="/api", tags=["logs"])
 
 @app.get("/")
 async def root():

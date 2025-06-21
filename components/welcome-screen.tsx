@@ -150,7 +150,7 @@ export function WelcomeScreen({ onSelectWorkspace }: WelcomeScreenProps) {
                   key={index}
                   className="p-3 rounded-lg border bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
                 >
-                  <p className="text-sm font-medium">"{question}"</p>
+                  <p className="text-sm font-medium">&quot;{question}&quot;</p>
                 </div>
               ))}
             </div>

@@ -468,7 +468,7 @@ export default function AnalyticsPage() {
                             {operation.status}
                           </Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground mb-1 truncate">"{operation.query}"</p>
+                        <p className="text-sm text-muted-foreground mb-1 truncate">&quot;{operation.query}&quot;</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span>{operation.workspace}</span>
                           <span>•</span>
@@ -506,7 +506,7 @@ export default function AnalyticsPage() {
                   {topQueries.map((query, index) => (
                     <div key={index} className="flex items-center justify-between p-3 rounded-lg border">
                       <div className="flex-1">
-                        <p className="font-medium text-sm">"{query.query}"</p>
+                        <p className="font-medium text-sm">&quot;{query.query}&quot;</p>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                           <span>{query.workspace}</span>
                           <span>•</span>
