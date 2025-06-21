@@ -85,8 +85,9 @@ asyncio.run(test())
 ### Initial Setup
 - `make install` - Install both Python (uv) and Node (pnpm) dependencies
 - `make setup-env` - Create environment file template
-- Deploy `backend/schema.sql` in Supabase before first sync
-- **See `backend/docs/SCHEMA_DEPLOYMENT_TODO.md` for missing database functions**
+- Deploy the SQL script from setup guide (`/setup` page) in Supabase
+- Set `NOTION_ACCESS_TOKEN` in environment for single workspace
+- **Note**: No workspace setup needed - uses single token for entire app
 
 ## Architecture Patterns
 
@@ -111,12 +112,15 @@ asyncio.run(test())
 - Main endpoints: `/api/chat` (streaming), `/api/search` (vector), `/api/notion/webhook`
 
 ### Database Schema
-Enhanced V2 schema with hybrid metadata approach:
-- Core tables: `workspaces`, `documents`, `document_chunks`, `document_metadata`, `database_schemas`
+Enhanced Single-Database Model (v3.0) - NO workspace concept:
+- Core tables: `documents`, `document_chunks`, `document_metadata`, `database_schemas`
+- **REMOVED**: `workspaces` table completely eliminated
+- **NEW**: All operations filter by `database_id` instead of `workspace_id`
 - Multimedia support: `multimedia_assets`, `document_multimedia`
-- Analytics: `search_analytics` for query tracking
+- Analytics: `search_analytics` for query tracking (no workspace_id)
 - Database schema manager for automatic Notion database analysis
 - Uses Supabase Auth for user management and pgvector for similarity search
+- Vector functions now take `database_ids[]` instead of `workspace_id`
 
 ### Frontend Patterns
 - React components with TypeScript and Tailwind CSS
@@ -130,7 +134,7 @@ Enhanced V2 schema with hybrid metadata approach:
 
 ### Environment Variables
 **Frontend**: `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-**Backend**: `OPENAI_API_KEY`, `NOTION_ACCESS_TOKEN`, plus Supabase credentials
+**Backend**: `OPENAI_API_KEY`, `NOTION_ACCESS_TOKEN` (single workspace token), plus Supabase credentials
 
 ### Model Configuration
 Configure models in `backend/config/models.toml`:
@@ -140,20 +144,44 @@ Configure models in `backend/config/models.toml`:
 
 ## Recent Architecture Changes
 
-### Single Workspace Model (v2.0)
-The application has been simplified from a multi-workspace to a single workspace architecture:
+### Complete Workspace Concept Removal (v3.0) - December 2024
+**MAJOR OVERHAUL**: Completely eliminated workspace concept from entire codebase:
 
-- **Frontend**: Removed workspace selection complexity, now focuses on database-level filtering
-- **Database**: Single workspace per user with multiple databases within that workspace
-- **Filtering**: Chat and search filters now work at the database level rather than workspace level
-- **Hooks**: `useNotionConnection` manages single workspace, `useNotionDatabases` handles database listing
-- **UI**: Sidebar shows connected databases with document counts instead of multiple workspaces
+#### ✅ **Design Decision**
+After implementing a single workspace model (v2.0), we discovered lingering workspace_id references throughout the codebase. The decision was made to **completely remove the workspace concept** and redesign the application to support **ONLY ONE Notion workspace** with multiple databases.
 
-### Key Components Updated
-- `ChatInterface` - Now uses real database connections instead of placeholder data
-- `ChatFilterBar` - Updated terminology from "workspaces" to "databases"
-- `Sidebar` - Shows actual connected databases with real-time data
-- Database queries - Fixed for single-user schema without user_id filtering
+#### 🔄 **What Changed (Commits: `012b3cc`, `f7f0ab5`)**
+
+**Backend Complete Rewrite:**
+- **`notion_webhook.py`**: Now uses `NOTION_ACCESS_TOKEN` from environment instead of workspace lookup
+- **`bootstrap.py`**: Removed `workspace_id` parameters, operates directly on database configs
+- **`document_processor.py`**: Removed all `workspace_id` parameters and method signatures
+- **`database_schema_manager.py`**: Removed workspace storage, operates per-database only
+
+**Database Schema Overhaul:**
+- **DELETED**: `workspaces` table completely removed
+- **REMOVED**: All `workspace_id` columns from all tables
+- **UPDATED**: Vector search functions now take `database_ids[]` instead of `workspace_id`
+- **NEW**: RLS policies updated for single-user, multi-database model
+
+**Frontend Simplification:**
+- **TypeScript types**: Completely rewritten to remove workspace references
+- **Setup guide**: Updated with single-workspace warnings and new SQL schema
+- **Environment**: Changed from workspace selection to single `NOTION_ACCESS_TOKEN`
+
+#### 🎯 **Current Architecture (v3.0)**
+- **Single Token**: Uses one `NOTION_ACCESS_TOKEN` for the entire application
+- **Database-Centric**: All operations filter by `database_id`, never by workspace
+- **No Workspace Tables**: Zero workspace management in database
+- **Explicit Documentation**: Every file clearly states "ONLY ONE workspace"
+
+#### 📋 **Migration Path**
+- Old multi-workspace data needs manual database migration
+- Environment variables changed from workspace configs to single token
+- API endpoints now expect database IDs instead of workspace IDs
+
+### Legacy Single Workspace Model (v2.0) - Deprecated
+The previous v2.0 approach attempted to simplify multi-workspace to single workspace but retained workspace infrastructure. This has been completely superseded by v3.0's no-workspace model.
 
 ## Quality Guidelines
 
@@ -163,16 +191,27 @@ The application has been simplified from a multi-workspace to a single workspace
 
 ## Future Considerations
 
-### Multi-Workspace Support
-The current single workspace model could be extended to support multiple workspaces in the future:
-- Add user_id back to workspace queries
-- Restore workspace selection UI components  
-- Update filtering logic to handle workspace + database combinations
-- Consider workspace-level permissions and access controls
+### Potential Multi-Workspace Support (v4.0+)
+The current no-workspace model (v3.0) could theoretically be extended to support multiple workspaces in the future, but this would require significant architectural changes:
 
-This simplified model was chosen for initial deployment and can be expanded based on user needs.
+**⚠️ IMPORTANT**: The workspace concept was completely removed in v3.0 for good reasons:
+- Simplified codebase maintenance
+- Reduced complexity in filtering and permissions
+- Better performance with direct database-level operations
+- Clearer user experience with single workspace focus
+
+**If multi-workspace support is needed in the future:**
+- Add `workspaces` table back to database schema
+- Restore `workspace_id` columns to relevant tables
+- Update all vector search functions to accept workspace filtering
+- Rebuild frontend workspace selection UI
+- Implement workspace-level permissions and access controls
+- Update environment configuration to handle multiple tokens
+
+**Recommendation**: Only implement multi-workspace if there is clear user demand, as the current single-workspace model significantly simplifies the application architecture and user experience.
 
 ## Documentation References
-- **Schema Deployment**: `backend/docs/SCHEMA_DEPLOYMENT_TODO.md` - Missing database functions
+- **Setup Guide**: Visit `/setup` page for complete database schema and environment setup
 - **RAG Improvements**: `backend/docs/RAG_IMPROVEMENT_ROADMAP.md` - Future enhancements
 - **Multimedia Strategy**: `backend/docs/MULTIMEDIA_STRATEGY.md` - Media handling plans
+- **Architecture History**: See this file's "Recent Architecture Changes" section for v3.0 workspace removal details
