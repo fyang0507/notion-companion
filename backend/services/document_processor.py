@@ -1,3 +1,10 @@
+"""
+Document Processor - Single Database Model
+
+This webapp is designed to support ONLY ONE Notion workspace with multiple databases.
+No workspace concept exists - all operations are per-database.
+"""
+
 from typing import List, Dict, Any, Tuple, Optional
 import re
 import tiktoken
@@ -11,12 +18,17 @@ import uuid
 import logging
 
 class DocumentProcessor:
+    """
+    Process documents from Notion databases.
+    Single database model - no workspace concept.
+    """
+    
     def __init__(self, openai_service: OpenAIService, db: Database):
         self.openai_service = openai_service
         self.db = db
         self.schema_manager = DatabaseSchemaManager(db)
         self.model_config = get_model_config()
-        self.encoding = tiktoken.get_encoding("cl100k_base")  # For text-embedding-3-small
+        self.encoding = tiktoken.get_encoding("cl100k_base")
         self.logger = logging.getLogger(__name__)
         
         # Get chunking parameters from config
@@ -30,9 +42,7 @@ class DocumentProcessor:
         return len(self.encoding.encode(text))
     
     def chunk_text(self, text: str, title: str = "") -> List[Dict[str, Any]]:
-        """
-        Split text into chunks with overlap, preserving semantic boundaries.
-        """
+        """Split text into chunks with overlap, preserving semantic boundaries."""
         if not text.strip():
             return []
         
@@ -177,14 +187,14 @@ class DocumentProcessor:
         return overlap.strip()
     
     async def process_document(self, 
-                             workspace_id: str,
                              database_id: str,
                              page_data: Dict[str, Any],
                              content: str,
                              title: str,
                              multimedia_refs: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Process a single document with new schema: chunk it, generate embeddings, extract metadata, and store.
+        Process a single document: chunk it, generate embeddings, extract metadata, and store.
+        Single database model - no workspace concept.
         """
         notion_page_id = page_data.get("id")
         notion_database_id = page_data.get("parent", {}).get("database_id", database_id)
@@ -252,11 +262,10 @@ class DocumentProcessor:
         # Determine content type
         content_type = self._determine_content_type(title, content, page_data)
         
-        # Create main document record
+        # Create main document record (no workspace_id)
         document_id = str(uuid.uuid4())
         document_data = {
             'id': document_id,
-            'workspace_id': workspace_id,
             'database_id': database_id,
             'notion_page_id': notion_page_id,
             'notion_database_id': notion_database_id,
@@ -279,8 +288,9 @@ class DocumentProcessor:
             'processing_status': 'processing'
         }
         
-        # Add summary to extracted_metadata if generated
+        # Add summary to document_data if generated
         if document_summary:
+            document_data['document_summary'] = document_summary
             document_data['extracted_metadata']['ai_generated_summary'] = document_summary
         
         if content_tokens <= self.max_chunk_tokens:
@@ -358,7 +368,7 @@ class DocumentProcessor:
         return 'document'
     
     def _store_document(self, document_data: Dict[str, Any]) -> None:
-        """Store document in the database using new schema."""
+        """Store document in the database."""
         try:
             self.db.client.table('documents').upsert(document_data).execute()
         except Exception as e:
@@ -408,7 +418,6 @@ class DocumentProcessor:
                 raise
     
     async def update_document(self, 
-                             workspace_id: str,
                              database_id: str,
                              page_data: Dict[str, Any],
                              content: str,
@@ -416,6 +425,7 @@ class DocumentProcessor:
                              multimedia_refs: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Update an existing document (delete old chunks and create new ones).
+        Single database model - no workspace concept.
         """
         notion_page_id = page_data.get("id")
         
@@ -424,7 +434,7 @@ class DocumentProcessor:
             self._delete_document_cascade(notion_page_id)
             
             # Process as new document
-            return await self.process_document(workspace_id, database_id, page_data, content, title, multimedia_refs)
+            return await self.process_document(database_id, page_data, content, title, multimedia_refs)
         except Exception as e:
             self.logger.error(f"Failed to update document {notion_page_id}: {str(e)}")
             raise
@@ -454,12 +464,12 @@ class DocumentProcessor:
             raise
     
     async def process_database_pages(self, 
-                                   workspace_id: str,
                                    database_id: str,
                                    notion_service,
                                    batch_size: int = 10) -> Dict[str, Any]:
         """
-        Process all pages from a specific Notion database with schema analysis and batching.
+        Process all pages from a specific Notion database.
+        Single database model - no workspace concept.
         """
         try:
             self.logger.info(f"Processing database {database_id}")
@@ -467,7 +477,7 @@ class DocumentProcessor:
             # Analyze database schema first
             try:
                 schema_record = await self.schema_manager.analyze_database_schema(
-                    database_id, workspace_id, notion_service
+                    database_id, notion_service
                 )
                 self.logger.info(f"Schema analyzed for database {database_id}")
             except Exception as e:
@@ -501,7 +511,7 @@ class DocumentProcessor:
                         
                         # Process the document
                         result = await self.process_document(
-                            workspace_id, database_id, page, content, title, multimedia_refs
+                            database_id, page, content, title, multimedia_refs
                         )
                         results['processed_pages'] += 1
                         
@@ -526,13 +536,13 @@ class DocumentProcessor:
             self.logger.error(f"Failed to process database {database_id}: {str(e)}")
             raise Exception(f"Failed to process database pages: {str(e)}")
     
-    async def process_workspace_databases(self, 
-                                        workspace_id: str,
-                                        database_configs: List[Dict[str, Any]],
-                                        notion_service,
-                                        batch_size: int = 10) -> Dict[str, Any]:
+    async def process_databases(self, 
+                              database_configs: List[Dict[str, Any]],
+                              notion_service,
+                              batch_size: int = 10) -> Dict[str, Any]:
         """
-        Process multiple databases from workspace configuration.
+        Process multiple databases.
+        Single database model - no workspace concept.
         """
         try:
             overall_results = {
@@ -555,7 +565,7 @@ class DocumentProcessor:
                     db_batch_size = sync_settings.get('batch_size', batch_size)
                     
                     db_results = await self.process_database_pages(
-                        workspace_id, database_id, notion_service, db_batch_size
+                        database_id, notion_service, db_batch_size
                     )
                     
                     overall_results['database_results'].append({
@@ -579,27 +589,10 @@ class DocumentProcessor:
                     overall_results['errors'].append(error_info)
                     self.logger.error(f"Failed to process database {database_name}: {str(e)}")
             
-            # Update workspace sync timestamp
-            try:
-                self._update_workspace_sync_time(workspace_id)
-            except Exception as e:
-                self.logger.warning(f"Failed to update workspace sync time: {str(e)}")
-            
             return overall_results
         
         except Exception as e:
-            self.logger.error(f"Failed to process workspace databases: {str(e)}")
-            raise
-    
-    def _update_workspace_sync_time(self, workspace_id: str) -> None:
-        """Update the last sync timestamp for a workspace."""
-        try:
-            self.db.client.table('workspaces').update({
-                'last_sync_at': datetime.utcnow().isoformat(),
-                'updated_at': datetime.utcnow().isoformat()
-            }).eq('id', workspace_id).execute()
-        except Exception as e:
-            self.logger.error(f"Failed to update workspace sync time: {str(e)}")
+            self.logger.error(f"Failed to process databases: {str(e)}")
             raise
 
 def get_document_processor(openai_service: OpenAIService, db: Database) -> DocumentProcessor:

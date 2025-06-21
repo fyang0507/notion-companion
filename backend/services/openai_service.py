@@ -207,6 +207,60 @@ Title:"""
                 return first_user_message[:47] + "..." if len(first_user_message) > 50 else first_user_message
             return "New Chat"
     
+    async def generate_chat_summary(self, messages: List[Dict[str, str]]) -> str:
+        """Generate a concise summary of the chat conversation."""
+        try:
+            # Apply rate limiting
+            await asyncio.sleep(self.performance_config.title_generation_delay)
+            
+            if not messages:
+                return ""
+            
+            # Use only a subset of messages for efficiency (first 6 exchanges)
+            summary_messages = messages[:12]  # 6 exchanges max
+            
+            # Build conversation text
+            conversation_text = ""
+            for msg in summary_messages:
+                role = "User" if msg['role'] == 'user' else "Assistant"
+                conversation_text += f"{role}: {msg['content'][:500]}\n\n"  # Limit each message to 500 chars
+            
+            if len(conversation_text) > 3000:  # Limit total input
+                conversation_text = conversation_text[:3000] + "..."
+            
+            summary_prompt = f"""Generate a concise 1-2 sentence summary of this conversation. Focus on the main topic and key points discussed.
+
+Conversation:
+{conversation_text}
+
+Summary (max 150 characters):"""
+            
+            model_config = self.model_config.get_summary_model()
+            response = await self.client.chat.completions.create(
+                model=model_config.model_name,
+                messages=[
+                    {"role": "user", "content": summary_prompt}
+                ],
+                max_tokens=40,  # Short summary
+                temperature=0.3,  # Low temperature for consistency
+                timeout=10.0
+            )
+            
+            summary = response.choices[0].message.content.strip() if response.choices else ""
+            
+            # Clean up the summary
+            summary = summary.strip('"').strip("'").strip()
+            
+            # Ensure it's not too long
+            if len(summary) > 150:
+                summary = summary[:147] + "..."
+                
+            return summary if summary else ""
+            
+        except Exception as e:
+            # Return empty string if summary generation fails
+            return ""
+    
     def get_token_limits(self) -> Dict[str, int]:
         """Get token limits for different operations."""
         limits_config = self.model_config.get_limits_config()

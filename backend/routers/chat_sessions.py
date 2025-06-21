@@ -122,6 +122,35 @@ async def generate_ai_chat_title(session_id: str, db) -> str:
                 return generate_chat_title(first_user_msg)
         return "New Chat"
 
+async def generate_ai_chat_summary(session_id: str, db) -> str:
+    """Generate an AI-powered chat summary based on conversation context."""
+    try:
+        # Get messages for this session
+        messages_query = """
+        SELECT role, content FROM chat_messages 
+        WHERE session_id = %s 
+        ORDER BY message_order ASC
+        LIMIT 12
+        """
+        
+        result = db.execute_query(messages_query, (session_id,))
+        
+        if not result or len(result) < 2:  # Need at least user + assistant message
+            return ""
+        
+        # Convert to format expected by OpenAI service
+        messages = [{"role": row['role'], "content": row['content']} for row in result]
+        
+        # Generate summary using AI
+        openai_service = get_openai_service()
+        summary = await openai_service.generate_chat_summary(messages)
+        
+        return summary
+        
+    except Exception as e:
+        logger.error(f"Failed to generate AI summary for session {session_id}: {e}")
+        return ""
+
 # ============================================================================
 # API ENDPOINTS
 # ============================================================================
@@ -300,7 +329,6 @@ async def update_chat_session(
         row = result[0]
         chat_session = ChatSession(
             id=str(row['id']),
-            workspace_id=str(row['workspace_id']),
             title=row['title'],
             summary=row['summary'],
             status=row['status'],
@@ -547,3 +575,82 @@ async def save_chat_session(
     except Exception as e:
         logger.error(f"Error saving messages to session {session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to save messages")
+
+@router.post("/{session_id}/finalize")
+async def finalize_chat_session(
+    session_id: str,
+    generate_summary: bool = True,
+    db=Depends(get_db)
+):
+    """Finalize a chat session by generating title and summary for proper archiving."""
+    try:
+        # Check if session exists
+        check_query = "SELECT id, title, summary, message_count FROM chat_sessions WHERE id = %s AND status = 'active'"
+        check_result = db.execute_query(check_query, (session_id,))
+        
+        if not check_result:
+            raise HTTPException(status_code=404, detail="Active chat session not found")
+        
+        session_info = check_result[0]
+        current_title = session_info['title']
+        current_summary = session_info['summary']
+        message_count = session_info['message_count']
+        
+        # Only process if there are meaningful conversations
+        if message_count < 2:
+            return {"message": "Session has insufficient content for finalization"}
+        
+        update_fields = []
+        params = []
+        
+        # Generate or update title if needed
+        if current_title == "New Chat" or (len(current_title) <= 50 and not current_title.endswith("...")):
+            try:
+                ai_title = await generate_ai_chat_title(session_id, db)
+                if ai_title and ai_title != "New Chat" and ai_title != current_title:
+                    update_fields.append("title = %s")
+                    params.append(ai_title)
+                    logger.info(f"Updated session {session_id} title to: {ai_title}")
+            except Exception as e:
+                logger.error(f"Failed to generate title during finalization: {e}")
+        
+        # Generate summary if requested and not already present
+        if generate_summary and not current_summary:
+            try:
+                ai_summary = await generate_ai_chat_summary(session_id, db)
+                if ai_summary:
+                    update_fields.append("summary = %s")
+                    params.append(ai_summary)
+                    logger.info(f"Generated summary for session {session_id}: {ai_summary}")
+            except Exception as e:
+                logger.error(f"Failed to generate summary during finalization: {e}")
+        
+        # Update session if we have changes
+        if update_fields:
+            update_fields.append("updated_at = NOW()")
+            params.append(session_id)
+            
+            query = f"""
+            UPDATE chat_sessions 
+            SET {', '.join(update_fields)}
+            WHERE id = %s
+            RETURNING title, summary
+            """
+            
+            result = db.execute_query(query, params)
+            
+            if result:
+                row = result[0]
+                return {
+                    "message": "Session finalized successfully",
+                    "title": row['title'],
+                    "summary": row['summary']
+                }
+        
+        return {"message": "Session already finalized", "title": current_title, "summary": current_summary}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error finalizing session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to finalize session")

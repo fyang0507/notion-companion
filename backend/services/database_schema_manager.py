@@ -1,8 +1,8 @@
 """
-Database Schema Manager for Dynamic Metadata Extraction
+Database Schema Manager - Single Database Model
 
-This service analyzes Notion databases to understand their schema and
-extracts important metadata fields for efficient querying.
+This webapp is designed to support ONLY ONE Notion workspace with multiple databases.
+No workspace concept exists - all operations are per-database.
 """
 
 from typing import Dict, List, Any, Optional, Tuple
@@ -14,7 +14,10 @@ from services.notion_service import NotionService
 
 
 class DatabaseSchemaManager:
-    """Manages Notion database schemas and metadata extraction."""
+    """
+    Manages Notion database schemas and metadata extraction.
+    Single database model - no workspace concept.
+    """
     
     def __init__(self, db: Database):
         self.db = db
@@ -39,10 +42,10 @@ class DatabaseSchemaManager:
             'relation': 6
         }
     
-    async def analyze_database_schema(self, database_id: str, workspace_id: str, 
-                                    notion_service: NotionService) -> Dict[str, Any]:
+    async def analyze_database_schema(self, database_id: str, notion_service: NotionService) -> Dict[str, Any]:
         """
         Analyze a Notion database to extract its schema and identify queryable fields.
+        Single database model - no workspace concept.
         """
         try:
             self.logger.info(f"Analyzing schema for database: {database_id}")
@@ -59,10 +62,9 @@ class DatabaseSchemaManager:
             # Identify which fields to extract for efficient querying
             queryable_fields = await self._identify_queryable_fields(schema_analysis)
             
-            # Store the schema
+            # Store the schema (no workspace_id)
             schema_record = {
                 'database_id': database_id,
-                'workspace_id': workspace_id,
                 'database_name': database_info.get('title', [{}])[0].get('plain_text', 'Unknown'),
                 'notion_schema': database_info,
                 'field_definitions': schema_analysis,
@@ -368,7 +370,10 @@ class DatabaseSchemaManager:
         return config
     
     def _store_schema(self, schema_record: Dict[str, Any]) -> None:
-        """Store the analyzed schema in the database."""
+        """
+        Store the analyzed schema in the database.
+        Single database model - no workspace_id.
+        """
         try:
             self.db.client.table('database_schemas').upsert(schema_record).execute()
             self.logger.info(f"Stored schema for database {schema_record['database_id']}")
@@ -390,7 +395,10 @@ class DatabaseSchemaManager:
     
     async def extract_document_metadata(self, document_id: str, page_data: Dict[str, Any], 
                                       database_id: str) -> List[Dict[str, Any]]:
-        """Extract metadata from a document based on the database schema."""
+        """
+        Extract metadata from a document based on the database schema.
+        Single database model - no workspace concept.
+        """
         schema = await self.get_schema(database_id)
         if not schema:
             self.logger.warning(f"No schema found for database {database_id}")
