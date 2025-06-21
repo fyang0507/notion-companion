@@ -6,6 +6,7 @@ from models import ChatRequest
 from logging_config import get_logger, log_performance
 import json
 import time
+import uuid
 from typing import AsyncGenerator
 
 router = APIRouter()
@@ -109,6 +110,38 @@ async def chat_endpoint(request: ChatRequest):
                 no_results_message = "I couldn't find any relevant documents in your Notion workspace that match your query. Please try rephrasing your question or make sure the relevant content has been synced to your workspace."
                 yield f"data: {json.dumps({'content': no_results_message})}\n\n"
                 
+                # Save user message to session if session_id is provided
+                if request.session_id and latest_user_message:
+                    try:
+                        user_message_data = {
+                            'role': 'user',
+                            'content': latest_user_message,
+                            'context_used': {
+                                'database_filters': request.database_filters or [],
+                                'search_threshold': 0.1,
+                                'search_results_count': 0
+                            }
+                        }
+                        db.add_message_to_session(request.session_id, user_message_data)
+                        
+                        # Save assistant no-results message too
+                        assistant_message_data = {
+                            'role': 'assistant',
+                            'content': no_results_message,
+                            'citations': [],
+                            'context_used': {
+                                'database_filters': request.database_filters or [],
+                                'search_threshold': 0.1,
+                                'search_results_count': 0,
+                                'model_used': 'no-llm',
+                                'response_time_ms': 0
+                            }
+                        }
+                        db.add_message_to_session(request.session_id, assistant_message_data)
+                        logger.info(f"Saved no-results conversation to session {request.session_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to save no-results conversation to session: {e}")
+                
                 total_duration = (time.time() - start_time) * 1000
                 logger.info("Chat request completed - no relevant documents", extra={
                     'total_duration_ms': total_duration
@@ -134,6 +167,24 @@ async def chat_endpoint(request: ChatRequest):
         # Convert messages to dict format
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
         
+        # Save user message to session if session_id is provided
+        user_message_content = latest_user_message
+        if request.session_id and user_message_content:
+            try:
+                user_message_data = {
+                    'role': 'user',
+                    'content': user_message_content,
+                    'context_used': {
+                        'database_filters': request.database_filters or [],
+                        'search_threshold': 0.1,
+                        'search_results_count': len(top_sources)
+                    }
+                }
+                db.add_message_to_session(request.session_id, user_message_data)
+                logger.info(f"Saved user message to session {request.session_id}")
+            except Exception as e:
+                logger.error(f"Failed to save user message to session: {e}")
+        
         # Generate streaming response
         logger.info("Starting streaming response generation", extra={
             'context_length': len(context),
@@ -143,10 +194,12 @@ async def chat_endpoint(request: ChatRequest):
         async def generate_stream() -> AsyncGenerator[str, None]:
             stream_start = time.time()
             chunks_generated = 0
+            assistant_response = ""  # Collect full response for saving
             
             try:
                 async for chunk in openai_service.generate_streaming_response(messages, context):
                     chunks_generated += 1
+                    assistant_response += chunk  # Collect response
                     yield f"data: {json.dumps({'content': chunk})}\n\n"
                 
                 stream_duration = (time.time() - stream_start) * 1000
@@ -155,8 +208,8 @@ async def chat_endpoint(request: ChatRequest):
                                context_length=len(context))
                 
                 # After streaming content, send citations
+                citations = []
                 if top_sources:
-                    citations = []
                     for source in top_sources:
                         citations.append({
                             'id': source['id'],
@@ -172,6 +225,28 @@ async def chat_endpoint(request: ChatRequest):
                     logger.info("Citations sent", extra={
                         'citations_count': len(citations)
                     })
+                
+                # Save assistant message to session if session_id is provided
+                if request.session_id and assistant_response:
+                    try:
+                        assistant_message_data = {
+                            'role': 'assistant',
+                            'content': assistant_response,
+                            'citations': citations,
+                            'context_used': {
+                                'database_filters': request.database_filters or [],
+                                'search_threshold': 0.1,
+                                'search_results_count': len(top_sources),
+                                'model_used': 'gpt-4o-mini',  # Should get from openai_service
+                                'response_time_ms': int(stream_duration)
+                            },
+                            'tokens_used': chunks_generated,  # Approximate
+                            'response_time_ms': int(stream_duration)
+                        }
+                        db.add_message_to_session(request.session_id, assistant_message_data)
+                        logger.info(f"Saved assistant message to session {request.session_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to save assistant message to session: {e}")
                 
                 total_duration = (time.time() - start_time) * 1000
                 logger.info("Chat request completed successfully", extra={

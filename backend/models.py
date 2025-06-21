@@ -8,6 +8,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     database_filters: Optional[List[str]] = None
+    session_id: Optional[str] = None  # Optional session ID for conversation history
     # Single-user, single-workspace app - no workspace ID needed
 
 class SearchRequest(BaseModel):

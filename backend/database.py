@@ -400,10 +400,20 @@ class Database:
                 if session_id:
                     response = self.client.table('chat_messages').select('message_order').eq('session_id', session_id).order('message_order', desc=True).limit(1).execute()
                     if response.data:
-                        return [{'next_order': response.data[0]['message_order'] + 1}]
+                        max_order = response.data[0]['message_order']
+                        if 'next_order' in query or 'COALESCE' not in query:
+                            return [{'next_order': max_order + 1}]
+                        else:
+                            return [{'max_order': max_order}]
                     else:
-                        return [{'next_order': 0}]
-                return [{'next_order': 0}]
+                        if 'next_order' in query or 'COALESCE' not in query:
+                            return [{'next_order': 0}]
+                        else:
+                            return [{'max_order': -1}]  # COALESCE default
+                if 'next_order' in query or 'COALESCE' not in query:
+                    return [{'next_order': 0}]
+                else:
+                    return [{'max_order': -1}]
             
             elif 'INSERT INTO chat_messages' in query:
                 # Insert new message - extract values from query

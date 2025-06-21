@@ -311,47 +311,37 @@ async def update_chat_session(
     """Update a chat session."""
     try:
         # Check if session exists
-        check_query = "SELECT id FROM chat_sessions WHERE id = %s"
-        check_result = db.execute_query(check_query, (session_id,))
+        check_response = db.client.table('chat_sessions').select('id').eq('id', session_id).execute()
         
-        if not check_result:
+        if not check_response.data:
             raise HTTPException(status_code=404, detail="Chat session not found")
         
-        # Build update query dynamically
-        update_fields = []
-        params = []
+        # Build update data dynamically
+        update_data = {}
         
         if session_update.title is not None:
-            update_fields.append("title = %s")
-            params.append(session_update.title)
+            update_data['title'] = session_update.title
         
         if session_update.summary is not None:
-            update_fields.append("summary = %s")
-            params.append(session_update.summary)
+            update_data['summary'] = session_update.summary
         
         if session_update.status is not None:
-            update_fields.append("status = %s")
-            params.append(session_update.status)
+            update_data['status'] = session_update.status
         
-        if not update_fields:
+        if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
         
-        update_fields.append("updated_at = NOW()")
-        params.append(session_id)
+        update_data['updated_at'] = 'now()'
         
-        query = f"""
-        UPDATE chat_sessions 
-        SET {', '.join(update_fields)}
-        WHERE id = %s
-        RETURNING *
-        """
+        # Use Supabase client for update
+        update_response = db.client.table('chat_sessions').update(
+            update_data
+        ).eq('id', session_id).select('*').execute()
         
-        result = db.execute_query(query, params)
-        
-        if not result:
+        if not update_response.data:
             raise HTTPException(status_code=500, detail="Failed to update chat session")
         
-        row = result[0]
+        row = update_response.data[0]
         chat_session = ChatSession(
             id=str(row['id']),
             title=row['title'],
@@ -383,19 +373,15 @@ async def delete_chat_session(
     try:
         if soft_delete:
             # Soft delete by changing status
-            query = """
-            UPDATE chat_sessions 
-            SET status = 'deleted', updated_at = NOW()
-            WHERE id = %s
-            RETURNING id
-            """
+            result = db.client.table('chat_sessions').update({
+                'status': 'deleted',
+                'updated_at': 'now()'
+            }).eq('id', session_id).execute()
         else:
             # Hard delete
-            query = "DELETE FROM chat_sessions WHERE id = %s RETURNING id"
+            result = db.client.table('chat_sessions').delete().eq('id', session_id).execute()
         
-        result = db.execute_query(query, (session_id,))
-        
-        if not result:
+        if not result.data:
             raise HTTPException(status_code=404, detail="Chat session not found")
         
         action = "soft deleted" if soft_delete else "deleted"
@@ -478,71 +464,52 @@ async def save_chat_session(
     """Save multiple messages to a chat session at once."""
     try:
         # Check if session exists
-        check_query = "SELECT id FROM chat_sessions WHERE id = %s AND status = 'active'"
-        check_result = db.execute_query(check_query, (session_id,))
+        check_response = db.client.table('chat_sessions').select('id').eq('id', session_id).eq('status', 'active').execute()
         
-        if not check_result:
+        if not check_response.data:
             raise HTTPException(status_code=404, detail="Active chat session not found")
-        
-        # Get current message count
-        count_query = "SELECT COALESCE(MAX(message_order), -1) as max_order FROM chat_messages WHERE session_id = %s"
-        count_result = db.execute_query(count_query, (session_id,))
-        start_order = (count_result[0]['max_order'] if count_result else -1) + 1
         
         saved_messages = []
         
         for i, message_data in enumerate(messages):
-            message_id = str(uuid.uuid4())
-            message_order = start_order + i
-            
             # Generate title from first user message using LLM (max 10 words)
-            if message_order == 0 and message_data.role == 'user':
+            # Check if this is the first message in the session
+            if len(saved_messages) == 0 and message_data.role == 'user':
                 try:
                     title = await generate_title_from_first_message(message_data.content)
-                    update_title_query = """
-                    UPDATE chat_sessions 
-                    SET title = %s, updated_at = NOW()
-                    WHERE id = %s AND title = 'New Chat'
-                    """
-                    db.execute_query(update_title_query, (title, session_id))
-                    logger.info(f"Generated title from first message for session {session_id}: {title}")
+                    success = db.update_session_title(session_id, title)
+                    if success:
+                        logger.info(f"Generated title from first message for session {session_id}: {title}")
                 except Exception as e:
                     logger.error(f"Failed to generate title from first message: {e}")
                     # Keep "New Chat" as fallback
             
-            # Insert message
-            insert_query = """
-            INSERT INTO chat_messages (
-                id, session_id, role, content, model_used, tokens_used, 
-                response_time_ms, citations, context_used, message_order
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING *
-            """
+            # Use the existing add_message_to_session method instead of raw SQL
+            message_dict = {
+                'role': message_data.role,
+                'content': message_data.content,
+                'model_used': message_data.model_used,
+                'tokens_used': message_data.tokens_used,
+                'response_time_ms': message_data.response_time_ms,
+                'citations': message_data.citations,
+                'context_used': message_data.context_used
+            }
             
-            result = db.execute_query(
-                insert_query,
-                (
-                    message_id, session_id, message_data.role, message_data.content,
-                    message_data.model_used, message_data.tokens_used, message_data.response_time_ms,
-                    message_data.citations, message_data.context_used, message_order
-                )
-            )
+            result = db.add_message_to_session(session_id, message_dict)
             
             if result:
-                row = result[0]
                 saved_messages.append(ChatMessage(
-                    id=str(row['id']),
-                    session_id=str(row['session_id']),
-                    role=row['role'],
-                    content=row['content'],
-                    model_used=row['model_used'],
-                    tokens_used=row['tokens_used'],
-                    response_time_ms=row['response_time_ms'],
-                    citations=row['citations'] or [],
-                    context_used=row['context_used'] or {},
-                    created_at=row['created_at'],
-                    message_order=row['message_order']
+                    id=str(result['id']),
+                    session_id=str(result['session_id']),
+                    role=result['role'],
+                    content=result['content'],
+                    model_used=result.get('model_used'),
+                    tokens_used=result.get('tokens_used'),
+                    response_time_ms=result.get('response_time_ms'),
+                    citations=result.get('citations') or [],
+                    context_used=result.get('context_used') or {},
+                    created_at=result['created_at'],
+                    message_order=result['message_order']
                 ))
         
         # Note: Title and summary generation now happens only at session end (finalization)
@@ -565,11 +532,13 @@ async def finalize_chat_session(
     """Finalize a chat session by generating title and summary for proper archiving."""
     try:
         # Check if session exists
-        check_query = "SELECT id, title, summary, message_count FROM chat_sessions WHERE id = %s AND status = 'active'"
-        check_result = db.execute_query(check_query, (session_id,))
+        session_response = db.client.table('chat_sessions').select(
+            'id, title, summary, message_count'
+        ).eq('id', session_id).eq('status', 'active').execute()
         
-        if not check_result:
+        if not session_response.data:
             raise HTTPException(status_code=404, detail="Active chat session not found")
+        check_result = session_response.data
         
         session_info = check_result[0]
         current_title = session_info['title']
@@ -606,21 +575,30 @@ async def finalize_chat_session(
                 logger.error(f"Failed to generate summary during finalization: {e}")
         
         # Update session if we have changes
-        if update_fields:
-            update_fields.append("updated_at = NOW()")
-            params.append(session_id)
+        update_needed = False
+        update_data = {}
+        
+        # Always re-generate title with AI at session end (improved title based on full conversation)
+        if len(params) > 0:
+            # Find which updates were requested
+            for i, field in enumerate(update_fields):
+                if 'title' in field and i < len(params):
+                    update_data['title'] = params[i]
+                    update_needed = True
+                elif 'summary' in field and i < len(params):
+                    update_data['summary'] = params[i]
+                    update_needed = True
+        
+        if update_needed:
+            update_data['updated_at'] = 'now()'
             
-            query = f"""
-            UPDATE chat_sessions 
-            SET {', '.join(update_fields)}
-            WHERE id = %s
-            RETURNING title, summary
-            """
+            # Use Supabase client for update
+            update_response = db.client.table('chat_sessions').update(
+                update_data
+            ).eq('id', session_id).select('title, summary').execute()
             
-            result = db.execute_query(query, params)
-            
-            if result:
-                row = result[0]
+            if update_response.data:
+                row = update_response.data[0]
                 return {
                     "message": "Session finalized successfully",
                     "title": row['title'],
