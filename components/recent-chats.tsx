@@ -16,17 +16,18 @@ import { apiClient, RecentChatSummary } from '@/lib/api';
 
 interface RecentChatsProps {
   onChatSelect?: (chatId: string, workspaceId?: string) => void;
+  refreshTrigger?: number; // Trigger to refresh recent chats
 }
 
-export function RecentChats({ onChatSelect }: RecentChatsProps) {
+export function RecentChats({ onChatSelect, refreshTrigger }: RecentChatsProps) {
   const [chats, setChats] = useState<RecentChatSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load recent chats on component mount
+  // Load recent chats on component mount and when refresh trigger changes
   useEffect(() => {
     loadRecentChats();
-  }, []);
+  }, [refreshTrigger]);
 
   const loadRecentChats = async () => {
     try {

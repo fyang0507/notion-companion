@@ -21,6 +21,7 @@ export default function Home() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatKey, setChatKey] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
+  const [chatRefreshTrigger, setChatRefreshTrigger] = useState(0);
   
   // Check if we have a backend configured (API base URL is set)
   const isBackendConfigured = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -57,6 +58,7 @@ export default function Home() {
     try {
       await chatSessions.createNewSession();
       setChatKey(prev => prev + 1);
+      setChatRefreshTrigger(prev => prev + 1); // Trigger recent chats refresh
     } catch (err) {
       console.error('Failed to create new chat session:', err);
       // Fallback to regular chat reset - this ensures the app always works
@@ -90,6 +92,7 @@ export default function Home() {
       await chatSessions.createNewSession();
       setSelectedWorkspace('global');
       setChatKey(prev => prev + 1);
+      setChatRefreshTrigger(prev => prev + 1); // Trigger recent chats refresh
     } catch (err) {
       console.error('Failed to create new chat session:', err);
       // Fallback to regular chat start - this ensures the app always works
@@ -179,6 +182,7 @@ export default function Home() {
                   onNewChat={handleNewChat}
                   onStartGlobalChat={handleStartGlobalChat}
                   onChatSelect={handleChatSelect}
+                  chatRefreshTrigger={chatRefreshTrigger}
                 />
               </div>
             </>
@@ -225,6 +229,7 @@ export default function Home() {
                   onNewChat={handleNewChat}
                   onStartGlobalChat={handleStartGlobalChat}
                   onChatSelect={handleChatSelect}
+                  chatRefreshTrigger={chatRefreshTrigger}
                 />
               </ResizablePanel>
               <ResizableHandle />

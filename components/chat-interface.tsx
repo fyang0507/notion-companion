@@ -15,7 +15,8 @@ import {
   Copy,
   ArrowLeft,
   ChevronDown,
-  Check
+  Check,
+  Plus
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MessageCitations } from '@/components/message-citations';
@@ -169,9 +170,32 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       citations: []
     };
 
+    // Create a new session if we don't have one and this is the first message
+    if (chatSessions && !chatSessions.currentSession) {
+      try {
+        const sessionContext = {
+          database_filters: filters.workspaces,
+          model_used: selectedModel.id,
+          initial_filters: filters
+        };
+        await chatSessions.createNewSession(undefined, sessionContext);
+      } catch (err) {
+        console.error('Failed to create new session:', err);
+        // Continue with fallback behavior
+      }
+    }
+
     // Add message through chat sessions if available
     if (chatSessions) {
       chatSessions.addMessage(userMessage);
+      // Save user message immediately
+      setTimeout(async () => {
+        try {
+          await chatSessions.saveMessageImmediately(userMessage);
+        } catch (err) {
+          console.error('Failed to save user message immediately:', err);
+        }
+      }, 100); // Small delay to ensure session exists
     } else {
       setFallbackMessages(prev => [...prev, userMessage]);
     }
@@ -205,8 +229,8 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       }));
 
       const stream = await apiClient.sendChatMessage({
-        messages: apiMessages
-        // Single-user, single-workspace app - no IDs needed
+        messages: apiMessages,
+        database_filters: filters.workspaces.length > 0 ? filters.workspaces : undefined
       });
 
       const reader = stream.getReader();
@@ -227,13 +251,16 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
               setIsLoading(false);
               setStreamingMessageId(null);
               
-              // Auto-save the conversation to current session
+              // Save the completed bot message immediately
               if (chatSessions?.currentSession) {
                 setTimeout(async () => {
                   try {
-                    await chatSessions.saveCurrentSession();
+                    const completedBotMessage = chatSessions.currentMessages.find(msg => msg.id === botMessageId);
+                    if (completedBotMessage && completedBotMessage.content) {
+                      await chatSessions.saveMessageImmediately(completedBotMessage);
+                    }
                   } catch (err) {
-                    console.error('Failed to auto-save conversation:', err);
+                    console.error('Failed to save bot message immediately:', err);
                   }
                 }, 500); // Small delay to ensure all state updates are complete
               }
@@ -380,6 +407,30 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
           </div>
           
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* New Chat Button */}
+            {chatSessions && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const sessionContext = {
+                      database_filters: filters.workspaces,
+                      model_used: selectedModel.id,
+                      initial_filters: filters
+                    };
+                    await chatSessions.createNewSession(undefined, sessionContext);
+                  } catch (err) {
+                    console.error('Failed to create new session:', err);
+                  }
+                }}
+                className="gap-1 h-8 px-3 text-xs hover:bg-accent transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                <span className="hidden sm:inline">New Chat</span>
+              </Button>
+            )}
+            
             {/* Model Selector */}
             <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>
               <PopoverTrigger asChild>

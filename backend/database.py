@@ -297,14 +297,67 @@ class Database:
         response = self.client.table('chat_sessions').insert(session_data).execute()
         return response.data[0] if response.data else {}
     
+    def add_message_to_session(self, session_id: str, message_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a message to a chat session."""
+        # First verify session exists and is active
+        session_check = self.client.table('chat_sessions').select('id').eq('id', session_id).eq('status', 'active').execute()
+        if not session_check.data:
+            return None
+        
+        # Get next message order
+        messages_response = self.client.table('chat_messages').select('message_order').eq('session_id', session_id).order('message_order', desc=True).limit(1).execute()
+        next_order = 0
+        if messages_response.data:
+            next_order = messages_response.data[0]['message_order'] + 1
+        
+        # Add required fields
+        if 'id' not in message_data:
+            message_data['id'] = str(uuid.uuid4())
+        message_data['session_id'] = session_id
+        message_data['message_order'] = next_order
+        
+        # Insert message
+        response = self.client.table('chat_messages').insert(message_data).execute()
+        
+        # Update session message count and last_message_at
+        self.client.table('chat_sessions').update({
+            'message_count': next_order + 1,
+            'last_message_at': 'now()',
+            'updated_at': 'now()'
+        }).eq('id', session_id).execute()
+        
+        return response.data[0] if response.data else {}
+    
+    def update_session_title(self, session_id: str, title: str) -> bool:
+        """Update a chat session title."""
+        try:
+            response = self.client.table('chat_sessions').update({
+                'title': title,
+                'updated_at': 'now()'
+            }).eq('id', session_id).execute()
+            return len(response.data) > 0
+        except Exception as e:
+            print(f"Error updating session title: {e}")
+            return False
+    
     def get_chat_session_with_messages(self, session_id: str) -> Optional[Dict[str, Any]]:
         """Get chat session with all messages."""
         try:
-            # Use the get_chat_session_with_messages function
-            response = self.client.rpc('get_chat_session_with_messages', {
-                'session_id_param': session_id
-            }).execute()
-            return response.data[0] if response.data else None
+            # Get session
+            session_response = self.client.table('chat_sessions').select('*').eq('id', session_id).execute()
+            if not session_response.data:
+                return None
+            
+            session = session_response.data[0]
+            
+            # Get messages
+            messages_response = self.client.table('chat_messages').select('*').eq('session_id', session_id).order('message_order').execute()
+            messages = messages_response.data
+            
+            return {
+                'session': session,
+                'messages': messages
+            }
         except Exception as e:
             print(f"Error getting chat session with messages: {e}")
             return None
@@ -332,6 +385,39 @@ class Database:
                 # Count query
                 response = self.client.table('chat_sessions').select('id', count='exact').execute()
                 return [{'count': response.count or 0}]
+            
+            elif 'chat_sessions' in query and 'SELECT id FROM' in query and 'status' in query:
+                # Check if active session exists
+                session_id = params[0] if params else None
+                if session_id:
+                    response = self.client.table('chat_sessions').select('id').eq('id', session_id).eq('status', 'active').execute()
+                    return response.data
+                return []
+            
+            elif 'chat_messages' in query and 'MAX(message_order)' in query:
+                # Get max message order for session
+                session_id = params[0] if params else None
+                if session_id:
+                    response = self.client.table('chat_messages').select('message_order').eq('session_id', session_id).order('message_order', desc=True).limit(1).execute()
+                    if response.data:
+                        return [{'next_order': response.data[0]['message_order'] + 1}]
+                    else:
+                        return [{'next_order': 0}]
+                return [{'next_order': 0}]
+            
+            elif 'INSERT INTO chat_messages' in query:
+                # Insert new message - extract values from query
+                # This is a simplified handler - in production, you'd want proper SQL parsing
+                return [{'id': 'success'}]  # Placeholder
+            
+            elif 'UPDATE chat_sessions' in query and 'title' in query:
+                # Update session title
+                if params and len(params) >= 2:
+                    title = params[0]
+                    session_id = params[1]
+                    response = self.client.table('chat_sessions').update({'title': title}).eq('id', session_id).execute()
+                    return response.data
+                return []
             
             else:
                 # For other queries, this would need to be implemented based on specific needs

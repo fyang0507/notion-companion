@@ -141,15 +141,16 @@ Summary:"""
         summary = response.choices[0].message.content or ''
         return summary.strip()
     
-    async def generate_chat_title(self, messages: List[Dict[str, str]]) -> str:
+    async def generate_chat_title(self, messages: List[Dict[str, str]], max_words: int = 8) -> str:
         """
         Generate a concise, descriptive title for a chat session based on the conversation.
         
         Args:
             messages: List of chat messages (user and assistant)
+            max_words: Maximum number of words in the title (default 8, max 10)
             
         Returns:
-            A concise title (max 50 characters) that describes the conversation topic
+            A concise title (max 10 words) that describes the conversation topic
         """
         summarization_config = self.model_config.get_summarization_config()
         performance_config = self.model_config.get_performance_config()
@@ -169,16 +170,17 @@ Summary:"""
         prompt = f"""Based on this conversation, generate a concise, descriptive title that captures the main topic or question being discussed. 
 
 Guidelines:
-- Maximum 50 characters
+- Maximum {max_words} words
 - Be specific and descriptive
 - Focus on the main topic/question
 - Use clear, simple language
 - No quotes or special formatting
+- No articles (a, an, the) unless essential
 
 Conversation:
 {conversation_text}
 
-Title:"""
+Title ({max_words} words max):"""
 
         try:
             response = self.client.chat.completions.create(
@@ -194,9 +196,10 @@ Title:"""
             title = response.choices[0].message.content or ''
             title = title.strip().strip('"').strip("'")  # Remove quotes
             
-            # Ensure it's not too long
-            if len(title) > 50:
-                title = title[:47] + "..."
+            # Ensure it doesn't exceed word limit
+            words = title.split()
+            if len(words) > max_words:
+                title = ' '.join(words[:max_words])
                 
             return title if title else "New Chat"
             
@@ -204,14 +207,21 @@ Title:"""
             # Fallback to simple title generation if AI fails
             first_user_message = next((msg['content'] for msg in messages if msg['role'] == 'user'), '')
             if first_user_message:
-                return first_user_message[:47] + "..." if len(first_user_message) > 50 else first_user_message
+                words = first_user_message.split()
+                if len(words) <= max_words:
+                    return first_user_message
+                else:
+                    return ' '.join(words[:max_words])
             return "New Chat"
     
     async def generate_chat_summary(self, messages: List[Dict[str, str]]) -> str:
         """Generate a concise summary of the chat conversation."""
         try:
+            summarization_config = self.model_config.get_summarization_config()
+            performance_config = self.model_config.get_performance_config()
+            
             # Apply rate limiting
-            await asyncio.sleep(self.performance_config.title_generation_delay)
+            await asyncio.sleep(performance_config.summarization_delay_seconds)
             
             if not messages:
                 return ""
@@ -235,18 +245,16 @@ Conversation:
 
 Summary (max 150 characters):"""
             
-            model_config = self.model_config.get_summary_model()
-            response = await self.client.chat.completions.create(
-                model=model_config.model_name,
+            response = self.client.chat.completions.create(
+                model=summarization_config.model,
                 messages=[
                     {"role": "user", "content": summary_prompt}
                 ],
                 max_tokens=40,  # Short summary
                 temperature=0.3,  # Low temperature for consistency
-                timeout=10.0
             )
             
-            summary = response.choices[0].message.content.strip() if response.choices else ""
+            summary = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
             
             # Clean up the summary
             summary = summary.strip('"').strip("'").strip()

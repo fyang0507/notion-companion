@@ -189,6 +189,77 @@ The previous v2.0 approach attempted to simplify multi-workspace to single works
 - The application uses static export configuration, so ensure all features work without server-side rendering
 - See `backend/docs/TESTING_BEST_PRACTICES.md` for detailed testing patterns
 
+## Debugging Methodology
+
+### 🐛 Efficient Backend API Debugging (Learned from Chat Sessions Bug)
+
+**When encountering API errors (especially 404s), follow this systematic approach:**
+
+#### 1. **Error Triage (First 2 minutes)**
+- **Don't assume** 404 = routing issue
+- **Test endpoints directly** with curl to see actual error responses
+- **Differentiate** between:
+  - True 404 (endpoint doesn't exist) 
+  - 404 with custom message (endpoint exists, business logic fails)
+  - 500 errors (server/database issues)
+
+#### 2. **Trace the Data Flow (Next 5 minutes)**
+```
+Frontend → API Router → Business Logic → Database → Response
+```
+**Quick tests at each layer:**
+- ✅ Router: `curl -X GET /health` (is server responding?)
+- ✅ Endpoint: `curl -X GET /api/target-endpoint` (does route exist?)
+- ✅ Database: Check if data operations actually work
+
+#### 3. **Database Layer First for Data Issues**
+**When seeing data-related errors, immediately check:**
+- Are database methods actually implemented?
+- Are they using the right APIs (SQL vs ORM vs API)?
+- Test with simple queries first
+- Check for silent failures (`return []` instead of throwing errors)
+
+#### 4. **Architecture Consistency Check**
+**Look for mixed patterns that cause issues:**
+- Raw SQL + ORM calls in same codebase
+- Missing database schema vs code expectations  
+- Default values not being set properly
+
+#### 5. **Component Isolation Testing**
+**Test each piece independently:**
+```bash
+# Test database directly
+curl -X POST /api/sessions/ -d '{"title": "test"}'
+
+# Test specific operations
+curl -X POST /api/sessions/{id}/messages -d '{"content": "test"}'
+
+# Check what's actually in database
+curl -X GET /api/sessions/recent
+```
+
+#### 🎯 Red Flags to Check Immediately
+
+1. **"Silent Failures"**: Methods that catch exceptions and return empty results
+2. **Mixed Architecture**: SQL queries + API calls in same codebase
+3. **Missing Status Fields**: Default values not being set in database operations
+4. **Unimplemented Methods**: Placeholder methods that look functional but aren't
+
+#### ⚡ Time-Saving Commands
+
+```bash
+# Quick endpoint existence check
+curl -I http://localhost:8000/api/endpoint
+
+# Quick data verification
+curl -X GET http://localhost:8000/api/endpoint | jq
+
+# Database connection test
+curl -X GET http://localhost:8000/health
+```
+
+**Key Learning**: Always **test the actual data flow** rather than **assuming where the problem is**. The chat sessions bug was caused by `execute_query()` returning empty results for unsupported queries, not routing issues.
+
 ## Future Considerations
 
 ### Potential Multi-Workspace Support (v4.0+)

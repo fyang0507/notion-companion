@@ -96,7 +96,7 @@ app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(notion_webhook.router, prefix="/api/notion", tags=["notion"])
 app.include_router(bootstrap.router, prefix="/api/bootstrap", tags=["bootstrap"])
-app.include_router(chat_sessions.router, tags=["chat-sessions"])
+app.include_router(chat_sessions.router)
 
 @app.get("/")
 async def root():

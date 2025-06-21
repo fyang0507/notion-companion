@@ -30,9 +30,10 @@ interface SidebarProps {
   onNewChat?: () => void;
   onStartGlobalChat?: () => void;
   onChatSelect?: (chatId: string) => void;
+  chatRefreshTrigger?: number; // Trigger to refresh recent chats
 }
 
-export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onStartGlobalChat, onChatSelect }: SidebarProps) {
+export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onStartGlobalChat, onChatSelect, chatRefreshTrigger }: SidebarProps) {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const { connection, isConnected, syncNotion } = useNotionConnection();
   const { databases, loading: databasesLoading } = useNotionDatabases();
@@ -217,7 +218,7 @@ export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onSta
           <Separator />
 
           {/* Recent Chats */}
-          <RecentChats onChatSelect={handleChatSelect} />
+          <RecentChats onChatSelect={handleChatSelect} refreshTrigger={chatRefreshTrigger} />
 
           <Separator />
 

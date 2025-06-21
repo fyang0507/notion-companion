@@ -82,11 +82,31 @@ class RecentChatSummary(BaseModel):
 
 # Removed workspace-related functions for simplified schema
 
-def generate_chat_title(first_message: str) -> str:
-    """Generate a simple chat title from the first user message (fallback)."""
-    if len(first_message) <= 50:
-        return first_message
-    return first_message[:47] + "..."
+async def generate_title_from_first_message(first_message: str) -> str:
+    """Generate a concise title from the first user message using LLM (max 10 words)."""
+    try:
+        openai_service = get_openai_service()
+        
+        # If message is very short (≤10 words), use it as-is
+        word_count = len(first_message.strip().split())
+        if word_count <= 10:
+            return first_message.strip()
+        
+        # Otherwise, use LLM to create a concise title
+        messages = [{"role": "user", "content": first_message}]
+        
+        # Use the existing generate_chat_title method but with stricter word limit
+        title = await openai_service.generate_chat_title(messages, max_words=10)
+        
+        return title if title and title != "New Chat" else first_message.strip()
+        
+    except Exception as e:
+        logger.error(f"Failed to generate title from first message: {e}")
+        # Fallback: use first 10 words
+        words = first_message.strip().split()
+        if len(words) <= 10:
+            return first_message.strip()
+        return ' '.join(words[:10])
 
 async def generate_ai_chat_title(session_id: str, db) -> str:
     """Generate an AI-powered chat title based on conversation context."""
@@ -107,9 +127,9 @@ async def generate_ai_chat_title(session_id: str, db) -> str:
         # Convert to format expected by OpenAI service
         messages = [{"role": row['role'], "content": row['content']} for row in result]
         
-        # Generate title using AI
+        # Generate title using AI with 10-word limit
         openai_service = get_openai_service()
-        title = await openai_service.generate_chat_title(messages)
+        title = await openai_service.generate_chat_title(messages, max_words=10)
         
         return title
         
@@ -119,7 +139,11 @@ async def generate_ai_chat_title(session_id: str, db) -> str:
         if result and len(result) > 0:
             first_user_msg = next((row['content'] for row in result if row['role'] == 'user'), '')
             if first_user_msg:
-                return generate_chat_title(first_user_msg)
+                words = first_user_msg.split()
+                if len(words) <= 10:
+                    return first_user_msg
+                else:
+                    return ' '.join(words[:10])
         return "New Chat"
 
 async def generate_ai_chat_summary(session_id: str, db) -> str:
@@ -196,6 +220,7 @@ async def create_chat_session(
         session_data_dict = {
             'title': session_data.title or "New Chat",
             'summary': session_data.summary,
+            'status': 'active',  # Explicitly set status to active
             'session_context': session_data.session_context or {}
         }
         
@@ -392,72 +417,50 @@ async def add_message_to_session(
 ):
     """Add a message to a chat session."""
     try:
-        # Check if session exists
-        check_query = "SELECT id FROM chat_sessions WHERE id = %s AND status = 'active'"
-        check_result = db.execute_query(check_query, (session_id,))
+        # Convert to database format
+        message_dict = {
+            'role': message_data.role,
+            'content': message_data.content,
+            'model_used': message_data.model_used,
+            'tokens_used': message_data.tokens_used,
+            'response_time_ms': message_data.response_time_ms,
+            'citations': message_data.citations,
+            'context_used': message_data.context_used
+        }
         
-        if not check_result:
-            raise HTTPException(status_code=404, detail="Active chat session not found")
-        
-        # Get next message order
-        order_query = """
-        SELECT COALESCE(MAX(message_order), -1) + 1 as next_order 
-        FROM chat_messages 
-        WHERE session_id = %s
-        """
-        order_result = db.execute_query(order_query, (session_id,))
-        next_order = order_result[0]['next_order'] if order_result else 0
-        
-        # Generate title from first user message if needed
-        if next_order == 0 and message_data.role == 'user':
-            title = generate_chat_title(message_data.content)
-            update_title_query = """
-            UPDATE chat_sessions 
-            SET title = %s, updated_at = NOW()
-            WHERE id = %s AND title = 'New Chat'
-            """
-            db.execute_query(update_title_query, (title, session_id))
-        
-        message_id = str(uuid.uuid4())
-        
-        # Insert message
-        insert_query = """
-        INSERT INTO chat_messages (
-            id, session_id, role, content, model_used, tokens_used, 
-            response_time_ms, citations, context_used, message_order
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING *
-        """
-        
-        result = db.execute_query(
-            insert_query,
-            (
-                message_id, session_id, message_data.role, message_data.content,
-                message_data.model_used, message_data.tokens_used, message_data.response_time_ms,
-                message_data.citations, message_data.context_used, next_order
-            )
-        )
+        # Use database method to add message
+        result = db.add_message_to_session(session_id, message_dict)
         
         if not result:
-            raise HTTPException(status_code=500, detail="Failed to add message")
+            raise HTTPException(status_code=404, detail="Active chat session not found")
         
-        row = result[0]
+        # Generate title from first user message using LLM (max 10 words)
+        if result.get('message_order') == 0 and message_data.role == 'user':
+            try:
+                title = await generate_title_from_first_message(message_data.content)
+                success = db.update_session_title(session_id, title)
+                if success:
+                    logger.info(f"Generated title from first message for session {session_id}: {title}")
+            except Exception as e:
+                logger.error(f"Failed to generate title from first message: {e}")
+                # Keep "New Chat" as fallback
+        
+        # Convert result to ChatMessage format
         message = ChatMessage(
-            id=str(row['id']),
-            session_id=str(row['session_id']),
-            role=row['role'],
-            content=row['content'],
-            model_used=row['model_used'],
-            tokens_used=row['tokens_used'],
-            response_time_ms=row['response_time_ms'],
-            citations=row['citations'] or [],
-            context_used=row['context_used'] or {},
-            created_at=row['created_at'],
-            message_order=row['message_order']
+            id=str(result['id']),
+            session_id=str(result['session_id']),
+            role=result['role'],
+            content=result['content'],
+            model_used=result.get('model_used'),
+            tokens_used=result.get('tokens_used'),
+            response_time_ms=result.get('response_time_ms'),
+            citations=result.get('citations') or [],
+            context_used=result.get('context_used') or {},
+            created_at=result['created_at'],
+            message_order=result['message_order']
         )
         
-        logger.info(f"Added message to session {session_id}: {message_id}")
+        logger.info(f"Added message to session {session_id}: {result['id']}")
         return message
         
     except HTTPException:
@@ -492,15 +495,20 @@ async def save_chat_session(
             message_id = str(uuid.uuid4())
             message_order = start_order + i
             
-            # Generate title from first user message if this is the first message
+            # Generate title from first user message using LLM (max 10 words)
             if message_order == 0 and message_data.role == 'user':
-                title = generate_chat_title(message_data.content)
-                update_title_query = """
-                UPDATE chat_sessions 
-                SET title = %s, updated_at = NOW()
-                WHERE id = %s AND title = 'New Chat'
-                """
-                db.execute_query(update_title_query, (title, session_id))
+                try:
+                    title = await generate_title_from_first_message(message_data.content)
+                    update_title_query = """
+                    UPDATE chat_sessions 
+                    SET title = %s, updated_at = NOW()
+                    WHERE id = %s AND title = 'New Chat'
+                    """
+                    db.execute_query(update_title_query, (title, session_id))
+                    logger.info(f"Generated title from first message for session {session_id}: {title}")
+                except Exception as e:
+                    logger.error(f"Failed to generate title from first message: {e}")
+                    # Keep "New Chat" as fallback
             
             # Insert message
             insert_query = """
@@ -537,35 +545,7 @@ async def save_chat_session(
                     message_order=row['message_order']
                 ))
         
-        # After saving messages, check if we should update the title
-        # Generate AI title if we have enough conversation context (at least 2 exchanges)
-        total_messages = start_order + len(messages)
-        if total_messages >= 3:  # At least user + assistant + user (or similar)
-            try:
-                # Check if title is still "New Chat" or generated from first message only
-                title_check_query = "SELECT title FROM chat_sessions WHERE id = %s"
-                title_result = db.execute_query(title_check_query, (session_id,))
-                
-                if title_result:
-                    current_title = title_result[0]['title']
-                    # Update title if it's default or looks like a simple first-message title
-                    if (current_title == "New Chat" or 
-                        (len(current_title) <= 50 and not current_title.endswith("..."))):
-                        
-                        # Generate AI-powered title
-                        ai_title = await generate_ai_chat_title(session_id, db)
-                        if ai_title and ai_title != "New Chat":
-                            update_title_query = """
-                            UPDATE chat_sessions 
-                            SET title = %s, updated_at = NOW()
-                            WHERE id = %s
-                            """
-                            db.execute_query(update_title_query, (ai_title, session_id))
-                            logger.info(f"Updated session {session_id} title to: {ai_title}")
-                            
-            except Exception as e:
-                logger.error(f"Failed to update AI title for session {session_id}: {e}")
-                # Don't fail the whole request if title generation fails
+        # Note: Title and summary generation now happens only at session end (finalization)
         
         logger.info(f"Saved {len(saved_messages)} messages to session {session_id}")
         return {"message": f"Saved {len(saved_messages)} messages", "messages": saved_messages}
@@ -603,22 +583,22 @@ async def finalize_chat_session(
         update_fields = []
         params = []
         
-        # Generate or update title if needed
-        if current_title == "New Chat" or (len(current_title) <= 50 and not current_title.endswith("...")):
-            try:
-                ai_title = await generate_ai_chat_title(session_id, db)
-                if ai_title and ai_title != "New Chat" and ai_title != current_title:
-                    update_fields.append("title = %s")
-                    params.append(ai_title)
-                    logger.info(f"Updated session {session_id} title to: {ai_title}")
-            except Exception as e:
-                logger.error(f"Failed to generate title during finalization: {e}")
+        # Always re-generate title with AI at session end (improved title based on full conversation)
+        try:
+            ai_title = await generate_ai_chat_title(session_id, db)
+            if ai_title and ai_title != "New Chat" and ai_title != current_title:
+                update_fields.append("title = %s")
+                params.append(ai_title)
+                logger.info(f"Re-generated session {session_id} title at session end: {ai_title}")
+        except Exception as e:
+            logger.error(f"Failed to generate title during finalization: {e}")
+            # Keep existing title if AI generation fails
         
-        # Generate summary if requested and not already present
-        if generate_summary and not current_summary:
+        # Always generate summary at session end
+        if generate_summary:
             try:
                 ai_summary = await generate_ai_chat_summary(session_id, db)
-                if ai_summary:
+                if ai_summary and ai_summary != current_summary:
                     update_fields.append("summary = %s")
                     params.append(ai_summary)
                     logger.info(f"Generated summary for session {session_id}: {ai_summary}")
