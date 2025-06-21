@@ -6,46 +6,91 @@ alwaysApply: true
 # Architecture Patterns
 
 ## Full-Stack Structure
-- **Frontend**: [app/](mdc:app/) directory uses Next.js App Router with static export
-- **Backend**: [backend/](mdc:backend/) directory contains FastAPI application with routers and services
+- **Frontend**: [app/](mdc:app/) directory uses Next.js 13.5.1 App Router with static export configuration
+- **Backend**: [backend/](mdc:backend/) directory contains FastAPI application with structured routers and services
 - **Components**: Extensive shadcn/ui component library in [components/ui/](mdc:components/ui/)
 - **Shared Types**: TypeScript definitions in [types/](mdc:types/) directory
 
 ## RAG Implementation
-- Vector embeddings stored in Supabase pgvector
+- Vector embeddings stored in Supabase pgvector (1536 dimensions)
 - OpenAI text-embedding-3-small for document embeddings
-- GPT-4 for chat responses with retrieved context
+- Multi-model chat support: GPT-4, GPT-4-turbo, GPT-4o-mini, Claude 3 variants
 - Server-Sent Events for streaming chat responses
-- Document processing handled by [document_processor.py](mdc:backend/services/document_processor.py)
+- Document processing with chunking handled by [document_processor.py](mdc:backend/services/document_processor.py)
+- Hybrid search combining vector similarity and full-text search
 
 ## API Architecture
-- FastAPI routers in [backend/routers/](mdc:backend/routers/) for organized endpoints
+- FastAPI routers in [backend/routers/](mdc:backend/routers/) for organized endpoints:
+  - [chat.py](mdc:backend/routers/chat.py) - Streaming chat with RAG
+  - [search.py](mdc:backend/routers/search.py) - Vector and hybrid search
+  - [notion_webhook.py](mdc:backend/routers/notion_webhook.py) - Real-time Notion sync
+  - [chat_sessions.py](mdc:backend/routers/chat_sessions.py) - Session management
+  - [bootstrap.py](mdc:backend/routers/bootstrap.py) - Application initialization
+  - [logs.py](mdc:backend/routers/logs.py) - Debug logging endpoints
 - Service layer in [backend/services/](mdc:backend/services/) for business logic
-- Main app configuration in [backend/main.py](mdc:backend/main.py)
+- Main app configuration in [backend/main.py](mdc:backend/main.py) with lifecycle management
 - Database initialization in [backend/database.py](mdc:backend/database.py)
 - Pydantic models for request/response validation
-- Main endpoints: `/api/chat` (streaming), `/api/search` (vector), `/api/notion/webhook`
+- Comprehensive logging with request tracking
 
 ## Database Schema
-Core tables: `users`, `workspaces`, `documents`, `chat_sessions`, `api_usage`
-Uses Supabase Auth for user management and pgvector for similarity search.
+**Single Workspace Architecture** with core tables:
+- `notion_databases` - Connected Notion databases registry
+- `documents` - Notion pages with content embeddings and metadata
+- `document_chunks` - Granular chunks for improved search
+- `document_metadata` - Extracted queryable fields for filtering
+- `multimedia_assets` - Support for images, files, and attachments
+- `chat_sessions` - Persistent chat session management
+- `chat_messages` - Individual messages with citations and context
+- `search_analytics` - Query performance and optimization tracking
+
+Uses Supabase PostgreSQL with pgvector extension for similarity search.
 Schema files: [backend/schema.sql](mdc:backend/schema.sql), [backend/drop_schema.sql](mdc:backend/drop_schema.sql)
+
+## Model Configuration
+- Centralized model management via [backend/config/model_config.py](mdc:backend/config/model_config.py)
+- TOML-based configuration in [backend/config/models.toml](mdc:backend/config/models.toml)
+- Environment-specific overrides for development/production
+- Support for multiple embedding, chat, and summarization models
+- Rate limiting and performance optimization settings
 
 ## Frontend Patterns
 - React components with TypeScript and Tailwind CSS
-- Custom hooks for state management in [hooks/](mdc:hooks/): [use-auth.ts](mdc:hooks/use-auth.ts), [use-toast.ts](mdc:hooks/use-toast.ts), [use-notion-connection.ts](mdc:hooks/use-notion-connection.ts)
+- Custom hooks for state management in [hooks/](mdc:hooks/):
+  - [use-auth.ts](mdc:hooks/use-auth.ts) - Authentication with demo mode fallback
+  - [use-toast.ts](mdc:hooks/use-toast.ts) - Notification system
+  - [use-notion-connection.ts](mdc:hooks/use-notion-connection.ts) - Notion integration status
+  - [use-notion-databases.ts](mdc:hooks/use-notion-databases.ts) - Database management
+  - [use-chat-sessions.ts](mdc:hooks/use-chat-sessions.ts) - Session persistence
+  - [use-analytics.ts](mdc:hooks/use-analytics.ts) - Usage tracking
 - Theme switching via next-themes (system/light/dark) in [components/theme-toggle.tsx](mdc:components/theme-toggle.tsx)
 - Responsive design with mobile-first approach
 - Main layout defined in [app/layout.tsx](mdc:app/layout.tsx)
+- Static export configuration for deployment
 
 ## Key Components
-- [components/chat-interface.tsx](mdc:components/chat-interface.tsx) - Main chat interface
-- [components/sidebar.tsx](mdc:components/sidebar.tsx) - Navigation sidebar
-- [components/header.tsx](mdc:components/header.tsx) - Application header
-- [components/dashboard-home.tsx](mdc:components/dashboard-home.tsx) - Dashboard home page
-- [components/auth-dialog.tsx](mdc:components/auth-dialog.tsx) - Authentication dialog
+- [components/chat-interface.tsx](mdc:components/chat-interface.tsx) - Main chat with model selection and filtering
+- [components/sidebar.tsx](mdc:components/sidebar.tsx) - Navigation with chat history
+- [components/header.tsx](mdc:components/header.tsx) - Application header with user context
+- [components/dashboard-home.tsx](mdc:components/dashboard-home.tsx) - Dashboard overview
+- [components/welcome-screen.tsx](mdc:components/welcome-screen.tsx) - First-time user onboarding
+- [components/workspace-list.tsx](mdc:components/workspace-list.tsx) - Notion workspace management
+- [components/chat-filter-bar.tsx](mdc:components/chat-filter-bar.tsx) - Advanced search filtering
+- [components/message-citations.tsx](mdc:components/message-citations.tsx) - Source attribution
+- [components/recent-chats.tsx](mdc:components/recent-chats.tsx) - Chat session history
+- [components/debug-logs.tsx](mdc:components/debug-logs.tsx) - Development debugging tools
+- [components/token-usage-indicator.tsx](mdc:components/token-usage-indicator.tsx) - Usage monitoring
 
 ## Backend Services
-- [backend/services/openai_service.py](mdc:backend/services/openai_service.py) - OpenAI integration
-- [backend/services/notion_service.py](mdc:backend/services/notion_service.py) - Notion API integration
-- [backend/services/database_schema_manager.py](mdc:backend/services/database_schema_manager.py) - Database schema management
+- [backend/services/openai_service.py](mdc:backend/services/openai_service.py) - Multi-model OpenAI integration
+- [backend/services/notion_service.py](mdc:backend/services/notion_service.py) - Notion API client with sync
+- [backend/services/database_schema_manager.py](mdc:backend/services/database_schema_manager.py) - Dynamic schema management
+- [backend/services/document_processor.py](mdc:backend/services/document_processor.py) - Content ingestion and chunking
+- [backend/services/chat_session_service.py](mdc:backend/services/chat_session_service.py) - Session lifecycle management
+
+## API Client & Utilities
+- [lib/api.ts](mdc:lib/api.ts) - Type-safe API client with request logging
+- [lib/supabase.ts](mdc:lib/supabase.ts) - Supabase client configuration
+- [lib/logger.ts](mdc:lib/logger.ts) - Frontend logging system
+- [lib/frontend-error-logger.ts](mdc:lib/frontend-error-logger.ts) - Error tracking
+- [lib/utils.ts](mdc:lib/utils.ts) - Utility functions and helpers

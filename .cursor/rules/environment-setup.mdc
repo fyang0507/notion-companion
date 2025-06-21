@@ -8,43 +8,221 @@ alwaysApply: false
 ## Required Environment Variables
 
 ### Frontend Environment Variables (.env.local)
-- `NEXT_PUBLIC_API_BASE_URL` - Base URL for the backend API (default: http://localhost:8000)
-- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
+```bash
+# API Configuration
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+```
 
 ### Backend Environment Variables (backend/.env)
-- `OPENAI_API_KEY` - OpenAI API key for embeddings and chat
-- Supabase credentials for database access
-- See [backend/.env.example](mdc:backend/.env.example) for complete configuration
+```bash
+# OpenAI Configuration
+OPENAI_API_KEY=your-openai-api-key
+
+# Supabase Database Configuration
+SUPABASE_URL=your-supabase-project-url
+SUPABASE_KEY=your-supabase-service-key
+
+# Notion Integration
+NOTION_INTERNAL_INTEGRATION_TOKEN=your-notion-integration-token
+
+# Environment Settings
+NODE_ENV=development  # or production
+CLEAR_LOGS=true      # Clear logs on startup in development
+
+# Model Configuration (optional - defaults in models.toml)
+# CHAT_MODEL=gpt-4o
+# EMBEDDING_MODEL=text-embedding-3-small
+# SUMMARIZATION_MODEL=gpt-4o-mini
+```
 
 ## Installation & Setup
 
 ### Prerequisites
-- Node.js with pnpm package manager
-- Python with uv package manager
-- Supabase account and project
+- **Node.js** (v18+) with **pnpm** package manager
+- **Python** (v3.11+) with **uv** package manager
+- **Supabase** account and project (optional for demo mode)
+- **OpenAI** API account with credits
 
-### Quick Setup
+### Quick Setup (Recommended)
 ```bash
-make install      # Install all dependencies
-make setup-env    # Create environment file templates
-make dev          # Start development servers
+# Clone and enter project directory
+git clone <repository> notion-companion
+cd notion-companion
+
+# Install all dependencies
+make install
+
+# Create environment file templates
+make setup-env
+
+# Configure your environment variables
+# Edit .env.local and backend/.env with your API keys
+
+# Start development servers
+make dev
 ```
 
-### Manual Setup
+### Manual Setup (Alternative)
 ```bash
-# Install Python dependencies
-cd backend && uv venv .venv && uv pip install -r requirements.in
+# Install Python dependencies with uv
+cd backend
+uv venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -r requirements.in
+cd ..
 
-# Install Node.js dependencies  
+# Install Node.js dependencies with pnpm
 pnpm install
 
-# Start development
-pnpm run dev:full  # or make dev
+# Create environment files manually
+cp .env.local.example .env.local
+cp backend/.env.example backend/.env
+
+# Start development servers
+npm run dev:full  # or use separate terminals
 ```
 
-## Demo Mode
-The application supports demo mode when Supabase is not configured. The [use-auth.ts](mdc:hooks/use-auth.ts) hook automatically falls back to demo mode with mock user data.
+## Model Configuration
+
+### Centralized Model Management
+The application uses [backend/config/models.toml](mdc:backend/config/models.toml) for AI model configuration:
+
+```toml
+# Default models
+embedding_model = "text-embedding-3-small"
+chat_model = "gpt-4o"
+summarization_model = "gpt-4o-mini"
+
+[models.embedding]
+dimensions = 1536
+max_input_tokens = 8191
+batch_size = 100
+
+[models.chat]
+max_tokens = 4096
+temperature = 0.7
+
+[environment.development]
+# Override settings for development
+chat_model = "gpt-4o-mini"  # Use cheaper model for development
+```
+
+### Runtime Model Selection
+Users can select different models in the chat interface:
+- GPT-4o Mini (fast, low cost)
+- GPT-4 (most capable)
+- GPT-4 Turbo (balanced)
+- Claude 3 Sonnet (analysis focused)
+- Claude 3 Haiku (fast, efficient)
+
+## Database Configuration
+
+### Supabase Setup
+1. Create a new Supabase project
+2. Enable the `vector` extension in the SQL editor:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS vector;
+   ```
+3. Run the schema creation script from [backend/schema.sql](mdc:backend/schema.sql)
+4. Configure Row Level Security (RLS) policies as needed
+
+### Demo Mode (No Database Required)
+The application gracefully falls back to demo mode when Supabase isn't configured:
+- Mock data for UI development
+- All features work except persistence
+- Automatic detection via [use-auth.ts](mdc:hooks/use-auth.ts)
+
+## Notion Integration Setup
+
+### Create Notion Integration
+1. Go to [Notion Integrations](https://www.notion.so/my-integrations)
+2. Create new integration with read permissions
+3. Copy the Internal Integration Token
+4. Share your databases with the integration
+
+### Sync Notion Databases
+```bash
+# Configure backend/.env with NOTION_INTERNAL_INTEGRATION_TOKEN
+# Then sync your databases
+make sync-notion
+
+# Or manually run the sync script
+cd backend && ./sync_notion_databases.sh
+```
+
+## Development Commands
+
+### Package Management
+```bash
+make install          # Install all dependencies
+pnpm install          # Frontend dependencies only
+cd backend && uv pip install -r requirements.in  # Backend only
+```
+
+### Development Servers
+```bash
+make dev              # Both frontend and backend
+npm run dev           # Frontend only (port 3000)
+npm run backend       # Backend only (port 8000)
+npm run dev:full      # Both servers concurrently
+```
+
+### Build and Deploy
+```bash
+npm run build         # Build Next.js for static export
+npm run lint          # Run ESLint validation
+```
+
+### Database Operations
+```bash
+make sync-notion                    # Sync Notion databases
+cd backend && python -m scripts.test_ingestion  # Test document processing
+```
+
+## Troubleshooting
+
+### Common Issues
+1. **Supabase Connection**: Verify URL and keys in environment variables
+2. **OpenAI Rate Limits**: Check API quotas and billing
+3. **Notion Integration**: Ensure databases are shared with integration
+4. **Python Dependencies**: Use `uv` for faster, more reliable installs
+5. **Node Dependencies**: Use `pnpm` for efficient package management
+
+### Debug Tools
+- **Backend Logs**: Access via [/api/logs](http://localhost:8000/api/logs) endpoint
+- **Frontend Debug**: Use [components/debug-logs.tsx](mdc:components/debug-logs.tsx)
+- **API Documentation**: Available at [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Database Scripts**: Various utilities in [backend/scripts/](mdc:backend/scripts/)
+
+### Configuration Validation
+```bash
+# Test model configuration
+cd backend && python -m scripts.model_config_demo
+
+# Check database connections
+cd backend && python -m scripts.check_active_databases
+
+# Verify ingestion pipeline
+cd backend && python -m scripts.test_ingestion
+```
+
+## Production Deployment
+
+### Environment Considerations
+- Set `NODE_ENV=production` in backend environment
+- Use production Supabase instance with proper security
+- Configure rate limiting and monitoring
+- Use proper SSL certificates for secure connections
+- Consider using managed hosting for the FastAPI backend
+
+### Build Configuration
+- Next.js uses static export configuration in [next.config.js](mdc:next.config.js)
+- Optimized for CDN deployment with `output: 'export'`
+- Images are unoptimized for static hosting compatibility
 
 ## Testing & Quality Guidelines
 

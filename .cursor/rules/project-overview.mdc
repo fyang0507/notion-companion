@@ -5,41 +5,81 @@ alwaysApply: false
 ---
 # Project Overview
 
-Notion Companion is a production-ready AI-powered knowledge assistant that connects to Notion workspaces, providing intelligent search and chat capabilities with real-time synchronization. It's a full-stack RAG (Retrieval-Augmented Generation) application.
+Notion Companion is a production-ready AI-powered knowledge assistant that connects to Notion workspaces, providing intelligent search and chat capabilities with real-time synchronization. It's a sophisticated full-stack RAG (Retrieval-Augmented Generation) application with enterprise-grade features.
 
 ## Tech Stack
 
 **Frontend**: Next.js 13.5.1 with App Router, TypeScript, Tailwind CSS, shadcn/ui components
-**Backend**: FastAPI (Python with uv package manager), Supabase (PostgreSQL + pgvector), OpenAI integration
+**Backend**: FastAPI (Python with uv package manager), Supabase (PostgreSQL + pgvector), Multi-model AI integration
+**Database**: PostgreSQL with pgvector extension for vector similarity search
 **Package Management**: pnpm for Node.js dependencies, uv for Python dependencies
-**Key Features**: Vector search, streaming chat, Notion webhook synchronization, multi-workspace support, demo mode
+**AI Models**: OpenAI (GPT-4, GPT-4-turbo, GPT-4o-mini), Claude 3 (Sonnet, Haiku)
+
+## Key Features
+
+### Core Functionality
+- **Vector Search**: High-performance similarity search with pgvector
+- **Streaming Chat**: Real-time AI responses with Server-Sent Events
+- **Multi-Model Support**: Choose between different AI models for optimal cost/performance
+- **Notion Synchronization**: Real-time webhook-based content updates
+- **Session Management**: Persistent chat sessions with full history
+- **Advanced Filtering**: Filter by databases, date ranges, authors, tags, and content types
+
+### Enterprise Features
+- **Hybrid Search**: Combines vector similarity with full-text search
+- **Citation System**: Automatic source attribution with direct links to Notion
+- **Analytics**: Query performance tracking and usage optimization
+- **Multimedia Support**: Handle images, files, and attachments from Notion
+- **Demo Mode**: Graceful fallback when Supabase isn't configured
+- **Logging & Monitoring**: Comprehensive request tracking and error handling
 
 ## Project Structure
 
 - [app/](mdc:app/) - Next.js App Router pages and layouts
-- [backend/](mdc:backend/) - FastAPI application with routers and services
+  - [analytics/](mdc:app/analytics/) - Usage analytics dashboard
+  - [setup/](mdc:app/setup/) - Initial configuration wizard
+  - [workspaces/](mdc:app/workspaces/) - Workspace management
+- [backend/](mdc:backend/) - FastAPI application with modular architecture
+  - [config/](mdc:backend/config/) - Model and database configurations
+  - [routers/](mdc:backend/routers/) - API endpoint definitions
+  - [services/](mdc:backend/services/) - Business logic and integrations
+  - [scripts/](mdc:backend/scripts/) - Utility and maintenance scripts
 - [components/](mdc:components/) - React components including extensive shadcn/ui library
 - [hooks/](mdc:hooks/) - Custom React hooks for state management
-- [lib/](mdc:lib/) - Utility functions and API clients
+- [lib/](mdc:lib/) - Utility functions, API clients, and shared logic
 - [types/](mdc:types/) - TypeScript type definitions
 
 ## Development Commands
 
-### Start Development
+### Quick Start
+- `make install` - Install all dependencies (Python + Node.js)
+- `make dev` - Start both frontend and backend servers
+- `make setup-env` - Create environment file templates
+
+### Individual Services
 - `npm run dev` - Frontend only (port 3000)
 - `npm run backend` - Backend only (port 8000) 
 - `npm run dev:full` - Both frontend and backend concurrently
-- `make dev` - Alternative using [Makefile](mdc:Makefile)
 
-### Build & Lint
-- `npm run build` - Build Next.js for production
+### Build & Quality
+- `npm run build` - Build Next.js for production (static export)
 - `npm run lint` - Run ESLint validation
 
-### Setup
-- `make install` - Install both Python (uv) and Node (pnpm) dependencies
-- `make setup-env` - Create environment file templates
+### Database & Synchronization
 - `make sync-notion` - Sync Notion databases using [sync_notion_databases.sh](mdc:backend/sync_notion_databases.sh)
+- [backend/drop_schema.sql](mdc:backend/drop_schema.sql) - Reset database schema
+- [backend/schema.sql](mdc:backend/schema.sql) - Full database schema definition
 
-### Database & Backend
-- [backend/drop_schema.sql](mdc:backend/drop_schema.sql) - Drop database schema
-- [backend/schema.sql](mdc:backend/schema.sql) - Database schema definition
+### Development Tools
+- [backend/scripts/](mdc:backend/scripts/) - Various utility scripts:
+  - [test_ingestion.py](mdc:backend/scripts/test_ingestion.py) - Test document processing
+  - [check_active_databases.py](mdc:backend/scripts/check_active_databases.py) - Verify database connections
+  - [model_config_demo.py](mdc:backend/scripts/model_config_demo.py) - Test model configurations
+
+## Configuration Files
+- [package.json](mdc:package.json) - Node.js dependencies and scripts
+- [backend/requirements.txt](mdc:backend/requirements.txt) - Python dependencies (auto-generated from requirements.in)
+- [tailwind.config.ts](mdc:tailwind.config.ts) - Tailwind CSS configuration
+- [components.json](mdc:components.json) - shadcn/ui component configuration
+- [next.config.js](mdc:next.config.js) - Next.js build configuration with static export
+- [backend/config/models.toml](mdc:backend/config/models.toml) - AI model configurations
