@@ -272,6 +272,11 @@ export class ApiClient {
     const { data } = await this.makeRequest<{ message: string; messages: ChatSessionMessage[] }>('POST', `/api/chat-sessions/${sessionId}/save`, messages);
     return data;
   }
+
+  async finalizeChatSession(sessionId: string): Promise<{ message: string; session: ChatSession }> {
+    const { data } = await this.makeRequest<{ message: string; session: ChatSession }>('POST', `/api/chat-sessions/${sessionId}/finalize`);
+    return data;
+  }
 }
 
 export const apiClient = new ApiClient();

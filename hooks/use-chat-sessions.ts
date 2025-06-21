@@ -12,9 +12,10 @@ export interface ChatSessionHook {
   error: string | null;
   
   // Session management
-  createNewSession: (title?: string) => Promise<ChatSession>;
+  createNewSession: (title?: string, sessionContext?: Record<string, any>) => Promise<ChatSession>;
   loadSession: (sessionId: string) => Promise<void>;
   saveCurrentSession: () => Promise<void>;
+  finalizeCurrentSession: () => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   
   // Message management
@@ -38,20 +39,20 @@ export function useChatSessions(): ChatSessionHook {
   // Keep track of unsaved messages
   const unsavedMessages = useRef<ChatMessage[]>([]);
 
-  const createNewSession = useCallback(async (title?: string): Promise<ChatSession> => {
+  const createNewSession = useCallback(async (title?: string, sessionContext?: Record<string, any>): Promise<ChatSession> => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // First save current session if it has messages
-      if (currentSession && currentMessages.length > 0) {
-        await saveCurrentSession();
+      // First finalize current session if it has meaningful content
+      if (currentSession && currentMessages.length > 1) {
+        await finalizeCurrentSession();
       }
 
       // Create new session
       const sessionData: ChatSessionCreate = {
         title: title || 'New Chat',
-        session_context: {}
+        session_context: sessionContext || {}
       };
 
       const newSession = await apiClient.createChatSession(sessionData);
@@ -94,9 +95,9 @@ export function useChatSessions(): ChatSessionHook {
       setIsLoading(true);
       setError(null);
 
-      // Save current session before loading new one
-      if (currentSession && currentMessages.length > 0) {
-        await saveCurrentSession();
+      // Finalize current session before loading new one if it has meaningful content
+      if (currentSession && currentMessages.length > 1) {
+        await finalizeCurrentSession();
       }
 
       // Load the requested session

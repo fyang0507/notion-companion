@@ -19,42 +19,15 @@ export const supabase = hasValidSupabaseConfig
     })
   : null
 
+// Single Database Model - NO workspace concept
+// This webapp supports ONLY ONE Notion workspace with multiple databases
 export type Database = {
   public: {
     Tables: {
-      workspaces: {
-        Row: {
-          id: string
-          name: string
-          notion_access_token: string
-          created_at: string
-          updated_at: string
-          last_sync_at?: string
-          is_active: boolean
-        }
-        Insert: {
-          id?: string
-          name?: string
-          notion_access_token: string
-          created_at?: string
-          updated_at?: string
-          last_sync_at?: string
-          is_active?: boolean
-        }
-        Update: {
-          id?: string
-          name?: string
-          notion_access_token?: string
-          created_at?: string
-          updated_at?: string
-          last_sync_at?: string
-          is_active?: boolean
-        }
-      }
+      // NO workspaces table - single workspace model
       database_schemas: {
         Row: {
           database_id: string
-          workspace_id: string
           database_name: string
           notion_schema: any
           field_definitions: any
@@ -65,7 +38,6 @@ export type Database = {
         }
         Insert: {
           database_id: string
-          workspace_id: string
           database_name: string
           notion_schema: any
           field_definitions: any
@@ -76,7 +48,6 @@ export type Database = {
         }
         Update: {
           database_id?: string
-          workspace_id?: string
           database_name?: string
           notion_schema?: any
           field_definitions?: any
@@ -89,20 +60,29 @@ export type Database = {
       documents: {
         Row: {
           id: string
-          workspace_id: string
+          database_id: string
           notion_page_id: string
+          notion_database_id?: string
           title: string
-          url?: string
-          status: string
-          created_time: string
-          last_edited_time: string
-          created_by: string
-          last_edited_by: string
-          parent_id?: string
-          icon?: string
-          cover?: string
-          archived: boolean
-          in_trash: boolean
+          content: string
+          title_embedding?: number[]
+          content_embedding?: number[]
+          summary_embedding?: number[]
+          page_url?: string
+          parent_page_id?: string
+          notion_created_time?: string
+          notion_last_edited_time?: string
+          content_type: string
+          content_length: number
+          token_count: number
+          notion_properties: any
+          extracted_metadata: any
+          has_multimedia: boolean
+          multimedia_refs: any[]
+          is_chunked: boolean
+          chunk_count: number
+          document_summary?: string
+          processing_status: string
           created_at: string
           updated_at: string
         }
@@ -111,26 +91,44 @@ export type Database = {
         Row: {
           id: string
           document_id: string
-          content: string
           chunk_index: number
-          tokens: number
-          embedding: number[]
+          content: string
+          embedding?: number[]
+          token_count: number
+          content_type: string
           created_at: string
         }
       }
       document_metadata: {
         Row: {
           document_id: string
-          metadata_key: string
-          metadata_value: string
+          field_name: string
+          field_type: string
+          raw_value?: any
+          text_value?: string
+          number_value?: number
+          date_value?: string
+          datetime_value?: string
+          boolean_value?: boolean
+          array_value?: any
           created_at: string
+        }
+      }
+      chat_sessions: {
+        Row: {
+          id: string
+          user_id: string
+          title: string
+          messages: any[]
+          database_filters: string[]
+          created_at: string
+          updated_at: string
         }
       }
       search_analytics: {
         Row: {
           id: string
           user_id: string
-          workspace_id?: string
           query: string
           result_count: number
           clicked_document_id?: string
@@ -142,18 +140,38 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      match_documents: {
+      match_documents_by_content: {
         Args: {
           query_embedding: number[]
           match_threshold: number
           match_count: number
-          workspace_id?: string
+          database_ids?: string[]
+        }
+        Returns: {
+          id: string
+          title: string
+          content: string
+          extracted_metadata: any
+          notion_page_id: string
+          database_id: string
+          similarity: number
+        }[]
+      }
+      match_document_chunks: {
+        Args: {
+          query_embedding: number[]
+          match_threshold: number
+          match_count: number
+          database_ids?: string[]
         }
         Returns: {
           id: string
           document_id: string
           content: string
+          chunk_index: number
           similarity: number
+          document_title: string
+          database_id: string
         }[]
       }
     }
