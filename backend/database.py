@@ -291,11 +291,26 @@ class Database:
     
     def create_chat_session(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new chat session."""
-        if 'id' not in session_data:
-            session_data['id'] = str(uuid.uuid4())
-        
-        response = self.client.table('chat_sessions').insert(session_data).execute()
-        return response.data[0] if response.data else {}
+        try:
+            # Ensure required fields are present
+            if 'id' not in session_data:
+                session_data['id'] = str(uuid.uuid4())
+            
+            # Set default values for required fields
+            session_data.setdefault('message_count', 0)
+            session_data.setdefault('last_message_at', datetime.utcnow().isoformat())
+            session_data.setdefault('created_at', datetime.utcnow().isoformat())
+            session_data.setdefault('updated_at', datetime.utcnow().isoformat())
+            
+            print(f"Creating chat session with data: {session_data}")
+            response = self.client.table('chat_sessions').insert(session_data).execute()
+            print(f"Chat session creation response: {response}")
+            
+            return response.data[0] if response.data else {}
+        except Exception as e:
+            print(f"Error creating chat session: {e}")
+            print(f"Session data: {session_data}")
+            raise
     
     def add_message_to_session(self, session_id: str, message_data: Dict[str, Any]) -> Dict[str, Any]:
         """Add a message to a chat session."""
@@ -427,6 +442,59 @@ class Database:
                     session_id = params[1]
                     response = self.client.table('chat_sessions').update({'title': title}).eq('id', session_id).execute()
                     return response.data
+                return []
+            
+            elif 'SELECT id, title, summary, message_count, last_message_at' in query and 'chat_sessions' in query:
+                # Idle session monitoring query
+                if params and len(params) >= 1:
+                    idle_threshold = params[0]
+                    try:
+                        # Convert datetime to ISO string if needed
+                        threshold_str = idle_threshold.isoformat() if hasattr(idle_threshold, 'isoformat') else str(idle_threshold)
+                        response = self.client.table('chat_sessions').select(
+                            'id, title, summary, message_count, last_message_at'
+                        ).eq('status', 'active').lt('last_message_at', threshold_str).gte('message_count', 2).execute()
+                        return response.data
+                    except Exception as e:
+                        print(f"Error in idle session query: {e}")
+                        return []
+                return []
+            
+            elif 'SELECT role, content FROM chat_messages' in query and 'session_id' in query:
+                # Chat messages query for title/summary generation
+                if params and len(params) >= 1:
+                    session_id = params[0]
+                    try:
+                        # Extract LIMIT from query if present
+                        limit = 12  # default
+                        if 'LIMIT 6' in query:
+                            limit = 6
+                        elif 'LIMIT 12' in query:
+                            limit = 12
+                        
+                        print(f"Executing chat messages query for session: {session_id}, limit: {limit}")
+                        response = self.client.table('chat_messages').select(
+                            'role, content'
+                        ).eq('session_id', session_id).order('message_order').limit(limit).execute()
+                        print(f"Chat messages query result: {response.data}")
+                        return response.data
+                    except Exception as e:
+                        print(f"Error in chat messages query: {e}")
+                        return []
+                return []
+            
+            elif 'SELECT id, title, summary, message_count, status' in query and 'chat_sessions' in query:
+                # Session info query for conclusion
+                if params and len(params) >= 1:
+                    session_id = params[0]
+                    try:
+                        response = self.client.table('chat_sessions').select(
+                            'id, title, summary, message_count, status'
+                        ).eq('id', session_id).eq('status', 'active').execute()
+                        return response.data
+                    except Exception as e:
+                        print(f"Error in session info query: {e}")
+                        return []
                 return []
             
             else:

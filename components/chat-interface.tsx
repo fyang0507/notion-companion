@@ -170,32 +170,25 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       citations: []
     };
 
-    // Create a new session if we don't have one and this is the first message
-    if (chatSessions && !chatSessions.currentSession) {
-      try {
-        const sessionContext = {
-          database_filters: filters.workspaces,
-          model_used: selectedModel.id,
-          initial_filters: filters
-        };
-        await chatSessions.createNewSession(undefined, sessionContext);
-      } catch (err) {
-        console.error('Failed to create new session:', err);
-        // Continue with fallback behavior
-      }
-    }
-
     // Add message through chat sessions if available
+    // addMessage will handle session creation if we're in temporary chat mode
     if (chatSessions) {
-      chatSessions.addMessage(userMessage);
-      // Save user message immediately
-      setTimeout(async () => {
-        try {
-          await chatSessions.saveMessageImmediately(userMessage);
-        } catch (err) {
-          console.error('Failed to save user message immediately:', err);
-        }
-      }, 100); // Small delay to ensure session exists
+      const sessionContext = {
+        database_filters: filters.workspaces,
+        model_used: selectedModel.id,
+        initial_filters: filters
+      };
+      await chatSessions.addMessage(userMessage, sessionContext);
+      // Save user message immediately (but only if we have a session)
+      if (chatSessions.currentSession) {
+        setTimeout(async () => {
+          try {
+            await chatSessions.saveMessageImmediately(userMessage);
+          } catch (err) {
+            console.error('Failed to save user message immediately:', err);
+          }
+        }, 100); // Small delay to ensure session is properly set up
+      }
     } else {
       setFallbackMessages(prev => [...prev, userMessage]);
     }
@@ -215,7 +208,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
 
     // Add the empty bot message and start streaming
     if (chatSessions) {
-      chatSessions.addMessage(botMessage);
+      await chatSessions.addMessage(botMessage);
     } else {
       setFallbackMessages(prev => [...prev, botMessage]);
     }

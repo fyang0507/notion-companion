@@ -75,30 +75,10 @@ export default function Home() {
   };
 
   const handleStartGlobalChat = async () => {
-    // Check if current chat session is empty (no messages)
-    if (chatSessions.currentMessages.length === 0 && selectedWorkspace === 'global') {
-      toast.info("You're already in a new chat session", {
-        description: 'This chat is empty and ready for your first message.'
-      });
-      
-      // Still auto-collapse sidebar on mobile
-      if (isMobile) {
-        setSidebarCollapsed(true);
-      }
-      return;
-    }
-
-    try {
-      await chatSessions.createNewSession();
-      setSelectedWorkspace('global');
-      setChatKey(prev => prev + 1);
-      setChatRefreshTrigger(prev => prev + 1); // Trigger recent chats refresh
-    } catch (err) {
-      console.error('Failed to create new chat session:', err);
-      // Fallback to regular chat start - this ensures the app always works
-      setSelectedWorkspace('global');
-      setChatKey(prev => prev + 1);
-    }
+    // Always start temporary chat mode - session will be created when user sends first message
+    chatSessions.startTemporaryChat();
+    setSelectedWorkspace('global');
+    setChatKey(prev => prev + 1);
     
     // Auto-collapse sidebar on mobile when starting chat
     if (isMobile) {

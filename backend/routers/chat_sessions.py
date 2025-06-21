@@ -467,25 +467,33 @@ async def finalize_chat_session(
         
         # Always re-generate title with AI at session end (improved title based on full conversation)
         try:
+            logger.info(f"Attempting to generate AI title for session {session_id}")
             ai_title = await generate_ai_chat_title(session_id, db)
+            logger.info(f"Generated AI title result: {ai_title}")
             if ai_title and ai_title != "New Chat" and ai_title != current_title:
                 update_fields.append("title = %s")
                 params.append(ai_title)
                 logger.info(f"Re-generated session {session_id} title at session end: {ai_title}")
         except Exception as e:
-            logger.error(f"Failed to generate title during finalization: {e}")
+            logger.error(f"Failed to generate title during finalization: {e}", exc_info=True)
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error args: {e.args}")
             # Keep existing title if AI generation fails
         
         # Always generate summary at session end
         if generate_summary:
             try:
+                logger.info(f"Attempting to generate AI summary for session {session_id}")
                 ai_summary = await generate_ai_chat_summary(session_id, db)
+                logger.info(f"Generated AI summary result: {ai_summary}")
                 if ai_summary and ai_summary != current_summary:
                     update_fields.append("summary = %s")
                     params.append(ai_summary)
                     logger.info(f"Generated summary for session {session_id}: {ai_summary}")
             except Exception as e:
-                logger.error(f"Failed to generate summary during finalization: {e}")
+                logger.error(f"Failed to generate summary during finalization: {e}", exc_info=True)
+                logger.error(f"Error type: {type(e).__name__}")
+                logger.error(f"Error args: {e.args}")
         
         # Update session if we have changes
         update_needed = False
