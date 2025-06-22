@@ -27,6 +27,8 @@ export default function Home() {
   const [chatKey, setChatKey] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
   const [chatRefreshTrigger, setChatRefreshTrigger] = useState(0);
+  const [chatOperationLoading, setChatOperationLoading] = useState(false);
+  const [chatOperationStatus, setChatOperationStatus] = useState<string>('');
   
   // Check if we have a backend configured (API base URL is set)
   const isBackendConfigured = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -79,31 +81,41 @@ export default function Home() {
       return;
     }
     
-    // First conclude current session if it exists and has user messages
-    if (chatSessions.currentSession && hasUserMessages) {
-      try {
+    // Show loading state for concluding and starting new chat
+    setChatOperationLoading(true);
+    
+    try {
+      // First conclude current session if it exists and has user messages
+      if (chatSessions.currentSession && hasUserMessages) {
+        setChatOperationStatus('Concluding current chat...');
         console.log('Concluding current session before starting new chat, session ID:', chatSessions.currentSession.id);
         console.log('Current messages:', chatSessions.currentMessages.length, 'messages');
         const result = await apiClient.concludeCurrentAndStartNew(chatSessions.currentSession.id);
         console.log('Conclusion result:', result);
-      } catch (err) {
-        console.error('Failed to conclude current session:', err);
+      } else {
+        console.log('No session to conclude or no user messages found');
+        console.log('Current session:', chatSessions.currentSession?.id);
+        console.log('User messages:', chatSessions.currentMessages.filter(m => m.type === 'user').length);
       }
-    } else {
-      console.log('No session to conclude or no user messages found');
-      console.log('Current session:', chatSessions.currentSession?.id);
-      console.log('User messages:', chatSessions.currentMessages.filter(m => m.type === 'user').length);
-    }
-    
-    // Always start with temporary chat - session will be created when user sends first message
-    chatSessions.startTemporaryChat();
-    setSelectedWorkspace('global');
-    setChatKey(prev => prev + 1);
-    setChatRefreshTrigger(prev => prev + 1); // Trigger recent chats refresh
-    
-    // Auto-collapse sidebar on mobile when starting chat
-    if (isMobile) {
-      setSidebarCollapsed(true);
+      
+      setChatOperationStatus('Starting new chat...');
+      
+      // Always start with temporary chat - session will be created when user sends first message
+      chatSessions.startTemporaryChat();
+      setSelectedWorkspace('global');
+      setChatKey(prev => prev + 1);
+      setChatRefreshTrigger(prev => prev + 1); // Trigger recent chats refresh
+      
+      // Auto-collapse sidebar on mobile when starting chat
+      if (isMobile) {
+        setSidebarCollapsed(true);
+      }
+    } catch (err) {
+      console.error('Failed to start new chat:', err);
+      toast.error('Failed to start new chat. Please try again.');
+    } finally {
+      setChatOperationLoading(false);
+      setChatOperationStatus('');
     }
   };
 
@@ -118,12 +130,20 @@ export default function Home() {
 
 
   const handleChatSelect = async (chatId: string) => {
+    // Show loading state for resuming chat
+    setChatOperationLoading(true);
+    setChatOperationStatus('Resuming your recent chat...');
+    
     try {
       await chatSessions.loadSession(chatId);
       setSelectedWorkspace('global');
       setChatKey(prev => prev + 1);
     } catch (err) {
       console.error('Failed to load chat session:', err);
+      toast.error('Failed to load chat session. Please try again.');
+    } finally {
+      setChatOperationLoading(false);
+      setChatOperationStatus('');
     }
     
     // Auto-collapse sidebar on mobile when selecting chat
@@ -206,6 +226,8 @@ export default function Home() {
                 key={chatKey} 
                 onBackToHome={handleBackToHome}
                 chatSessions={chatSessions}
+                chatOperationLoading={chatOperationLoading}
+                chatOperationStatus={chatOperationStatus}
               />
             ) : (
               <DashboardHome 
@@ -241,6 +263,8 @@ export default function Home() {
                     key={chatKey} 
                     onBackToHome={handleBackToHome}
                     chatSessions={chatSessions}
+                    chatOperationLoading={chatOperationLoading}
+                    chatOperationStatus={chatOperationStatus}
                   />
                 ) : (
                   <DashboardHome 

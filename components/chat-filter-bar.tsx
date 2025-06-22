@@ -51,9 +51,10 @@ interface ChatFilterBarProps {
     documentCount: number;
     metadata?: WorkspaceMetadata;
   }>;
+  disabled?: boolean;
 }
 
-export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }: ChatFilterBarProps) {
+export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces, disabled = false }: ChatFilterBarProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState(filters.searchQuery || '');
   const [workspaceSelectOpen, setWorkspaceSelectOpen] = useState(false);
@@ -327,6 +328,7 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
                 "gap-2 justify-between h-10 md:min-w-[200px]",
                 filters.workspaces.length > 0 && "border-primary bg-primary/5"
               )}
+              disabled={disabled}
             >
               <div className="flex items-center gap-2 min-w-0 flex-1">
                 <Globe className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -422,6 +424,7 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
               "pl-10 bg-background h-10",
               filters.searchQuery && "border-primary bg-primary/5"
             )}
+            disabled={disabled}
           />
         </div>
 
@@ -432,6 +435,7 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
             size="sm"
             onClick={() => setIsExpanded(!isExpanded)}
             className="gap-2 shrink-0 h-10"
+            disabled={disabled}
           >
             <Filter className="h-4 w-4" />
             {!isMobile && "Filters"}
@@ -445,7 +449,7 @@ export function ChatFilterBar({ filters, onFiltersChange, availableWorkspaces }:
 
           {/* Clear Filters */}
           {activeFilterCount > 0 && (
-            <Button variant="ghost" size="sm" onClick={clearAllFilters} className="shrink-0 h-10">
+            <Button variant="ghost" size="sm" onClick={clearAllFilters} className="shrink-0 h-10" disabled={disabled}>
               <X className="h-4 w-4" />
             </Button>
           )}

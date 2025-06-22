@@ -32,6 +32,8 @@ import { useSessionLifecycle } from '@/hooks/use-session-lifecycle';
 interface ChatInterfaceProps {
   onBackToHome?: () => void;
   chatSessions?: ChatSessionHook;
+  chatOperationLoading?: boolean;
+  chatOperationStatus?: string;
 }
 
 interface AIModel {
@@ -80,7 +82,7 @@ const availableModels: AIModel[] = [
   }
 ];
 
-export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps) {
+export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading, chatOperationStatus }: ChatInterfaceProps) {
   const { connection, isConnected } = useNotionConnection();
   const { databases } = useNotionDatabases();
   
@@ -199,79 +201,50 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
         model_used: selectedModel.id,
         initial_filters: filters
       };
-      
-      const wasTemporaryChat = chatSessions.isTemporaryChat;
-      console.log('About to call addMessage', { wasTemporaryChat, sessionContext });
       sessionId = await chatSessions.addMessage(userMessage, sessionContext);
-      
-      // Note: User messages are now automatically saved in addMessage when session exists
-      // No need for additional saveMessageImmediately call as it causes duplicates
     } else {
       setFallbackMessages(prev => [...prev, userMessage]);
     }
-    
+
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
 
-    // Create bot message immediately but with empty content
-    const botMessageId = (Date.now() + 1).toString();
+    // Create placeholder for bot response with streaming indicator
+    const botMessageId = `bot-${Date.now()}`;
     const botMessage: ChatMessage = {
       id: botMessageId,
       type: 'bot',
       content: '',
       timestamp: new Date(),
-      citations: [] // Citations will be populated from API response
+      citations: []
     };
 
-    // Add the empty bot message and start streaming
+    // Add empty bot message immediately for streaming visualization
     if (chatSessions) {
-      await chatSessions.addMessage(botMessage);
+      const currentMessages = chatSessions.currentMessages;
+      setFallbackMessages([...currentMessages, botMessage]);
     } else {
       setFallbackMessages(prev => [...prev, botMessage]);
     }
+
     setStreamingMessageId(botMessageId);
 
     try {
-      // Prepare API request
-      const apiMessages = messages.concat(userMessage).map(msg => ({
-        role: (msg.type === 'bot' ? 'assistant' : 'user') as 'user' | 'assistant',
-        content: msg.content
-      }));
-
-      // Ensure session consistency - if addMessage returned a sessionId, use it as source of truth
-      let finalSessionId: string;
+      const finalSessionId = sessionId || 'temp-session';
       
-      if (sessionId) {
-        // addMessage created/returned a session - this is our source of truth
-        finalSessionId = sessionId;
-        
-        // Validate consistency: if currentSession exists, it should match
-        const currentSessionId = chatSessions?.currentSession?.id;
-        if (currentSessionId && currentSessionId !== sessionId) {
-          console.error('Session ID mismatch!', { 
-            returnedSessionId: sessionId, 
-            currentSessionId 
-          });
-          throw new Error('Session ID consistency error');
-        }
-      } else {
-        // No session returned from addMessage - must use existing session
-        const currentSessionId = chatSessions?.currentSession?.id;
-        if (!currentSessionId) {
-          throw new Error('No active chat session available');
-        }
-        finalSessionId = currentSessionId;
-      }
-
-      const stream = await apiClient.sendChatMessage({
-        messages: apiMessages,
-        database_filters: filters.workspaces.length > 0 ? filters.workspaces : undefined,
-        session_id: finalSessionId  // Required session ID
+      const response = await apiClient.sendChatMessage({
+        messages: [
+          { role: 'user', content: currentInput }
+        ],
+        database_filters: filters.workspaces,
+        session_id: finalSessionId
       });
 
-      const reader = stream.getReader();
+      const reader = response.getReader();
       const decoder = new TextDecoder();
       let accumulatedContent = '';
+      let citations: any[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -282,111 +255,113 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              setIsLoading(false);
-              setStreamingMessageId(null);
-              
-              // Save the completed bot message immediately
-              if (chatSessions?.currentSession) {
-                setTimeout(async () => {
-                  try {
-                    const completedBotMessage = chatSessions.currentMessages.find(msg => msg.id === botMessageId);
-                    if (completedBotMessage && completedBotMessage.content) {
-                      await chatSessions.saveMessageImmediately(completedBotMessage);
-                      console.log('Bot message saved to session:', chatSessions.currentSession?.id);
-                    }
-                  } catch (err) {
-                    console.error('Failed to save bot message immediately:', err);
-                  }
-                }, 500); // Small delay to ensure all state updates are complete
-              }
-              
-              break;
-            }
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
 
             try {
               const parsed = JSON.parse(data);
+              
               if (parsed.content) {
                 accumulatedContent += parsed.content;
-                if (chatSessions) {
-                  chatSessions.updateMessage(botMessageId, { 
-                    content: accumulatedContent 
-                  });
-                } else {
-                  setFallbackMessages(prev => 
-                    prev.map(msg => 
-                      msg.id === botMessageId 
-                        ? { ...msg, content: accumulatedContent }
-                        : msg
-                    )
+                
+                // Update the streaming message
+                const updateMessage = (msgs: ChatMessage[]) => 
+                  msgs.map(msg => 
+                    msg.id === botMessageId 
+                      ? { ...msg, content: accumulatedContent, citations: parsed.citations || citations }
+                      : msg
                   );
+
+                if (chatSessions) {
+                  setFallbackMessages(updateMessage(chatSessions.currentMessages.concat([botMessage])));
+                } else {
+                  setFallbackMessages(updateMessage);
                 }
               }
+
               if (parsed.citations) {
-                if (chatSessions) {
-                  chatSessions.updateMessage(botMessageId, { 
-                    citations: parsed.citations 
-                  });
-                } else {
-                  setFallbackMessages(prev => 
-                    prev.map(msg => 
-                      msg.id === botMessageId 
-                        ? { ...msg, citations: parsed.citations }
-                        : msg
-                    )
-                  );
-                }
+                citations = parsed.citations;
               }
             } catch (e) {
-              // Skip invalid JSON
+              // Skip malformed JSON
             }
           }
         }
       }
+
+      // Finalize the message
+      const finalBotMessage: ChatMessage = {
+        id: botMessageId,
+        type: 'bot',
+        content: accumulatedContent,
+        timestamp: new Date(),
+        citations: citations
+      };
+
+      // Save the final bot message to session if available
+      if (chatSessions && sessionId) {
+        await chatSessions.saveMessageImmediately(finalBotMessage);
+      }
+
+      // Update final state
+      const updateFinalMessage = (msgs: ChatMessage[]) => 
+        msgs.map(msg => 
+          msg.id === botMessageId 
+            ? finalBotMessage
+            : msg
+        );
+
+      if (chatSessions) {
+        const allMessages = chatSessions.currentMessages.some(m => m.id === botMessageId) 
+          ? chatSessions.currentMessages 
+          : [...chatSessions.currentMessages, botMessage];
+        setFallbackMessages(updateFinalMessage(allMessages));
+      } else {
+        setFallbackMessages(updateFinalMessage);
+      }
+
     } catch (error) {
       console.error('Chat error:', error);
-      const errorMessage = 'Sorry, I encountered an error. Please try again.';
       
+      // Remove the empty bot message on error
+      const removeFailedMessage = (msgs: ChatMessage[]) => 
+        msgs.filter(msg => msg.id !== botMessageId);
+
       if (chatSessions) {
-        chatSessions.updateMessage(botMessageId, { content: errorMessage });
+        setFallbackMessages(removeFailedMessage(chatSessions.currentMessages.concat([botMessage])));
       } else {
-        setFallbackMessages(prev => 
-          prev.map(msg => 
-            msg.id === botMessageId 
-              ? { ...msg, content: errorMessage }
-              : msg
-          )
-        );
+        setFallbackMessages(removeFailedMessage);
       }
+    } finally {
       setIsLoading(false);
       setStreamingMessageId(null);
     }
   };
 
   const getFilterContext = () => {
-    const activeFilters = [];
+    const parts = [];
     
     if (filters.workspaces.length > 0) {
-      const databaseNames = filters.workspaces.map(id => 
-        availableWorkspaces.find(w => w.id === id)?.name
-      ).filter(Boolean);
-      activeFilters.push(`in ${databaseNames.join(', ')}`);
-    } else if (isConnected && connection) {
-      activeFilters.push(`across ${connection.name}`);
-    } else {
-      activeFilters.push('across all content');
+      const workspaceNames = filters.workspaces.map(id => {
+        const workspace = availableWorkspaces.find(w => w.id === id);
+        return workspace ? workspace.name : id;
+      });
+      parts.push(`in ${workspaceNames.join(', ')}`);
     }
-
+    
     if (filters.documentTypes.length > 0) {
-      activeFilters.push(`filtering by ${filters.documentTypes.join(', ')}`);
+      parts.push(`${filters.documentTypes.join(', ')} documents`);
     }
-
-    if (filters.searchQuery) {
-      activeFilters.push(`matching "${filters.searchQuery}"`);
+    
+    if (filters.authors.length > 0) {
+      parts.push(`by ${filters.authors.join(', ')}`);
     }
-
-    return activeFilters.length > 0 ? ` (${activeFilters.join(', ')})` : '';
+    
+    if (filters.tags.length > 0) {
+      parts.push(`tagged ${filters.tags.join(', ')}`);
+    }
+    
+    return parts.length > 0 ? ` ${parts.join(' ')}` : '';
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -397,9 +372,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
   };
 
   const handleBackToHome = () => {
-    if (onBackToHome) {
-      onBackToHome();
-    }
+    onBackToHome?.();
   };
 
   const handleModelSelect = (model: AIModel) => {
@@ -421,7 +394,22 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full relative">
+      {/* Chat Operation Loading Overlay */}
+      {chatOperationLoading && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-card border rounded-lg p-6 shadow-lg max-w-sm mx-4">
+            <div className="flex items-center gap-3 mb-2">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <h3 className="font-medium">Processing...</h3>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {chatOperationStatus || 'Preparing your chat session...'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b p-3 md:p-4">
         <div className="flex items-center justify-between">
@@ -431,6 +419,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
               size="icon"
               onClick={handleBackToHome}
               className="hover:bg-accent flex-shrink-0"
+              disabled={chatOperationLoading}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -452,6 +441,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
                 <Button 
                   variant="outline" 
                   className="gap-2 h-8 px-3 text-xs hover:bg-accent transition-colors"
+                  disabled={chatOperationLoading}
                 >
                   <Bot className="h-3 w-3" />
                   <span className="hidden sm:inline">{selectedModel.badge}</span>
@@ -513,6 +503,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
         filters={filters}
         onFiltersChange={setFilters}
         availableWorkspaces={availableWorkspaces}
+        disabled={chatOperationLoading}
       />
 
       {/* Messages */}
@@ -605,12 +596,12 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder={`Ask me anything${getFilterContext()}...`}
-              disabled={isLoading}
+              disabled={isLoading || chatOperationLoading}
               className="flex-1"
             />
             <Button 
               onClick={handleSend} 
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || isLoading || chatOperationLoading}
               size="icon"
               className="flex-shrink-0"
             >
