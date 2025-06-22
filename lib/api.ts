@@ -69,6 +69,7 @@ export interface RecentChatSummary {
   id: string;
   title: string;
   summary?: string;
+  status: string; // 'active', 'concluded', 'deleted'
   message_count: number;
   last_message_at: string;
   created_at: string;

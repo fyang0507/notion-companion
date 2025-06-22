@@ -285,12 +285,15 @@ class Database:
             print(f"Error getting recent chat sessions: {e}")
             # Fallback to direct query
             response = self.client.table('chat_sessions').select(
-                'id, title, summary, message_count, last_message_at, created_at'
-            ).eq('status', 'active').order('last_message_at', desc=True).limit(limit).execute()
-            return response.data
+                'id, title, summary, message_count, last_message_at, created_at, status'
+            ).in_('status', ['active', 'concluded']).order('last_message_at', desc=True).limit(limit).execute()
+            # Sort to ensure active sessions come first
+            active_sessions = [s for s in response.data if s['status'] == 'active']
+            concluded_sessions = [s for s in response.data if s['status'] == 'concluded']
+            return active_sessions + concluded_sessions
     
     def create_chat_session(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new chat session."""
+        """Create a new chat session and ensure only one active session exists."""
         try:
             # Ensure required fields are present
             if 'id' not in session_data:
@@ -301,6 +304,14 @@ class Database:
             session_data.setdefault('last_message_at', datetime.utcnow().isoformat())
             session_data.setdefault('created_at', datetime.utcnow().isoformat())
             session_data.setdefault('updated_at', datetime.utcnow().isoformat())
+            session_data.setdefault('status', 'active')
+            
+            # If this is going to be an active session, conclude any existing active session
+            if session_data.get('status') == 'active':
+                current_active = self.get_active_session()
+                if current_active:
+                    print(f"Concluding existing active session {current_active['id']} to create new active session")
+                    self.conclude_session(current_active['id'])
             
             print(f"Creating chat session with data: {session_data}")
             response = self.client.table('chat_sessions').insert(session_data).execute()
@@ -314,10 +325,15 @@ class Database:
     
     def add_message_to_session(self, session_id: str, message_data: Dict[str, Any]) -> Dict[str, Any]:
         """Add a message to a chat session."""
-        # First verify session exists and is active
-        session_check = self.client.table('chat_sessions').select('id').eq('id', session_id).eq('status', 'active').execute()
+        # First verify session exists (allow active and concluded sessions)
+        session_check = self.client.table('chat_sessions').select('id, status').eq('id', session_id).in_('status', ['active', 'concluded']).execute()
         if not session_check.data:
             return None
+        
+        # If session is concluded, make it active (resume functionality)
+        session_status = session_check.data[0]['status']
+        if session_status == 'concluded':
+            self.resume_session(session_id)
         
         # Get next message order
         messages_response = self.client.table('chat_messages').select('message_order').eq('session_id', session_id).order('message_order', desc=True).limit(1).execute()
@@ -353,6 +369,46 @@ class Database:
             return len(response.data) > 0
         except Exception as e:
             print(f"Error updating session title: {e}")
+            return False
+    
+    def get_active_session(self) -> Optional[Dict[str, Any]]:
+        """Get the currently active session (should be at most 1)."""
+        try:
+            response = self.client.table('chat_sessions').select('*').eq('status', 'active').execute()
+            return response.data[0] if response.data else None
+        except Exception as e:
+            print(f"Error getting active session: {e}")
+            return None
+    
+    def conclude_session(self, session_id: str) -> bool:
+        """Mark a session as concluded."""
+        try:
+            response = self.client.table('chat_sessions').update({
+                'status': 'concluded',
+                'updated_at': 'now()'
+            }).eq('id', session_id).eq('status', 'active').execute()
+            return len(response.data) > 0
+        except Exception as e:
+            print(f"Error concluding session {session_id}: {e}")
+            return False
+    
+    def resume_session(self, session_id: str) -> bool:
+        """Resume a concluded session (make it active) and conclude any currently active session."""
+        try:
+            # First, conclude any currently active session
+            current_active = self.get_active_session()
+            if current_active and current_active['id'] != session_id:
+                self.conclude_session(current_active['id'])
+            
+            # Then activate the requested session
+            response = self.client.table('chat_sessions').update({
+                'status': 'active',
+                'updated_at': 'now()',
+                'last_message_at': 'now()'  # Update to show recent activity
+            }).eq('id', session_id).eq('status', 'concluded').execute()
+            return len(response.data) > 0
+        except Exception as e:
+            print(f"Error resuming session {session_id}: {e}")
             return False
     
     def get_chat_session_with_messages(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -445,7 +501,7 @@ class Database:
                 return []
             
             elif 'SELECT id, title, summary, message_count, last_message_at' in query and 'chat_sessions' in query:
-                # Idle session monitoring query
+                # Idle session monitoring query - only look for active sessions to conclude
                 if params and len(params) >= 1:
                     idle_threshold = params[0]
                     try:
@@ -484,13 +540,20 @@ class Database:
                 return []
             
             elif 'SELECT id, title, summary, message_count, status' in query and 'chat_sessions' in query:
-                # Session info query for conclusion
+                # Session info query for conclusion - now handles both active and concluded sessions
                 if params and len(params) >= 1:
                     session_id = params[0]
                     try:
-                        response = self.client.table('chat_sessions').select(
-                            'id, title, summary, message_count, status'
-                        ).eq('id', session_id).eq('status', 'active').execute()
+                        # Check if query includes both active and concluded statuses
+                        if "IN ('active', 'concluded')" in query or 'status IN' in query:
+                            response = self.client.table('chat_sessions').select(
+                                'id, title, summary, message_count, status'
+                            ).eq('id', session_id).in_('status', ['active', 'concluded']).execute()
+                        else:
+                            # Legacy query - only active sessions
+                            response = self.client.table('chat_sessions').select(
+                                'id, title, summary, message_count, status'
+                            ).eq('id', session_id).eq('status', 'active').execute()
                         return response.data
                     except Exception as e:
                         print(f"Error in session info query: {e}")

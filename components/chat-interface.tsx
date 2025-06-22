@@ -118,7 +118,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       hasInitialized.current = true;
       chatSessions.startTemporaryChat();
     }
-  }, [chatSessions?.currentSession, chatSessions?.isTemporaryChat]);
+  }, [chatSessions, chatSessions?.currentSession, chatSessions?.isTemporaryChat]);
   
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -204,18 +204,8 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       console.log('About to call addMessage', { wasTemporaryChat, sessionContext });
       sessionId = await chatSessions.addMessage(userMessage, sessionContext);
       
-      // Only save user message immediately if we already had a session (not temporary chat)
-      // For temporary chat, the message is already saved during session creation in addMessage
-      if (!wasTemporaryChat && chatSessions.currentSession) {
-        console.log('Saving user message immediately for existing session');
-        setTimeout(async () => {
-          try {
-            await chatSessions.saveMessageImmediately(userMessage);
-          } catch (err) {
-            console.error('Failed to save user message immediately:', err);
-          }
-        }, 100); // Small delay to ensure session is properly set up
-      }
+      // Note: User messages are now automatically saved in addMessage when session exists
+      // No need for additional saveMessageImmediately call as it causes duplicates
     } else {
       setFallbackMessages(prev => [...prev, userMessage]);
     }

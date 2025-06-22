@@ -77,6 +77,7 @@ class RecentChatSummary(BaseModel):
     id: str
     title: str
     summary: Optional[str] = None
+    status: str  # 'active', 'concluded', 'deleted'
     message_count: int
     last_message_at: datetime
     created_at: datetime
@@ -108,6 +109,7 @@ async def get_recent_chats(
                 id=str(row['id']),
                 title=row['title'],
                 summary=row['summary'],
+                status=row.get('status', 'active'),  # Default to active for backward compatibility
                 message_count=row['message_count'],
                 last_message_at=row['last_message_at'],
                 created_at=row['created_at'],
@@ -376,11 +378,11 @@ async def save_chat_session(
 ):
     """Save multiple messages to a chat session at once."""
     try:
-        # Check if session exists
-        check_response = db.client.table('chat_sessions').select('id').eq('id', session_id).eq('status', 'active').execute()
+        # Check if session exists (allow active and concluded sessions)
+        check_response = db.client.table('chat_sessions').select('id, status').eq('id', session_id).in_('status', ['active', 'concluded']).execute()
         
         if not check_response.data:
-            raise HTTPException(status_code=404, detail="Active chat session not found")
+            raise HTTPException(status_code=404, detail="Chat session not found")
         
         saved_messages = []
         
@@ -482,10 +484,13 @@ async def conclude_current_and_start_new(
         logger.error(f"Error handling new chat trigger: {e}")
         raise HTTPException(status_code=500, detail="Failed to handle new chat")
 
+class ResumeRequest(BaseModel):
+    resuming_session_id: str
+
 @router.post("/{session_id}/conclude-for-resume")
 async def conclude_for_resume(
     session_id: str,
-    resuming_session_id: str,
+    request: ResumeRequest,
     db=Depends(get_db)
 ):
     """
@@ -494,7 +499,7 @@ async def conclude_for_resume(
     """
     try:
         chat_service = get_chat_session_service()
-        result = await chat_service.handle_resume_other_trigger(session_id, resuming_session_id)
+        result = await chat_service.handle_resume_other_trigger(session_id, request.resuming_session_id)
         return result
         
     except Exception as e:
@@ -536,3 +541,38 @@ async def handle_window_refresh(
     except Exception as e:
         logger.error(f"Error handling window refresh: {e}")
         raise HTTPException(status_code=500, detail="Failed to handle window refresh")
+
+@router.post("/{session_id}/resume")
+async def resume_chat_session(
+    session_id: str,
+    db=Depends(get_db)
+):
+    """Resume a concluded chat session (making it active and concluding any currently active session)."""
+    try:
+        chat_service = get_chat_session_service()
+        result = await chat_service.ensure_single_active_session(session_id)
+        logger.info(f"Resumed chat session {session_id}")
+        return result
+    except Exception as e:
+        logger.error(f"Error resuming session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to resume chat session")
+
+@router.get("/current-active")
+async def get_current_active_session(db=Depends(get_db)):
+    """Get the currently active session (should be at most 1)."""
+    try:
+        active_session = db.get_active_session()
+        if active_session:
+            return {
+                "active_session": {
+                    "id": str(active_session['id']),
+                    "title": active_session['title'],
+                    "status": active_session['status'],
+                    "last_message_at": active_session['last_message_at']
+                }
+            }
+        else:
+            return {"active_session": None}
+    except Exception as e:
+        logger.error(f"Error getting current active session: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get current active session")

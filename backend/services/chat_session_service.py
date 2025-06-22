@@ -192,7 +192,10 @@ class ChatSessionService:
         try:
             logger.info(f"Concluding idle session: {session_id}")
             
-            update_data = {}
+            update_data = {
+                'status': 'concluded',  # Mark as concluded instead of keeping active
+                'updated_at': 'now()'
+            }
             
             # Re-generate title based on full conversation
             try:
@@ -213,19 +216,15 @@ class ChatSessionService:
                 except Exception as e:
                     logger.error(f"Failed to generate summary for idle session {session_id}: {e}")
             
-            # concluded due to idle
-            update_data['updated_at'] = 'now()'
+            # Use Supabase client for update
+            update_response = self.db.client.table('chat_sessions').update(
+                update_data
+            ).eq('id', session_id).eq('status', 'active').execute()  # Only update if still active
             
-            if update_data:
-                # Use Supabase client for update
-                update_response = self.db.client.table('chat_sessions').update(
-                    update_data
-                ).eq('id', session_id).execute()
-                
-                if update_response.data:
-                    logger.info(f"Successfully concluded idle session: {session_id}")
-                else:
-                    logger.error(f"Failed to update idle session: {session_id}")
+            if update_response.data:
+                logger.info(f"Successfully concluded idle session: {session_id}")
+            else:
+                logger.error(f"Failed to update idle session: {session_id}")
             
         except Exception as e:
             logger.error(f"Error concluding idle session {session_id}: {e}")
@@ -242,17 +241,17 @@ class ChatSessionService:
             dict with updated title and summary
         """
         try:
-            # Get current session info
+            # Get current session info (allow active and concluded sessions)
             session_query = """
             SELECT id, title, summary, message_count, status
             FROM chat_sessions 
-            WHERE id = %s AND status = 'active'
+            WHERE id = %s AND status IN ('active', 'concluded')
             """
             
             session_result = self.db.execute_query(session_query, (session_id,))
             
             if not session_result:
-                raise ValueError(f"Active session not found: {session_id}")
+                raise ValueError(f"Session not found: {session_id}")
             
             session_info = session_result[0]
             current_title = session_info['title']
@@ -286,30 +285,44 @@ class ChatSessionService:
             except Exception as e:
                 logger.error(f"Failed to generate summary during conclusion: {e}")
             
+            update_data['status'] = 'concluded'  # Mark as concluded
             update_data['updated_at'] = 'now()'
             
-            # Update session
-            if update_data:
+            # Update session (allow updating both active and concluded sessions)
+            current_status = session_info['status']
+            
+            # Only update status if it's currently active
+            if current_status == 'active':
                 update_response = self.db.client.table('chat_sessions').update(
                     update_data
                 ).eq('id', session_id).execute()
-                
-                if update_response.data:
-                    logger.info(f"Successfully concluded session {session_id} due to {reason}")
-                    # Get the updated title and summary from what we just set
-                    final_title = update_data.get('title', current_title)
-                    final_summary = update_data.get('summary', current_summary)
-                    return {
-                        "message": f"Session concluded successfully ({reason})",
-                        "title": final_title,
-                        "summary": final_summary
-                    }
+            else:
+                # For already concluded sessions, just update title/summary if needed
+                update_data_without_status = {k: v for k, v in update_data.items() if k != 'status'}
+                if update_data_without_status:
+                    update_response = self.db.client.table('chat_sessions').update(
+                        update_data_without_status
+                    ).eq('id', session_id).execute()
+                else:
+                    # No updates needed
+                    update_response = type('obj', (object,), {'data': [{'id': session_id}]})()
             
-            return {
-                "message": f"Session concluded ({reason})",
-                "title": current_title,
-                "summary": current_summary
-            }
+            if update_response.data:
+                logger.info(f"Successfully processed session {session_id} conclusion request due to {reason}")
+                # Get the updated title and summary from what we just set
+                final_title = update_data.get('title', current_title)
+                final_summary = update_data.get('summary', current_summary)
+                return {
+                    "message": f"Session processed successfully ({reason})",
+                    "title": final_title,
+                    "summary": final_summary
+                }
+            else:
+                return {
+                    "message": f"Session not found ({reason})",
+                    "title": current_title,
+                    "summary": current_summary
+                }
             
         except Exception as e:
             logger.error(f"Error concluding session {session_id}: {e}")
@@ -333,7 +346,44 @@ class ChatSessionService:
         """Handle chat conclusion when user resumes another conversation."""
         result = await self.conclude_session(current_session_id, "resume_other")
         logger.info(f"Concluded session {current_session_id} to resume {resuming_session_id}")
+        
+        # Resume the target session
+        success = self.db.resume_session(resuming_session_id)
+        if success:
+            logger.info(f"Successfully resumed session {resuming_session_id}")
+            result["resumed_session"] = resuming_session_id
+        else:
+            logger.error(f"Failed to resume session {resuming_session_id}")
+            result["error"] = f"Failed to resume session {resuming_session_id}"
+        
         return result
+    
+    async def ensure_single_active_session(self, target_session_id: str) -> dict:
+        """Ensure only one session is active at a time."""
+        try:
+            # Get current active session
+            current_active = self.db.get_active_session()
+            
+            if current_active and current_active['id'] != target_session_id:
+                # Conclude the current active session
+                await self.conclude_session(current_active['id'], "new_session_started")
+                logger.info(f"Concluded previous active session {current_active['id']} to make room for {target_session_id}")
+            
+            # Resume/activate the target session if it's concluded
+            if not current_active or current_active['id'] != target_session_id:
+                success = self.db.resume_session(target_session_id)
+                if success:
+                    logger.info(f"Activated session {target_session_id}")
+                    return {"message": f"Session {target_session_id} is now active"}
+                else:
+                    logger.error(f"Failed to activate session {target_session_id}")
+                    return {"message": f"Failed to activate session {target_session_id}"}
+            
+            return {"message": f"Session {target_session_id} is already active"}
+            
+        except Exception as e:
+            logger.error(f"Error ensuring single active session: {e}")
+            raise
 
 # Global service instance
 _chat_session_service = None

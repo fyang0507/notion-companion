@@ -219,7 +219,30 @@ export function useChatSessions(): ChatSessionHook {
     }
     
     setCurrentMessages(prev => [...prev, message]);
-    unsavedMessages.current.push(message);
+    
+    // For existing sessions, save user messages immediately to prevent duplicates
+    // Bot messages are saved later when streaming is complete
+    if (currentSession && message.type === 'user') {
+      try {
+        const backendMessage: ChatMessageCreate = {
+          role: 'user',
+          content: message.content,
+          citations: message.citations || [],
+          context_used: {}
+        };
+        
+        // Save immediately to database
+        await apiClient.addMessageToSession(currentSession.id, backendMessage);
+        console.log('User message saved immediately to existing session:', currentSession.id);
+      } catch (err) {
+        console.error('Failed to save user message immediately to existing session:', err);
+        // Fall back to unsaved messages queue
+        unsavedMessages.current.push(message);
+      }
+    } else {
+      // No session yet, or bot message - add to unsaved queue
+      unsavedMessages.current.push(message);
+    }
     
     // Return current session ID if available, null otherwise
     return currentSession?.id || null;

@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     summary TEXT,  -- AI-generated summary
     
     -- Session state
-    status TEXT DEFAULT 'active',  -- 'active', 'deleted'
+    status TEXT DEFAULT 'active',  -- 'active', 'concluded', 'deleted'
     message_count INTEGER DEFAULT 0,
     
     -- Context and filters used in this session
@@ -453,8 +453,8 @@ BEGIN
             LIMIT 1
         ) as last_message_preview
     FROM chat_sessions cs
-    WHERE cs.status = 'active'
-    ORDER BY cs.last_message_at DESC
+    WHERE cs.status IN ('active', 'concluded')
+    ORDER BY cs.status DESC, cs.last_message_at DESC  -- active sessions first, then concluded by recency
     LIMIT session_limit;
 END;
 $$;
