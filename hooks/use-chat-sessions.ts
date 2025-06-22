@@ -13,8 +13,7 @@ export interface ChatSessionHook {
   isTemporaryChat: boolean;
   
   // Session management
-  createNewSession: (title?: string, sessionContext?: Record<string, any>) => Promise<ChatSession>;
-  startTemporaryChat: (sessionContext?: Record<string, any>) => void;
+  startTemporaryChat: (sessionContext?: Record<string, any>) => void; // Main entry point for new chats
   loadSession: (sessionId: string) => Promise<void>;
   saveCurrentSession: () => Promise<void>;
   finalizeCurrentSession: () => Promise<void>;
@@ -116,64 +115,6 @@ export function useChatSessions(): ChatSessionHook {
     }
   }, [currentSession, saveCurrentSession, loadRecentSessions]);
 
-  const createNewSession = useCallback(async (title?: string, sessionContext?: Record<string, any>): Promise<ChatSession> => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // First save and finalize current session if user has sent at least one message
-      const userMessageCount = currentMessages.filter(msg => msg.type === 'user').length;
-      if (currentSession && userMessageCount > 0) {
-        await saveCurrentSession();
-        try {
-          await apiClient.finalizeChatSession(currentSession.id);
-        } catch (err) {
-          console.error('Failed to finalize previous session:', err);
-        }
-      }
-
-      // Create new session
-      const sessionData: ChatSessionCreate = {
-        title: title || 'New Chat',
-        session_context: sessionContext || {}
-      };
-
-      const newSession = await apiClient.createChatSession(sessionData);
-      
-      setCurrentSession(newSession);
-      setCurrentMessages([]);
-      unsavedMessages.current = [];
-      setIsTemporaryChat(false);
-
-      // Refresh recent sessions to include the new one
-      await loadRecentSessions();
-
-      return newSession;
-    } catch (err) {
-      let errorMessage = 'Failed to create new session';
-      
-      if (err instanceof Error) {
-        if (err.message.includes('503') || err.message.includes('not available')) {
-          errorMessage = 'Chat sessions feature not yet set up. Using temporary chat.';
-        } else {
-          errorMessage = err.message;
-        }
-      }
-      
-      setError(errorMessage);
-      
-      // Don't throw error for missing tables - allow app to continue with temporary chat
-      if (err instanceof Error && (err.message.includes('503') || err.message.includes('not available'))) {
-        console.warn('Chat sessions not available, continuing with temporary chat');
-        return null as any; // Will be handled by fallback logic
-      }
-      
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentSession, currentMessages]);
-
   const loadSession = useCallback(async (sessionId: string): Promise<void> => {
     try {
       setIsLoading(true);
@@ -215,7 +156,7 @@ export function useChatSessions(): ChatSessionHook {
     } finally {
       setIsLoading(false);
     }
-  }, [currentSession, currentMessages, finalizeCurrentSession]);
+  }, [currentSession, currentMessages, saveCurrentSession]);
 
   const deleteSession = useCallback(async (sessionId: string): Promise<void> => {
     try {
@@ -244,12 +185,37 @@ export function useChatSessions(): ChatSessionHook {
       try {
         console.log('Creating session for first user message in temporary chat');
         const contextToUse = sessionContext || pendingSessionContext || {};
-        const newSession = await createNewSession(undefined, contextToUse);
+        
+        // Create new session directly
+        const sessionData: ChatSessionCreate = {
+          title: 'New Chat',
+          session_context: contextToUse
+        };
+
+        const newSession = await apiClient.createChatSession(sessionData);
+        
+        // Set up the new session state
+        setCurrentSession(newSession);
         setIsTemporaryChat(false);
         setPendingSessionContext(null);
+        
         // Add the message to the new session
         setCurrentMessages(prev => [...prev, message]);
-        unsavedMessages.current.push(message);
+        
+        // Immediately save this first user message to the database
+        const backendMessage: ChatMessageCreate = {
+          role: 'user',
+          content: message.content,
+          citations: message.citations || [],
+          context_used: contextToUse
+        };
+        
+        await apiClient.addMessageToSession(newSession.id, backendMessage);
+        console.log('First user message saved to session:', newSession.id);
+        
+        // Refresh recent sessions to include the new one
+        await loadRecentSessions();
+        
         return;
       } catch (err) {
         console.error('Failed to create session from temporary chat:', err);
@@ -259,7 +225,7 @@ export function useChatSessions(): ChatSessionHook {
     
     setCurrentMessages(prev => [...prev, message]);
     unsavedMessages.current.push(message);
-  }, [isTemporaryChat, createNewSession, pendingSessionContext]);
+  }, [isTemporaryChat, pendingSessionContext, loadRecentSessions]);
 
   const saveMessageImmediately = useCallback(async (message: ChatMessage): Promise<void> => {
     if (!currentSession) {
@@ -314,6 +280,10 @@ export function useChatSessions(): ChatSessionHook {
   }, []);
 
   const startTemporaryChat = useCallback((sessionContext?: Record<string, any>): void => {
+    // This is the main entry point for starting new chats
+    // Session will be created automatically when user sends first message
+    console.log('Starting temporary chat mode');
+    
     // Clear any existing session and messages
     setCurrentSession(null);
     setCurrentMessages([]);
@@ -334,7 +304,6 @@ export function useChatSessions(): ChatSessionHook {
     isLoading,
     error,
     isTemporaryChat,
-    createNewSession,
     startTemporaryChat,
     loadSession,
     saveCurrentSession,

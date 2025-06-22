@@ -55,15 +55,11 @@ export default function Home() {
   }, [isBackendConfigured, user, initialized, connectionLoading, selectedWorkspace]);
 
   const handleNewChat = async () => {
-    try {
-      await chatSessions.createNewSession();
-      setChatKey(prev => prev + 1);
-      setChatRefreshTrigger(prev => prev + 1); // Trigger recent chats refresh
-    } catch (err) {
-      console.error('Failed to create new chat session:', err);
-      // Fallback to regular chat reset - this ensures the app always works
-      setChatKey(prev => prev + 1);
-    }
+    console.log('handleNewChat called - starting temporary chat');
+    // Always start with temporary chat - session will be created when user sends first message
+    chatSessions.startTemporaryChat();
+    setChatKey(prev => prev + 1);
+    setChatRefreshTrigger(prev => prev + 1); // Trigger recent chats refresh
   };
 
   const handleSelectWorkspace = (workspaceId: string | 'global') => {
@@ -75,6 +71,7 @@ export default function Home() {
   };
 
   const handleStartGlobalChat = async () => {
+    console.log('handleStartGlobalChat called - starting temporary chat');
     // Always start temporary chat mode - session will be created when user sends first message
     chatSessions.startTemporaryChat();
     setSelectedWorkspace('global');

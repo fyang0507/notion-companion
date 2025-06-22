@@ -106,6 +106,14 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       setFallbackMessages(chatSessions.currentMessages);
     }
   }, [chatSessions?.currentMessages]);
+
+  // Initialize temporary chat mode if no session exists
+  useEffect(() => {
+    if (chatSessions && !chatSessions.currentSession && !chatSessions.isTemporaryChat) {
+      console.log('Chat interface loaded without session - starting temporary chat mode');
+      chatSessions.startTemporaryChat();
+    }
+  }, [chatSessions]);
   
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -162,6 +170,12 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
+    console.log('handleSend called', { 
+      hasChatSessions: !!chatSessions, 
+      isTemporaryChat: chatSessions?.isTemporaryChat,
+      currentSession: chatSessions?.currentSession?.id 
+    });
+
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
@@ -178,9 +192,15 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
         model_used: selectedModel.id,
         initial_filters: filters
       };
+      
+      const wasTemporaryChat = chatSessions.isTemporaryChat;
+      console.log('About to call addMessage', { wasTemporaryChat, sessionContext });
       await chatSessions.addMessage(userMessage, sessionContext);
-      // Save user message immediately (but only if we have a session)
-      if (chatSessions.currentSession) {
+      
+      // Only save user message immediately if we already had a session (not temporary chat)
+      // For temporary chat, the message is already saved during session creation in addMessage
+      if (!wasTemporaryChat && chatSessions.currentSession) {
+        console.log('Saving user message immediately for existing session');
         setTimeout(async () => {
           try {
             await chatSessions.saveMessageImmediately(userMessage);
@@ -217,7 +237,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
     try {
       // Prepare API request
       const apiMessages = messages.concat(userMessage).map(msg => ({
-        role: msg.type === 'bot' ? 'assistant' : 'user',
+        role: (msg.type === 'bot' ? 'assistant' : 'user') as 'user' | 'assistant',
         content: msg.content
       }));
 
@@ -251,6 +271,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
                     const completedBotMessage = chatSessions.currentMessages.find(msg => msg.id === botMessageId);
                     if (completedBotMessage && completedBotMessage.content) {
                       await chatSessions.saveMessageImmediately(completedBotMessage);
+                      console.log('Bot message saved to session:', chatSessions.currentSession?.id);
                     }
                   } catch (err) {
                     console.error('Failed to save bot message immediately:', err);
@@ -406,16 +427,13 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
                 variant="outline" 
                 size="sm"
                 onClick={async () => {
-                  try {
-                    const sessionContext = {
-                      database_filters: filters.workspaces,
-                      model_used: selectedModel.id,
-                      initial_filters: filters
-                    };
-                    await chatSessions.createNewSession(undefined, sessionContext);
-                  } catch (err) {
-                    console.error('Failed to create new session:', err);
-                  }
+                  console.log('Chat interface New Chat button clicked - starting temporary chat');
+                  const sessionContext = {
+                    database_filters: filters.workspaces,
+                    model_used: selectedModel.id,
+                    initial_filters: filters
+                  };
+                  chatSessions.startTemporaryChat(sessionContext);
                 }}
                 className="gap-1 h-8 px-3 text-xs hover:bg-accent transition-colors"
               >
