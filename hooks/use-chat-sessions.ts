@@ -20,7 +20,7 @@ export interface ChatSessionHook {
   deleteSession: (sessionId: string) => Promise<void>;
   
   // Message management
-  addMessage: (message: ChatMessage, sessionContext?: Record<string, any>) => Promise<void>;
+  addMessage: (message: ChatMessage, sessionContext?: Record<string, any>) => Promise<string | null>;
   saveMessageImmediately: (message: ChatMessage) => Promise<void>;
   updateMessage: (messageId: string, updates: Partial<ChatMessage>) => void;
   clearMessages: () => void;
@@ -169,7 +169,7 @@ export function useChatSessions(): ChatSessionHook {
     setOnSessionCreatedCallback(() => callback);
   }, []);
 
-  const addMessage = useCallback(async (message: ChatMessage, sessionContext?: Record<string, any>): Promise<void> => {
+  const addMessage = useCallback(async (message: ChatMessage, sessionContext?: Record<string, any>): Promise<string | null> => {
     // If we're in temporary chat mode and this is a user message, create the session
     if (isTemporaryChat && message.type === 'user') {
       try {
@@ -211,7 +211,7 @@ export function useChatSessions(): ChatSessionHook {
           onSessionCreatedCallback(newSession.id);
         }
         
-        return;
+        return newSession.id;  // Return the new session ID
       } catch (err) {
         console.error('Failed to create session from temporary chat:', err);
         // Continue with temporary chat if session creation fails
@@ -220,7 +220,10 @@ export function useChatSessions(): ChatSessionHook {
     
     setCurrentMessages(prev => [...prev, message]);
     unsavedMessages.current.push(message);
-  }, [isTemporaryChat, pendingSessionContext, loadRecentSessions, onSessionCreatedCallback]);
+    
+    // Return current session ID if available, null otherwise
+    return currentSession?.id || null;
+  }, [isTemporaryChat, pendingSessionContext, loadRecentSessions, onSessionCreatedCallback, currentSession]);
 
   const saveMessageImmediately = useCallback(async (message: ChatMessage): Promise<void> => {
     if (!currentSession) {

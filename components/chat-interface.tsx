@@ -192,6 +192,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
 
     // Add message through chat sessions if available
     // addMessage will handle session creation if we're in temporary chat mode
+    let sessionId: string | null = null;
     if (chatSessions) {
       const sessionContext = {
         database_filters: filters.workspaces,
@@ -201,7 +202,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
       
       const wasTemporaryChat = chatSessions.isTemporaryChat;
       console.log('About to call addMessage', { wasTemporaryChat, sessionContext });
-      await chatSessions.addMessage(userMessage, sessionContext);
+      sessionId = await chatSessions.addMessage(userMessage, sessionContext);
       
       // Only save user message immediately if we already had a session (not temporary chat)
       // For temporary chat, the message is already saved during session creation in addMessage
@@ -247,9 +248,35 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
         content: msg.content
       }));
 
+      // Ensure session consistency - if addMessage returned a sessionId, use it as source of truth
+      let finalSessionId: string;
+      
+      if (sessionId) {
+        // addMessage created/returned a session - this is our source of truth
+        finalSessionId = sessionId;
+        
+        // Validate consistency: if currentSession exists, it should match
+        const currentSessionId = chatSessions?.currentSession?.id;
+        if (currentSessionId && currentSessionId !== sessionId) {
+          console.error('Session ID mismatch!', { 
+            returnedSessionId: sessionId, 
+            currentSessionId 
+          });
+          throw new Error('Session ID consistency error');
+        }
+      } else {
+        // No session returned from addMessage - must use existing session
+        const currentSessionId = chatSessions?.currentSession?.id;
+        if (!currentSessionId) {
+          throw new Error('No active chat session available');
+        }
+        finalSessionId = currentSessionId;
+      }
+
       const stream = await apiClient.sendChatMessage({
         messages: apiMessages,
-        database_filters: filters.workspaces.length > 0 ? filters.workspaces : undefined
+        database_filters: filters.workspaces.length > 0 ? filters.workspaces : undefined,
+        session_id: finalSessionId  // Required session ID
       });
 
       const reader = stream.getReader();

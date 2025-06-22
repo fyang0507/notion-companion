@@ -226,7 +226,7 @@ async def chat_endpoint(request: ChatRequest):
                         'citations_count': len(citations)
                     })
                 
-                # Save assistant message to session if session_id is provided
+                # Save assistant message to session BEFORE sending [DONE]
                 if request.session_id and assistant_response:
                     try:
                         assistant_message_data = {
@@ -246,7 +246,7 @@ async def chat_endpoint(request: ChatRequest):
                         db.add_message_to_session(request.session_id, assistant_message_data)
                         logger.info(f"Saved assistant message to session {request.session_id}")
                     except Exception as e:
-                        logger.error(f"Failed to save assistant message to session: {e}")
+                        logger.error(f"Failed to save assistant message to session: {e}", exc_info=True)
                 
                 total_duration = (time.time() - start_time) * 1000
                 logger.info("Chat request completed successfully", extra={
