@@ -26,6 +26,7 @@ export function RecentChats({ onChatSelect, refreshTrigger }: RecentChatsProps) 
 
   // Load recent chats on component mount and when refresh trigger changes
   useEffect(() => {
+    console.log('Recent chats refresh triggered, refreshTrigger:', refreshTrigger);
     loadRecentChats();
   }, [refreshTrigger]);
 

@@ -109,11 +109,12 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
 
   // Initialize temporary chat mode if no session exists
   useEffect(() => {
-    if (chatSessions && !chatSessions.currentSession && !chatSessions.isTemporaryChat) {
+    if (chatSessions && !chatSessions.currentSession && !chatSessions.isTemporaryChat && !hasInitialized.current) {
       console.log('Chat interface loaded without session - starting temporary chat mode');
+      hasInitialized.current = true;
       chatSessions.startTemporaryChat();
     }
-  }, [chatSessions]);
+  }, [chatSessions?.currentSession, chatSessions?.isTemporaryChat]);
   
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -133,6 +134,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasInitialized = useRef(false);
 
   // Check if mobile
   useEffect(() => {

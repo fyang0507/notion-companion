@@ -29,6 +29,10 @@ export interface ChatSessionHook {
   recentSessions: RecentChatSummary[];
   loadRecentSessions: () => Promise<void>;
   refreshRecentSessions: () => Promise<void>;
+  
+  // Callback for session creation
+  onSessionCreated?: (sessionId: string) => void;
+  setOnSessionCreated: (callback: (sessionId: string) => void) => void;
 }
 
 export function useChatSessions(): ChatSessionHook {
@@ -39,6 +43,7 @@ export function useChatSessions(): ChatSessionHook {
   const [isTemporaryChat, setIsTemporaryChat] = useState(false);
   const [recentSessions, setRecentSessions] = useState<RecentChatSummary[]>([]);
   const [pendingSessionContext, setPendingSessionContext] = useState<Record<string, any> | null>(null);
+  const [onSessionCreatedCallback, setOnSessionCreatedCallback] = useState<((sessionId: string) => void) | null>(null);
   
   // Keep track of unsaved messages
   const unsavedMessages = useRef<ChatMessage[]>([]);
@@ -179,6 +184,10 @@ export function useChatSessions(): ChatSessionHook {
     }
   }, [currentSession]);
 
+  const setOnSessionCreated = useCallback((callback: (sessionId: string) => void) => {
+    setOnSessionCreatedCallback(() => callback);
+  }, []);
+
   const addMessage = useCallback(async (message: ChatMessage, sessionContext?: Record<string, any>): Promise<void> => {
     // If we're in temporary chat mode and this is a user message, create the session
     if (isTemporaryChat && message.type === 'user') {
@@ -216,6 +225,11 @@ export function useChatSessions(): ChatSessionHook {
         // Refresh recent sessions to include the new one
         await loadRecentSessions();
         
+        // Notify parent component that a session was created
+        if (onSessionCreatedCallback) {
+          onSessionCreatedCallback(newSession.id);
+        }
+        
         return;
       } catch (err) {
         console.error('Failed to create session from temporary chat:', err);
@@ -225,7 +239,7 @@ export function useChatSessions(): ChatSessionHook {
     
     setCurrentMessages(prev => [...prev, message]);
     unsavedMessages.current.push(message);
-  }, [isTemporaryChat, pendingSessionContext, loadRecentSessions]);
+  }, [isTemporaryChat, pendingSessionContext, loadRecentSessions, onSessionCreatedCallback]);
 
   const saveMessageImmediately = useCallback(async (message: ChatMessage): Promise<void> => {
     if (!currentSession) {
@@ -315,6 +329,7 @@ export function useChatSessions(): ChatSessionHook {
     clearMessages,
     recentSessions,
     loadRecentSessions,
-    refreshRecentSessions
+    refreshRecentSessions,
+    setOnSessionCreated
   };
 }

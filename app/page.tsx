@@ -29,6 +29,14 @@ export default function Home() {
   // For now, since we have backend configured, always show chat interface
   // Later we can add checks for actual Notion connection status
 
+  // Set up callback to refresh sidebar when new session is created
+  useEffect(() => {
+    chatSessions.setOnSessionCreated((sessionId: string) => {
+      console.log('New session created, refreshing sidebar:', sessionId);
+      setChatRefreshTrigger(prev => prev + 1);
+    });
+  }, []); // Only run once on mount
+
   // Check if mobile on mount and resize
   useEffect(() => {
     const checkMobile = () => {
@@ -131,16 +139,17 @@ export default function Home() {
     );
   }
 
-  // Mobile layout - use overlay sidebar
-  if (isMobile) {
-    return (
-      <div className="h-screen flex flex-col">
-        <Header 
-          user={user}
-          onToggleSidebar={handleToggleSidebar}
-          sidebarCollapsed={sidebarCollapsed}
-        />
-        
+  // Render main app UI - single layout that adapts to mobile/desktop
+  return (
+    <div className="h-screen flex flex-col">
+      <Header 
+        user={user}
+        onToggleSidebar={handleToggleSidebar}
+        sidebarCollapsed={sidebarCollapsed}
+      />
+      
+      {isMobile ? (
+        // Mobile layout - use overlay sidebar
         <div className="flex-1 relative overflow-hidden">
           {/* Mobile Sidebar Overlay */}
           {!sidebarCollapsed && (
@@ -182,56 +191,46 @@ export default function Home() {
             )}
           </div>
         </div>
-      </div>
-    );
-  }
-
-  // Desktop layout - use resizable panels
-  return (
-    <div className="h-screen flex flex-col">
-      <Header 
-        user={user}
-        onToggleSidebar={handleToggleSidebar}
-        sidebarCollapsed={sidebarCollapsed}
-      />
-      
-      <div className="flex-1 overflow-hidden">
-        <ResizablePanelGroup direction="horizontal" className="h-full">
-          {!sidebarCollapsed && (
-            <>
-              <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
-                <Sidebar 
-                  selectedWorkspace={selectedWorkspace}
-                  onSelectWorkspace={setSelectedWorkspace}
-                  onNewChat={handleNewChat}
-                  onStartGlobalChat={handleStartGlobalChat}
-                  onChatSelect={handleChatSelect}
-                  chatRefreshTrigger={chatRefreshTrigger}
-                />
-              </ResizablePanel>
-              <ResizableHandle />
-            </>
-          )}
-          
-          <ResizablePanel defaultSize={sidebarCollapsed ? 100 : 75}>
-            <div className="h-full flex flex-col">
-              {selectedWorkspace ? (
-                <ChatInterface 
-                  key={chatKey} 
-                  onBackToHome={handleBackToHome}
-                  chatSessions={chatSessions}
-                />
-              ) : (
-                <DashboardHome 
-                  onSelectWorkspace={setSelectedWorkspace}
-                  onNewChat={handleNewChat}
-                  onStartGlobalChat={handleStartGlobalChat}
-                />
-              )}
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </div>
+      ) : (
+        // Desktop layout - use resizable panels
+        <div className="flex-1 overflow-hidden">
+          <ResizablePanelGroup direction="horizontal" className="h-full">
+            {!sidebarCollapsed && (
+              <>
+                <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
+                  <Sidebar 
+                    selectedWorkspace={selectedWorkspace}
+                    onSelectWorkspace={setSelectedWorkspace}
+                    onNewChat={handleNewChat}
+                    onStartGlobalChat={handleStartGlobalChat}
+                    onChatSelect={handleChatSelect}
+                    chatRefreshTrigger={chatRefreshTrigger}
+                  />
+                </ResizablePanel>
+                <ResizableHandle />
+              </>
+            )}
+            
+            <ResizablePanel defaultSize={sidebarCollapsed ? 100 : 75}>
+              <div className="h-full flex flex-col">
+                {selectedWorkspace ? (
+                  <ChatInterface 
+                    key={chatKey} 
+                    onBackToHome={handleBackToHome}
+                    chatSessions={chatSessions}
+                  />
+                ) : (
+                  <DashboardHome 
+                    onSelectWorkspace={setSelectedWorkspace}
+                    onNewChat={handleNewChat}
+                    onStartGlobalChat={handleStartGlobalChat}
+                  />
+                )}
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
+      )}
     </div>
   );
 }
