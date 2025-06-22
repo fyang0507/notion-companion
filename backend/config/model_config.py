@@ -2,7 +2,7 @@
 Model Configuration Manager for Notion Companion
 
 Centralized management of AI model configurations, providing a single source of truth
-for model selection, parameters, and cost optimization settings.
+for model selection, parameters, and prompt templates.
 """
 
 import os
@@ -43,22 +43,66 @@ class PerformanceConfig:
     max_retries: int
     retry_delay_seconds: float
 
+@dataclass
+class ChatPromptsConfig:
+    """Chat-related prompt configurations."""
+    system_prompt: str
+    streaming_system_prompt: str
+    context_template: str
+
+@dataclass
+class TitleGenerationConfig:
+    """Title generation prompt and settings."""
+    title_prompt: str
+    max_words: int
+    temperature_override: float
+    max_tokens_override: int
+
+@dataclass
+class SummarizationPromptsConfig:
+    """Summarization prompts and settings."""
+    document_summary_prompt: str
+    chat_summary_prompt: str
+    default_max_length: int
+    chat_summary_max_tokens: int
+    chat_summary_temperature: float
+    chat_summary_max_chars: int
+
+@dataclass
+class DocumentProcessingPromptsConfig:
+    """Document processing prompts (for future use)."""
+    content_type_detection_prompt: str
+    metadata_extraction_prompt: str
+
+@dataclass
+class SearchPromptsConfig:
+    """Search enhancement prompts (for future use)."""
+    query_expansion_prompt: str
+    result_ranking_prompt: str
+
+@dataclass
+class PromptsConfig:
+    """All prompt configurations."""
+    chat: ChatPromptsConfig
+    title_generation: TitleGenerationConfig
+    summarization: SummarizationPromptsConfig
+    document_processing: DocumentProcessingPromptsConfig
+    search: SearchPromptsConfig
+
 class ModelConfigManager:
-    """Manages model configurations with environment-specific overrides."""
+    """Manages model configurations and prompts."""
     
-    def __init__(self, config_path: Optional[str] = None, environment: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None):
         """
         Initialize the model configuration manager.
         
         Args:
             config_path: Path to the models.toml file
-            environment: Environment name (development, production, testing)
         """
         if config_path is None:
             config_path = Path(__file__).parent / "models.toml"
         
         self.config_path = config_path
-        self.environment = environment or os.getenv('ENVIRONMENT', 'development')
         self._config = None
         self._load_config()
     
@@ -75,17 +119,6 @@ class ModelConfigManager:
             logger.error(f"Error loading model configuration: {e}")
             raise
     
-    def _get_config_value(self, path: str, default: Any = None) -> Any:
-        """Get configuration value with environment override support."""
-        # Try environment-specific override first
-        env_path = f"environment.{self.environment}.{path}"
-        env_value = self._get_nested_value(env_path)
-        if env_value is not None:
-            return env_value
-        
-        # Fall back to default configuration
-        return self._get_nested_value(path, default)
-    
     def _get_nested_value(self, path: str, default: Any = None) -> Any:
         """Get nested configuration value using dot notation."""
         keys = path.split('.')
@@ -100,52 +133,34 @@ class ModelConfigManager:
     
     def get_embedding_config(self) -> ModelConfig:
         """Get embedding model configuration."""
-        model = self._get_config_value("embedding_model", "text-embedding-3-small")
-        if model == "text-embedding-3-small":
-            config_section = self._config.get("models", {}).get("embedding", {})
-        else:
-            # Handle alternative models
-            config_section = self._config.get("models", {}).get("embedding", {})
+        config_section = self._config.get("models", {}).get("embedding", {})
         
         return ModelConfig(
-            model=model,
+            model=config_section.get("model", "text-embedding-3-small"),
             dimensions=config_section.get("dimensions", 1536),
             max_input_tokens=config_section.get("max_input_tokens", 8191),
-            batch_size=self._get_config_value("embedding_batch_size", config_section.get("batch_size", 100))
+            batch_size=config_section.get("batch_size", 10)
         )
     
     def get_chat_config(self) -> ModelConfig:
         """Get chat model configuration."""
-        model = self._get_config_value("chat_model", "gpt-4o")
         config_section = self._config.get("models", {}).get("chat", {})
         
         return ModelConfig(
-            model=model,
+            model=config_section.get("model", "gpt-4o-mini"),
             max_tokens=config_section.get("max_tokens", 4096),
             temperature=config_section.get("temperature", 0.7)
         )
     
     def get_summarization_config(self) -> ModelConfig:
         """Get summarization model configuration."""
-        model = self._get_config_value("summarization_model", "gpt-4o-mini")
         config_section = self._config.get("models", {}).get("summarization", {})
         
         return ModelConfig(
-            model=model,
+            model=config_section.get("model", "gpt-4o-mini"),
             max_tokens=config_section.get("max_tokens", 800),
             temperature=config_section.get("temperature", 0.3)
         )
-    
-    # Analysis config not currently used
-    # def get_analysis_config(self) -> ModelConfig:
-    #     """Get analysis model configuration."""
-    #     config_section = self._config.get("models", {}).get("analysis", {})
-    #     
-    #     return ModelConfig(
-    #         model=config_section.get("model", "gpt-4o-mini"),
-    #         max_tokens=config_section.get("max_tokens", 1000),
-    #         temperature=config_section.get("temperature", 0.2)
-    #     )
     
     def get_limits_config(self) -> LimitsConfig:
         """Get processing limits configuration."""
@@ -164,33 +179,205 @@ class ModelConfigManager:
         perf = self._config.get("performance", {})
         
         return PerformanceConfig(
-            embedding_batch_size=self._get_config_value("embedding_batch_size", perf.get("embedding_batch_size", 100)),
+            embedding_batch_size=perf.get("embedding_batch_size", 10),
             embedding_delay_seconds=perf.get("embedding_delay_seconds", 0.1),
             chat_delay_seconds=perf.get("chat_delay_seconds", 0.5),
             summarization_delay_seconds=perf.get("summarization_delay_seconds", 1.0),
-            max_retries=self._get_config_value("max_retries", perf.get("max_retries", 3)),
+            max_retries=perf.get("max_retries", 3),
             retry_delay_seconds=perf.get("retry_delay_seconds", 2.0)
         )
     
-    # Alternative model methods not currently used
-    # def get_alternative_model(self, model_type: str, alternative: str) -> Optional[str]:
-    #     """Get alternative model for a given type."""
-    #     try:
-    #         alternatives = self._config["models"][model_type]["alternatives"]
-    #         return alternatives.get(alternative)
-    #     except KeyError:
-    #         return None
-    # 
-    # def list_available_models(self) -> Dict[str, Dict[str, str]]:
-    #     """List all available models by type."""
-    #     models = {}
-    #     for model_type in ["embedding", "chat", "summarization"]:
-    #         models[model_type] = {
-    #             "primary": self._config.get("models", {}).get(model_type, {}).get("model", "unknown"),
-    #             "alternatives": self._config.get("models", {}).get(model_type, {}).get("alternatives", {})
-    #         }
-    #     return models
+    def get_prompts_config(self) -> PromptsConfig:
+        """Get all prompt configurations."""
+        # Chat prompts
+        chat_config = ChatPromptsConfig(
+            system_prompt=self._get_nested_value(
+                "prompts.chat.system_prompt",
+                """You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
+{context_section}
+
+Guidelines:
+- Be concise and helpful
+- Reference specific documents when possible
+- If you're not sure about something, say so
+- Format responses in markdown when appropriate"""
+            ),
+            streaming_system_prompt=self._get_nested_value(
+                "prompts.chat.streaming_system_prompt",
+                """You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
+{context_section}"""
+            ),
+            context_template=self._get_nested_value(
+                "prompts.chat.context_template",
+                "Here is relevant context from their workspace: {context}"
+            )
+        )
+        
+        # Title generation
+        title_config = TitleGenerationConfig(
+            title_prompt=self._get_nested_value(
+                "prompts.title_generation.title_prompt",
+                """Based on this conversation, generate a concise, descriptive title that captures the main topic or question being discussed. 
+
+Guidelines:
+- Maximum {max_words} words
+- Be specific and descriptive
+- Focus on the main topic/question
+- Use clear, simple language
+- No quotes or special formatting
+- No articles (a, an, the) unless essential
+
+Conversation:
+{conversation_text}
+
+Title ({max_words} words max):"""
+            ),
+            max_words=self._get_nested_value("prompts.title_generation.max_words", 8),
+            temperature_override=self._get_nested_value("prompts.title_generation.temperature_override", 0.3),
+            max_tokens_override=self._get_nested_value("prompts.title_generation.max_tokens_override", 20)
+        )
+        
+        # Summarization prompts
+        summarization_config = SummarizationPromptsConfig(
+            document_summary_prompt=self._get_nested_value(
+                "prompts.summarization.document_summary_prompt",
+                """Please create a comprehensive but concise summary of this document that captures:
+1. Main topics and key points
+2. Important concepts and themes  
+3. Essential information and takeaways
+4. Context and purpose
+
+The summary should be roughly {max_length} words and be optimized for semantic search.
+
+Title: {title}
+
+Content:
+{content}
+
+Summary:"""
+            ),
+            chat_summary_prompt=self._get_nested_value(
+                "prompts.summarization.chat_summary_prompt",
+                """Generate a concise 1-2 sentence summary of this conversation. Focus on the main topic and key points discussed.
+
+Conversation:
+{conversation_text}
+
+Summary (max 150 characters):"""
+            ),
+            default_max_length=self._get_nested_value("prompts.summarization.default_max_length", 500),
+            chat_summary_max_tokens=self._get_nested_value("prompts.summarization.chat_summary_max_tokens", 40),
+            chat_summary_temperature=self._get_nested_value("prompts.summarization.chat_summary_temperature", 0.3),
+            chat_summary_max_chars=self._get_nested_value("prompts.summarization.chat_summary_max_chars", 150)
+        )
+        
+        # Document processing prompts (fallback defaults for commented-out sections)
+        doc_processing_config = DocumentProcessingPromptsConfig(
+            content_type_detection_prompt=self._get_nested_value(
+                "prompts.document_processing.content_type_detection_prompt",
+                """Analyze this document and classify its content type. Consider the title, structure, and content.
+
+Title: {title}
+Content: {content}
+
+Classify as one of: documentation, meeting_notes, project_plan, knowledge_base, reference, other
+
+Content Type:"""
+            ),
+            metadata_extraction_prompt=self._get_nested_value(
+                "prompts.document_processing.metadata_extraction_prompt",
+                """Extract key metadata from this document that would be useful for search and organization.
+
+Title: {title}
+Content: {content}
+
+Extract:
+- Key topics (comma-separated)
+- Main categories (comma-separated)
+- Priority level (high/medium/low)
+- Document type (technical/business/personal/other)
+
+Metadata:"""
+            )
+        )
+        
+        # Search prompts (fallback defaults for commented-out sections)
+        search_config = SearchPromptsConfig(
+            query_expansion_prompt=self._get_nested_value(
+                "prompts.search.query_expansion_prompt",
+                """Expand this search query to improve semantic search results. Consider synonyms, related terms, and different phrasings.
+
+Original query: {query}
+
+Expanded query suggestions (comma-separated):"""
+            ),
+            result_ranking_prompt=self._get_nested_value(
+                "prompts.search.result_ranking_prompt",
+                """Given this search query and these results, rank them by relevance and provide a brief explanation.
+
+Query: {query}
+
+Results:
+{results}
+
+Ranked results with explanations:"""
+            )
+        )
+        
+        return PromptsConfig(
+            chat=chat_config,
+            title_generation=title_config,
+            summarization=summarization_config,
+            document_processing=doc_processing_config,
+            search=search_config
+        )
     
+    def format_chat_system_prompt(self, context: Optional[str] = None, use_streaming: bool = False) -> str:
+        """Format chat system prompt with context."""
+        prompts = self.get_prompts_config()
+        
+        # Choose appropriate system prompt
+        if use_streaming:
+            system_prompt = prompts.chat.streaming_system_prompt
+        else:
+            system_prompt = prompts.chat.system_prompt
+        
+        # Format context section
+        if context:
+            context_section = prompts.chat.context_template.format(context=context)
+        else:
+            context_section = ""
+        
+        return system_prompt.format(context_section=context_section)
+    
+    def format_title_prompt(self, conversation_text: str, max_words: Optional[int] = None) -> str:
+        """Format title generation prompt."""
+        prompts = self.get_prompts_config()
+        words_limit = max_words or prompts.title_generation.max_words
+        
+        return prompts.title_generation.title_prompt.format(
+            conversation_text=conversation_text,
+            max_words=words_limit
+        )
+    
+    def format_document_summary_prompt(self, title: str, content: str, max_length: Optional[int] = None) -> str:
+        """Format document summarization prompt."""
+        prompts = self.get_prompts_config()
+        length_limit = max_length or prompts.summarization.default_max_length
+        
+        return prompts.summarization.document_summary_prompt.format(
+            title=title,
+            content=content,
+            max_length=length_limit
+        )
+    
+    def format_chat_summary_prompt(self, conversation_text: str) -> str:
+        """Format chat summarization prompt."""
+        prompts = self.get_prompts_config()
+        
+        return prompts.summarization.chat_summary_prompt.format(
+            conversation_text=conversation_text
+        )
     
     def reload_config(self) -> None:
         """Reload configuration from file."""

@@ -6,7 +6,7 @@
 model = "text-embedding-3-small"
 dimensions = 1536
 max_input_tokens = 8191
-batch_size = 100
+batch_size = 10  # Smaller batch for development
 
 # Alternative embedding models (for future use)
 # [models.embedding.alternatives]
@@ -15,7 +15,7 @@ batch_size = 100
 
 [models.chat]
 # Primary chat model for user interactions
-model = "gpt-4.1-mini"
+model = "gpt-4o-mini"  # Cost-effective for development
 max_tokens = 4096
 temperature = 0.7
 
@@ -27,7 +27,7 @@ temperature = 0.7
 
 [models.summarization]
 # Model for document summarization
-model = "gpt-4.1-mini"
+model = "gpt-4o-mini"  # Cost-effective for development
 max_tokens = 800
 temperature = 0.3  # Lower temperature for consistent summaries
 
@@ -52,35 +52,137 @@ chunk_overlap_tokens = 100         # Default chunk overlap
 
 [performance]
 # Performance and rate limiting settings
-embedding_batch_size = 100         # Embeddings per batch
+embedding_batch_size = 10          # Development-friendly batch size
 embedding_delay_seconds = 0.1      # Delay between embedding calls
 chat_delay_seconds = 0.5           # Delay between chat completions
 summarization_delay_seconds = 1.0  # Delay between summarization calls
 max_retries = 3                    # Max retries for failed API calls
 retry_delay_seconds = 2.0          # Delay between retries
 
+# ============================================================================
+# PROMPT TEMPLATES - Centralized prompt management for active LLM processes
+# ============================================================================
+
+[prompts.chat]
+# Main chat assistant system prompt
+system_prompt = """You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
+{context_section}
+
+Guidelines:
+- Be concise and helpful
+- Reference specific documents when possible
+- If you're not sure about something, say so
+- Format responses in markdown when appropriate"""
+
+# Streaming chat system prompt (shorter for efficiency)
+streaming_system_prompt = """You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
+{context_section}"""
+
+# Context section template (inserted into system prompts)
+context_template = "Here is relevant context from their workspace: {context}"
+
+[prompts.title_generation]
+# Chat title generation prompt
+title_prompt = """Based on this conversation, generate a concise, descriptive title that captures the main topic or question being discussed. 
+
+Guidelines:
+- Maximum {max_words} words
+- Be specific and descriptive
+- Focus on the main topic/question
+- Use clear, simple language
+- No quotes or special formatting
+- No articles (a, an, the) unless essential
+
+Conversation:
+{conversation_text}
+
+Title ({max_words} words max):"""
+
+# Title generation settings
+max_words = 8
+temperature_override = 0.3  # Lower temperature for consistency
+max_tokens_override = 20    # Short response for titles
+
+[prompts.summarization]
+# Document summarization prompt
+document_summary_prompt = """Please create a comprehensive but concise summary of this document that captures:
+1. Main topics and key points
+2. Important concepts and themes  
+3. Essential information and takeaways
+4. Context and purpose
+
+The summary should be roughly {max_length} words and be optimized for semantic search.
+
+Title: {title}
+
+Content:
+{content}
+
+Summary:"""
+
+# Chat conversation summarization prompt
+chat_summary_prompt = """Generate a concise 1-2 sentence summary of this conversation. Focus on the main topic and key points discussed.
+
+Conversation:
+{conversation_text}
+
+Summary (max 150 characters):"""
+
+# Summarization settings
+default_max_length = 500   # Default max words for document summaries
+chat_summary_max_tokens = 40
+chat_summary_temperature = 0.3
+chat_summary_max_chars = 150
+
+# ============================================================================
+# FUTURE PROMPTS - Ready for implementation but commented out for lean config
+# ============================================================================
+
+# [prompts.document_processing]
+# # Document analysis prompts (for future use)
+# content_type_detection_prompt = """Analyze this document and classify its content type. Consider the title, structure, and content.
+# 
+# Title: {title}
+# Content: {content}
+# 
+# Classify as one of: documentation, meeting_notes, project_plan, knowledge_base, reference, other
+# 
+# Content Type:"""
+# 
+# # Metadata extraction prompt (for future use)
+# metadata_extraction_prompt = """Extract key metadata from this document that would be useful for search and organization.
+# 
+# Title: {title}
+# Content: {content}
+# 
+# Extract:
+# - Key topics (comma-separated)
+# - Main categories (comma-separated)
+# - Priority level (high/medium/low)
+# - Document type (technical/business/personal/other)
+# 
+# Metadata:"""
+
+# [prompts.search]
+# # Query enhancement prompts (for future use)
+# query_expansion_prompt = """Expand this search query to improve semantic search results. Consider synonyms, related terms, and different phrasings.
+# 
+# Original query: {query}
+# 
+# Expanded query suggestions (comma-separated):"""
+# 
+# # Search result reranking prompt (for future use)
+# result_ranking_prompt = """Given this search query and these results, rank them by relevance and provide a brief explanation.
+# 
+# Query: {query}
+# 
+# Results:
+# {results}
+# 
+# Ranked results with explanations:"""
+
 # Optimization settings (not currently used)
 # [optimization]
 # enable_caching = true               # Cache embeddings and summaries
 # cache_ttl_days = 30                # Cache time-to-live
 # prefer_faster_models = false       # Use faster alternatives when possible
-
-[environment]
-# Environment-specific overrides
-[environment.development]
-# Use cheaper models in development
-chat_model = "gpt-4.1-mini"
-summarization_model = "gpt-4.1-mini"
-embedding_batch_size = 10
-
-[environment.production]
-# Production settings (use defaults)
-enable_monitoring = true
-log_costs = true
-
-[environment.testing]
-# Testing environment
-chat_model = "gpt-4.1-mini"
-summarization_model = "gpt-4.1-mini"
-embedding_batch_size = 5
-max_retries = 1

@@ -1,28 +1,42 @@
-from openai import OpenAI
-import os
-from dotenv import load_dotenv
-import asyncio
-from typing import List, Dict, Any, AsyncGenerator
-from models import EmbeddingResponse, ChatResponse
-from config.model_config import get_model_config
+"""
+OpenAI Service for handling AI model interactions.
+Provides a centralized interface for all OpenAI API calls with proper error handling,
+rate limiting, and configuration management.
+"""
 
-# Load environment variables
-load_dotenv(dotenv_path="../.env")
+import asyncio
+import time
+from typing import List, Dict, Any, AsyncGenerator
+from openai import AsyncOpenAI
+from pydantic import BaseModel
+
+from config.model_config import get_model_config
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
+class EmbeddingResponse(BaseModel):
+    embedding: List[float]
+    tokens: int
+
+class ChatResponse(BaseModel):
+    content: str
+    tokens: int
 
 class OpenAIService:
     def __init__(self):
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = AsyncOpenAI()
         self.model_config = get_model_config()
     
     async def generate_embedding(self, text: str) -> EmbeddingResponse:
-        """Generate embedding using configured model."""
+        """Generate embedding for the given text using configured model."""
         embedding_config = self.model_config.get_embedding_config()
         performance_config = self.model_config.get_performance_config()
         
         # Add delay for rate limiting
         await asyncio.sleep(performance_config.embedding_delay_seconds)
         
-        response = self.client.embeddings.create(
+        response = await self.client.embeddings.create(
             model=embedding_config.model,
             input=text,
             dimensions=embedding_config.dimensions
@@ -41,16 +55,12 @@ class OpenAIService:
         # Add delay for rate limiting
         await asyncio.sleep(performance_config.chat_delay_seconds)
         
+        # Use centralized prompt management
+        system_prompt = self.model_config.format_chat_system_prompt(context=context, use_streaming=False)
+        
         system_message = {
             "role": "system",
-            "content": f"""You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
-            {f"Here is relevant context from their workspace: {context}" if context else ""}
-            
-            Guidelines:
-            - Be concise and helpful
-            - Reference specific documents when possible
-            - If you're not sure about something, say so
-            - Format responses in markdown when appropriate"""
+            "content": system_prompt
         }
         
         response = self.client.chat.completions.create(
@@ -69,10 +79,12 @@ class OpenAIService:
         """Generate streaming chat response using configured model."""
         chat_config = self.model_config.get_chat_config()
         
+        # Use centralized prompt management for streaming
+        system_prompt = self.model_config.format_chat_system_prompt(context=context, use_streaming=True)
+        
         system_message = {
             "role": "system",
-            "content": f"""You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
-            {f"Here is relevant context from their workspace: {context}" if context else ""}"""
+            "content": system_prompt
         }
         
         stream = self.client.chat.completions.create(
@@ -113,20 +125,12 @@ class OpenAIService:
         if len(content) > max_content_chars:
             truncated_content += "\n\n[Content truncated...]"
         
-        prompt = f"""Please create a comprehensive but concise summary of this document that captures:
-1. Main topics and key points
-2. Important concepts and themes  
-3. Essential information and takeaways
-4. Context and purpose
-
-The summary should be roughly {max_length} words and be optimized for semantic search.
-
-Title: {title}
-
-Content:
-{truncated_content}
-
-Summary:"""
+        # Use centralized prompt management
+        prompt = self.model_config.format_document_summary_prompt(
+            title=title,
+            content=truncated_content,
+            max_length=max_length
+        )
 
         response = self.client.chat.completions.create(
             model=summarization_config.model,
@@ -154,6 +158,7 @@ Summary:"""
         """
         summarization_config = self.model_config.get_summarization_config()
         performance_config = self.model_config.get_performance_config()
+        prompts_config = self.model_config.get_prompts_config()
         
         # Add delay for rate limiting
         await asyncio.sleep(performance_config.summarization_delay_seconds)
@@ -167,20 +172,11 @@ Summary:"""
             role = "User" if msg["role"] == "user" else "Assistant" 
             conversation_text += f"{role}: {msg['content']}\n"
         
-        prompt = f"""Based on this conversation, generate a concise, descriptive title that captures the main topic or question being discussed. 
-
-Guidelines:
-- Maximum {max_words} words
-- Be specific and descriptive
-- Focus on the main topic/question
-- Use clear, simple language
-- No quotes or special formatting
-- No articles (a, an, the) unless essential
-
-Conversation:
-{conversation_text}
-
-Title ({max_words} words max):"""
+        # Use centralized prompt management
+        prompt = self.model_config.format_title_prompt(
+            conversation_text=conversation_text,
+            max_words=max_words
+        )
 
         try:
             response = self.client.chat.completions.create(
@@ -189,8 +185,8 @@ Title ({max_words} words max):"""
                     "role": "user", 
                     "content": prompt
                 }],
-                temperature=0.3,  # Lower temperature for more consistent titles
-                max_tokens=20,    # Short response for titles
+                temperature=prompts_config.title_generation.temperature_override,
+                max_tokens=prompts_config.title_generation.max_tokens_override,
             )
             
             title = response.choices[0].message.content or ''
@@ -219,6 +215,7 @@ Title ({max_words} words max):"""
         try:
             summarization_config = self.model_config.get_summarization_config()
             performance_config = self.model_config.get_performance_config()
+            prompts_config = self.model_config.get_prompts_config()
             
             # Apply rate limiting
             await asyncio.sleep(performance_config.summarization_delay_seconds)
@@ -238,20 +235,16 @@ Title ({max_words} words max):"""
             if len(conversation_text) > 3000:  # Limit total input
                 conversation_text = conversation_text[:3000] + "..."
             
-            summary_prompt = f"""Generate a concise 1-2 sentence summary of this conversation. Focus on the main topic and key points discussed.
-
-Conversation:
-{conversation_text}
-
-Summary (max 150 characters):"""
+            # Use centralized prompt management
+            summary_prompt = self.model_config.format_chat_summary_prompt(conversation_text)
             
             response = self.client.chat.completions.create(
                 model=summarization_config.model,
                 messages=[
                     {"role": "user", "content": summary_prompt}
                 ],
-                max_tokens=40,  # Short summary
-                temperature=0.3,  # Low temperature for consistency
+                max_tokens=prompts_config.summarization.chat_summary_max_tokens,
+                temperature=prompts_config.summarization.chat_summary_temperature,
             )
             
             summary = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
@@ -260,8 +253,9 @@ Summary (max 150 characters):"""
             summary = summary.strip('"').strip("'").strip()
             
             # Ensure it's not too long
-            if len(summary) > 150:
-                summary = summary[:147] + "..."
+            max_chars = prompts_config.summarization.chat_summary_max_chars
+            if len(summary) > max_chars:
+                summary = summary[:max_chars-3] + "..."
                 
             return summary if summary else ""
             
