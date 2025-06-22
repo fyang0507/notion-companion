@@ -103,16 +103,31 @@ class ChatService:
 
 ### Model Configuration Patterns
 ```python
-# Use centralized model configuration
+# Use centralized LLM configuration system
 from backend.config.model_config import get_model_config
 
-config_manager = get_model_config()
-embedding_config = config_manager.get_embedding_config()
-chat_config = config_manager.get_chat_config()
+# Access model configurations
+config = get_model_config()
+embedding_config = config.get_embedding_config()
+chat_config = config.get_chat_config()
+summary_config = config.get_summarization_config()
 
-# Environment-specific overrides supported
-# Development vs production configurations
+# Format prompts dynamically
+system_prompt = config.format_chat_system_prompt(context="user workspace context")
+title_prompt = config.format_title_prompt(conversation_text="chat history")
+summary_prompt = config.format_document_summary_prompt(title="doc", content="content")
+
+# All LLM services use centralized configuration
+openai_service = OpenAIService()  # Automatically uses centralized config
 ```
+
+### LLM Configuration Management
+- **Single Source**: All AI models, prompts, and settings in [backend/config/models.toml](mdc:backend/config/models.toml)
+- **Type Safety**: Configuration accessed through [backend/config/model_config.py](mdc:backend/config/model_config.py)
+- **Development Defaults**: Cost-effective models (gpt-4o-mini) with small batches
+- **Production Deployment**: Manual config updates for production-grade models
+- **Active Processes**: Chat, title generation, summarization, embeddings, document processing
+- **Testing**: [backend/scripts/model_config_demo.py](mdc:backend/scripts/model_config_demo.py) for validation
 
 ## State Management
 
@@ -149,11 +164,13 @@ chat_config = config_manager.get_chat_config()
 4. Use Tailwind CSS for styling with responsive design
 5. Add to component exports for easy imports
 
-### Model Configuration Changes
-1. Update [backend/config/models.toml](mdc:backend/config/models.toml)
-2. Modify [backend/config/model_config.py](mdc:backend/config/model_config.py) if needed
-3. Test with [backend/scripts/model_config_demo.py](mdc:backend/scripts/model_config_demo.py)
-4. Update environment-specific overrides as needed
+### LLM Configuration Changes
+1. **Model Updates**: Edit model settings in [backend/config/models.toml](mdc:backend/config/models.toml)
+2. **Prompt Updates**: Modify prompt templates in the `[prompts.*]` sections
+3. **Performance Tuning**: Adjust batch sizes, delays, and token limits
+4. **New Features**: Add new prompt sections and update [backend/config/model_config.py](mdc:backend/config/model_config.py)
+5. **Testing**: Always run [backend/scripts/model_config_demo.py](mdc:backend/scripts/model_config_demo.py) to validate changes
+6. **Production Deployment**: Update config values directly (no environment variables needed)
 
 ### Database Schema Changes
 1. Update [backend/schema.sql](mdc:backend/schema.sql)

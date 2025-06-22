@@ -1,0 +1,106 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# LLM Configuration System
+
+## Overview
+The Notion Companion uses a centralized LLM configuration system that manages all AI models, prompts, and settings through a single source of truth.
+
+## Core Configuration Files
+- **[backend/config/models.toml](mdc:backend/config/models.toml)** - Main configuration file containing all models, prompts, limits, and performance settings
+- **[backend/config/model_config.py](mdc:backend/config/model_config.py)** - Configuration manager with type-safe access and prompt formatting methods
+- **[backend/config/README.md](mdc:backend/config/README.md)** - Comprehensive documentation and usage guide
+
+## Configuration Structure
+
+### Model Definitions
+```toml
+[models.embedding]
+model = "text-embedding-3-small"
+dimensions = 1536
+batch_size = 10
+
+[models.chat] 
+model = "gpt-4o-mini"
+max_tokens = 4096
+temperature = 0.7
+
+[models.summarization]
+model = "gpt-4o-mini" 
+max_tokens = 800
+temperature = 0.3
+```
+
+### Centralized Prompts
+All LLM prompts are managed in [models.toml](mdc:backend/config/models.toml):
+- **Chat Prompts**: System prompts with context injection
+- **Title Generation**: 8-word session title prompts
+- **Summarization**: Document and chat summary prompts
+- **Future Prompts**: Ready for document processing and search enhancement
+
+### Processing Limits & Performance
+- Token limits for different operations (embedding: 8K, chat: 15K, summary: 20K)
+- Rate limiting and retry configurations
+- Batch processing settings optimized for development
+
+## Usage Patterns
+
+### Service Integration
+```python
+from config.model_config import get_model_config
+
+config = get_model_config()
+chat_config = config.get_chat_config()
+system_prompt = config.format_chat_system_prompt(context="...")
+```
+
+### LLM-Enabled Services
+All services using AI models integrate through centralized configuration:
+- **[backend/services/openai_service.py](mdc:backend/services/openai_service.py)** - Multi-model OpenAI integration
+- **[backend/services/chat_session_service.py](mdc:backend/services/chat_session_service.py)** - Title and summary generation
+- **[backend/services/document_processor.py](mdc:backend/services/document_processor.py)** - Content processing and embeddings
+
+## Active LLM Processes
+1. **Chat Responses** - RAG-enhanced conversations using `gpt-4o-mini`
+2. **Title Generation** - 8-word chat session titles with temperature override
+3. **Chat Summaries** - 150-character conversation summaries
+4. **Document Summaries** - 500-word summaries for semantic search
+5. **Embeddings** - 1536D vectors using `text-embedding-3-small`
+6. **Document Processing** - Content extraction and chunking
+
+## Development vs Production
+
+### Development Configuration (Current)
+- Uses `gpt-4o-mini` for cost efficiency
+- Small batch sizes (10) for faster iteration
+- Conservative token limits
+- Short API delays (0.1-0.5s)
+
+### Production Deployment
+Update [models.toml](mdc:backend/config/models.toml) values directly:
+- Switch to `gpt-4o` for higher quality
+- Increase batch sizes for throughput
+- Adjust performance settings for scale
+- Review token limits for production workload
+
+## Testing & Validation
+- **[backend/scripts/model_config_demo.py](mdc:backend/scripts/model_config_demo.py)** - Comprehensive system demonstration
+- Shows all configurations, prompt formatting, and service integration
+- Tests configuration loading and reload capabilities
+
+## Key Benefits
+- **Single Source of Truth**: All AI configuration in one place
+- **Type Safety**: Strongly-typed configuration objects
+- **Dynamic Prompts**: Context injection and formatting
+- **Easy Deployment**: Manual config updates for production
+- **Future-Ready**: Infrastructure for new LLM features
+- **Cost Optimized**: Development-friendly defaults
+
+## Best Practices
+1. **Configuration Changes**: Test with demo script before deployment
+2. **Prompt Updates**: Modify prompts in [models.toml](mdc:backend/config/models.toml), not service code
+3. **Service Integration**: Always use `get_model_config()` for configuration access
+4. **Production Updates**: Update config values directly, no environment variables needed
+5. **New Features**: Add prompts to TOML, update config classes, implement formatting methods

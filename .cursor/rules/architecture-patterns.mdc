@@ -48,11 +48,22 @@ Uses Supabase PostgreSQL with pgvector extension for similarity search.
 Schema files: [backend/schema.sql](mdc:backend/schema.sql), [backend/drop_schema.sql](mdc:backend/drop_schema.sql)
 
 ## Model Configuration
-- Centralized model management via [backend/config/model_config.py](mdc:backend/config/model_config.py)
-- TOML-based configuration in [backend/config/models.toml](mdc:backend/config/models.toml)
-- Environment-specific overrides for development/production
-- Support for multiple embedding, chat, and summarization models
-- Rate limiting and performance optimization settings
+- **Centralized LLM Configuration**: [backend/config/models.toml](mdc:backend/config/models.toml) - Single source of truth for all AI models, prompts, and settings
+- **Configuration Manager**: [backend/config/model_config.py](mdc:backend/config/model_config.py) - Type-safe configuration access and prompt formatting
+- **Unified Settings**: Development-optimized defaults (gpt-4o-mini, small batches) with manual production updates
+- **Centralized Prompts**: All LLM prompts managed in TOML configuration with dynamic formatting
+- **Model Selection**: Embedding (text-embedding-3-small), Chat (gpt-4o-mini), Summarization (gpt-4o-mini)
+- **Performance Tuning**: Rate limiting, batch sizes, token limits, and retry configurations
+- **Demo Script**: [backend/scripts/model_config_demo.py](mdc:backend/scripts/model_config_demo.py) - Comprehensive system demonstration
+
+### LLM-Enabled Processes
+All AI-powered features use centralized configuration:
+- **Chat Responses**: RAG-enhanced conversations with dynamic context injection
+- **Title Generation**: Auto-generate 8-word chat session titles
+- **Chat Summaries**: 150-character conversation summaries 
+- **Document Summaries**: 500-word summaries optimized for embeddings
+- **Embeddings**: 1536D vectors for semantic search
+- **Document Processing**: Content extraction and chunking
 
 ## Frontend Patterns
 - React components with TypeScript and Tailwind CSS
