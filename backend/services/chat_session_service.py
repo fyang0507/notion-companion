@@ -151,7 +151,7 @@ class ChatSessionService:
         logger.info("Chat session idle monitoring stopped")
     
     async def _monitor_idle_sessions(self):
-        """Monitor and finalize idle sessions (10 minutes without activity)."""
+        """Monitor and conclude idle sessions (10 minutes without activity)."""
         while self._is_running:
             try:
                 # Check for sessions idle for more than 10 minutes
@@ -169,10 +169,10 @@ class ChatSessionService:
                 idle_sessions = self.db.execute_query(idle_sessions_query, (idle_threshold,))
                 
                 if idle_sessions:
-                    logger.info(f"Found {len(idle_sessions)} idle sessions to finalize")
+                    logger.info(f"Found {len(idle_sessions)} idle sessions to conclude")
                     
                     for session in idle_sessions:
-                        await self._finalize_session_due_to_idle(
+                        await self._conclude_session_due_to_idle(
                             session_id=str(session['id']),
                             current_title=session['title'],
                             current_summary=session['summary']
@@ -187,10 +187,10 @@ class ChatSessionService:
                 logger.error(f"Error in idle session monitoring: {e}")
                 await asyncio.sleep(60)  # Wait 1 minute on error
     
-    async def _finalize_session_due_to_idle(self, session_id: str, current_title: str, current_summary: Optional[str]):
-        """Finalize a session that has become idle."""
+    async def _conclude_session_due_to_idle(self, session_id: str, current_title: str, current_summary: Optional[str]):
+        """Conclude a session that has become idle."""
         try:
-            logger.info(f"Finalizing idle session: {session_id}")
+            logger.info(f"Concluding idle session: {session_id}")
             
             update_data = {}
             
@@ -213,7 +213,7 @@ class ChatSessionService:
                 except Exception as e:
                     logger.error(f"Failed to generate summary for idle session {session_id}: {e}")
             
-            # Update session status to archived (finalized due to idle)
+            # Update session status to archived (concluded due to idle)
             update_data['status'] = 'archived'
             update_data['updated_at'] = 'now()'
             
@@ -224,12 +224,12 @@ class ChatSessionService:
                 ).eq('id', session_id).execute()
                 
                 if update_response.data:
-                    logger.info(f"Successfully finalized idle session: {session_id}")
+                    logger.info(f"Successfully concluded idle session: {session_id}")
                 else:
                     logger.error(f"Failed to update idle session: {session_id}")
             
         except Exception as e:
-            logger.error(f"Error finalizing idle session {session_id}: {e}")
+            logger.error(f"Error concluding idle session {session_id}: {e}")
     
     async def conclude_session(self, session_id: str, reason: str = "manual") -> dict:
         """

@@ -27,6 +27,7 @@ import { apiClient } from '@/lib/api';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { useNotionDatabases } from '@/hooks/use-notion-databases';
 import { ChatSessionHook } from '@/hooks/use-chat-sessions';
+import { useSessionLifecycle } from '@/hooks/use-session-lifecycle';
 
 interface ChatInterfaceProps {
   onBackToHome?: () => void;
@@ -82,6 +83,9 @@ const availableModels: AIModel[] = [
 export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps) {
   const { connection, isConnected } = useNotionConnection();
   const { databases } = useNotionDatabases();
+  
+  // Set up session lifecycle management (window close, idle detection, etc.)
+  useSessionLifecycle({ chatSessions: chatSessions || null });
   
   // Use messages from chat sessions if available, otherwise use local state
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([
@@ -429,7 +433,19 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
                 variant="outline" 
                 size="sm"
                 onClick={async () => {
-                  console.log('Chat interface New Chat button clicked - starting temporary chat');
+                  console.log('Chat interface New Chat button clicked');
+                  
+                  // First conclude current session if it exists and has user messages
+                  if (chatSessions.currentSession && chatSessions.currentMessages.some(m => m.type === 'user')) {
+                    try {
+                      console.log('Concluding current session before starting new chat');
+                      await apiClient.concludeCurrentAndStartNew(chatSessions.currentSession.id);
+                    } catch (err) {
+                      console.error('Failed to conclude current session:', err);
+                    }
+                  }
+                  
+                  // Then start new temporary chat
                   const sessionContext = {
                     database_filters: filters.workspaces,
                     model_used: selectedModel.id,

@@ -11,12 +11,16 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/componen
 import { useAuth } from '@/hooks/use-auth';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { useChatSessions } from '@/hooks/use-chat-sessions';
+import { useSessionLifecycle } from '@/hooks/use-session-lifecycle';
 import { toast } from 'sonner';
 
 export default function Home() {
   const { user, loading, initialized } = useAuth();
   const { connection, isConnected, loading: connectionLoading } = useNotionConnection();
   const chatSessions = useChatSessions();
+  
+  // Set up session lifecycle management (window close, idle detection, etc.)
+  useSessionLifecycle({ chatSessions });
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | 'global' | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [chatKey, setChatKey] = useState(0);

@@ -16,7 +16,7 @@ export interface ChatSessionHook {
   startTemporaryChat: (sessionContext?: Record<string, any>) => void; // Main entry point for new chats
   loadSession: (sessionId: string) => Promise<void>;
   saveCurrentSession: () => Promise<void>;
-  finalizeCurrentSession: () => Promise<void>;
+  concludeCurrentSession: (reason?: string) => Promise<void>;
   deleteSession: (sessionId: string) => Promise<void>;
   
   // Message management
@@ -99,40 +99,21 @@ export function useChatSessions(): ChatSessionHook {
     }
   }, [currentSession, loadRecentSessions]);
 
-  const finalizeCurrentSession = useCallback(async (): Promise<void> => {
-    if (!currentSession) {
-      return;
-    }
 
-    try {
-      // First save any unsaved messages
-      await saveCurrentSession();
-      
-      // Then finalize the session (generate title and summary)
-      await apiClient.finalizeChatSession(currentSession.id);
-      
-      // Refresh recent sessions to show updated title/summary
-      await loadRecentSessions();
-
-    } catch (err) {
-      console.error('Failed to finalize session:', err);
-      // Don't throw here as this is often called automatically
-    }
-  }, [currentSession, saveCurrentSession, loadRecentSessions]);
 
   const loadSession = useCallback(async (sessionId: string): Promise<void> => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Save and finalize current session before loading new one if user has sent at least one message
+      // Conclude current session before loading new one if user has sent at least one message
       const userMessageCount = currentMessages.filter(msg => msg.type === 'user').length;
       if (currentSession && userMessageCount > 0) {
         await saveCurrentSession();
         try {
-          await apiClient.finalizeChatSession(currentSession.id);
+          await apiClient.concludeForResume(currentSession.id, sessionId);
         } catch (err) {
-          console.error('Failed to finalize previous session:', err);
+          console.error('Failed to conclude previous session:', err);
         }
       }
 
@@ -312,6 +293,27 @@ export function useChatSessions(): ChatSessionHook {
     await loadRecentSessions();
   }, [loadRecentSessions]);
 
+  const concludeCurrentSession = useCallback(async (reason?: string): Promise<void> => {
+    if (!currentSession) {
+      return;
+    }
+
+    try {
+      // First save any unsaved messages
+      await saveCurrentSession();
+      
+      // Then conclude the session (generate title and summary)
+      await apiClient.concludeChatSession(currentSession.id, reason);
+      
+      // Refresh recent sessions to show updated title/summary
+      await loadRecentSessions();
+
+    } catch (err) {
+      console.error('Failed to conclude session:', err);
+      // Don't throw here as this is often called automatically
+    }
+  }, [currentSession, saveCurrentSession, loadRecentSessions]);
+
   return {
     currentSession,
     currentMessages,
@@ -321,7 +323,7 @@ export function useChatSessions(): ChatSessionHook {
     startTemporaryChat,
     loadSession,
     saveCurrentSession,
-    finalizeCurrentSession,
+    concludeCurrentSession,
     deleteSession,
     addMessage,
     saveMessageImmediately,

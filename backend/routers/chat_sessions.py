@@ -425,7 +425,7 @@ async def save_chat_session(
                     message_order=result['message_order']
                 ))
         
-        # Note: Title and summary generation now happens only at session end (finalization)
+        # Note: Title and summary generation now happens only at session end (conclusion)
         
         logger.info(f"Saved {len(saved_messages)} messages to session {session_id}")
         return {"message": f"Saved {len(saved_messages)} messages", "messages": saved_messages}
@@ -436,103 +436,7 @@ async def save_chat_session(
         logger.error(f"Error saving messages to session {session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to save messages")
 
-@router.post("/{session_id}/finalize")
-async def finalize_chat_session(
-    session_id: str,
-    generate_summary: bool = True,
-    db=Depends(get_db)
-):
-    """Finalize a chat session by generating title and summary for proper archiving."""
-    try:
-        # Check if session exists
-        session_response = db.client.table('chat_sessions').select(
-            'id, title, summary, message_count'
-        ).eq('id', session_id).eq('status', 'active').execute()
-        
-        if not session_response.data:
-            raise HTTPException(status_code=404, detail="Active chat session not found")
-        check_result = session_response.data
-        
-        session_info = check_result[0]
-        current_title = session_info['title']
-        current_summary = session_info['summary']
-        message_count = session_info['message_count']
-        
-        # Only process if there are meaningful conversations
-        if message_count < 2:
-            return {"message": "Session has insufficient content for finalization"}
-        
-        update_fields = []
-        params = []
-        
-        # Always re-generate title with AI at session end (improved title based on full conversation)
-        try:
-            logger.info(f"Attempting to generate AI title for session {session_id}")
-            ai_title = await generate_ai_chat_title(session_id, db)
-            logger.info(f"Generated AI title result: {ai_title}")
-            if ai_title and ai_title != "New Chat" and ai_title != current_title:
-                update_fields.append("title = %s")
-                params.append(ai_title)
-                logger.info(f"Re-generated session {session_id} title at session end: {ai_title}")
-        except Exception as e:
-            logger.error(f"Failed to generate title during finalization: {e}", exc_info=True)
-            logger.error(f"Error type: {type(e).__name__}")
-            logger.error(f"Error args: {e.args}")
-            # Keep existing title if AI generation fails
-        
-        # Always generate summary at session end
-        if generate_summary:
-            try:
-                logger.info(f"Attempting to generate AI summary for session {session_id}")
-                ai_summary = await generate_ai_chat_summary(session_id, db)
-                logger.info(f"Generated AI summary result: {ai_summary}")
-                if ai_summary and ai_summary != current_summary:
-                    update_fields.append("summary = %s")
-                    params.append(ai_summary)
-                    logger.info(f"Generated summary for session {session_id}: {ai_summary}")
-            except Exception as e:
-                logger.error(f"Failed to generate summary during finalization: {e}", exc_info=True)
-                logger.error(f"Error type: {type(e).__name__}")
-                logger.error(f"Error args: {e.args}")
-        
-        # Update session if we have changes
-        update_needed = False
-        update_data = {}
-        
-        # Always re-generate title with AI at session end (improved title based on full conversation)
-        if len(params) > 0:
-            # Find which updates were requested
-            for i, field in enumerate(update_fields):
-                if 'title' in field and i < len(params):
-                    update_data['title'] = params[i]
-                    update_needed = True
-                elif 'summary' in field and i < len(params):
-                    update_data['summary'] = params[i]
-                    update_needed = True
-        
-        if update_needed:
-            update_data['updated_at'] = 'now()'
-            
-            # Use Supabase client for update
-            update_response = db.client.table('chat_sessions').update(
-                update_data
-            ).eq('id', session_id).select('title, summary').execute()
-            
-            if update_response.data:
-                row = update_response.data[0]
-                return {
-                    "message": "Session finalized successfully",
-                    "title": row['title'],
-                    "summary": row['summary']
-                }
-        
-        return {"message": "Session already finalized", "title": current_title, "summary": current_summary}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error finalizing session {session_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to finalize session")
+
 
 @router.post("/{session_id}/conclude")
 async def conclude_chat_session(

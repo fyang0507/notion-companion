@@ -41,7 +41,13 @@ export default function AnalyticsPage() {
     totalTokens: 0,
     totalChats: 0,
     totalSearches: 0,
-    totalCost: 0
+    totalCost: 0,
+    successRate: 95,
+    costThisMonth: 24.56,
+    monthlyLimit: 100000,
+    avgResponseTime: 1.2,
+    activeWorkspaces: 1,
+    documentsProcessed: 0
   };
 
   const weeklyData = analytics?.weeklyData || [];
