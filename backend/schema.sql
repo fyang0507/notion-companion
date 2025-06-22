@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     summary TEXT,  -- AI-generated summary
     
     -- Session state
-    status TEXT DEFAULT 'active',  -- 'active', 'archived', 'deleted'
+    status TEXT DEFAULT 'active',  -- 'active', 'deleted'
     message_count INTEGER DEFAULT 0,
     
     -- Context and filters used in this session

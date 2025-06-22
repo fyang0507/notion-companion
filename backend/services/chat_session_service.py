@@ -213,8 +213,7 @@ class ChatSessionService:
                 except Exception as e:
                     logger.error(f"Failed to generate summary for idle session {session_id}: {e}")
             
-            # Update session status to archived (concluded due to idle)
-            update_data['status'] = 'archived'
+            # concluded due to idle
             update_data['updated_at'] = 'now()'
             
             if update_data:
@@ -287,23 +286,23 @@ class ChatSessionService:
             except Exception as e:
                 logger.error(f"Failed to generate summary during conclusion: {e}")
             
-            # Mark as archived
-            update_data['status'] = 'archived'
             update_data['updated_at'] = 'now()'
             
             # Update session
             if update_data:
                 update_response = self.db.client.table('chat_sessions').update(
                     update_data
-                ).eq('id', session_id).select('title, summary').execute()
+                ).eq('id', session_id).execute()
                 
                 if update_response.data:
-                    row = update_response.data[0]
                     logger.info(f"Successfully concluded session {session_id} due to {reason}")
+                    # Get the updated title and summary from what we just set
+                    final_title = update_data.get('title', current_title)
+                    final_summary = update_data.get('summary', current_summary)
                     return {
                         "message": f"Session concluded successfully ({reason})",
-                        "title": row['title'],
-                        "summary": row['summary']
+                        "title": final_title,
+                        "summary": final_summary
                     }
             
             return {
