@@ -262,7 +262,10 @@ class ChatSessionService:
             
             # Only process if there are meaningful conversations
             if message_count < 2:
+                logger.info(f"Session {session_id} has insufficient content for conclusion (message_count: {message_count})")
                 return {"message": "Session has insufficient content for conclusion"}
+            
+            logger.info(f"Processing session {session_id} for conclusion (message_count: {message_count}, reason: {reason})")
             
             update_data = {}
             

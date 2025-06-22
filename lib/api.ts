@@ -281,9 +281,10 @@ export class ApiClient {
   }
 
   async concludeCurrentAndStartNew(currentSessionId?: string): Promise<{ message: string; title?: string; summary?: string }> {
-    const { data } = await this.makeRequest<{ message: string; title?: string; summary?: string }>('POST', '/api/chat-sessions/conclude-current', { 
-      current_session_id: currentSessionId 
-    });
+    const endpoint = currentSessionId 
+      ? `/api/chat-sessions/conclude-current?current_session_id=${currentSessionId}`
+      : '/api/chat-sessions/conclude-current';
+    const { data } = await this.makeRequest<{ message: string; title?: string; summary?: string }>('POST', endpoint);
     return data;
   }
 

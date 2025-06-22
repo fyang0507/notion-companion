@@ -23,10 +23,9 @@ import Link from 'next/link';
 interface DashboardHomeProps {
   onSelectWorkspace: (id: string) => void;
   onNewChat: () => void;
-  onStartGlobalChat: () => void;
 }
 
-export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat }: DashboardHomeProps) {
+export function DashboardHome({ onSelectWorkspace, onNewChat }: DashboardHomeProps) {
   const { connection, isConnected, loading } = useNotionConnection();
   
   const recentActivity = [
@@ -70,7 +69,7 @@ export function DashboardHome({ onSelectWorkspace, onNewChat, onStartGlobalChat 
       title: 'Start Chat',
       description: 'Search and chat across all your workspaces with intelligent filtering',
       icon: <MessageSquarePlus className="h-5 w-5" />,
-      action: onStartGlobalChat,
+      action: onNewChat,
       primary: true
     },
     {

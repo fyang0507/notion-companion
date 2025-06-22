@@ -427,38 +427,7 @@ export function ChatInterface({ onBackToHome, chatSessions }: ChatInterfaceProps
           </div>
           
           <div className="flex items-center gap-2 flex-shrink-0">
-            {/* New Chat Button */}
-            {chatSessions && (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={async () => {
-                  console.log('Chat interface New Chat button clicked');
-                  
-                  // First conclude current session if it exists and has user messages
-                  if (chatSessions.currentSession && chatSessions.currentMessages.some(m => m.type === 'user')) {
-                    try {
-                      console.log('Concluding current session before starting new chat');
-                      await apiClient.concludeCurrentAndStartNew(chatSessions.currentSession.id);
-                    } catch (err) {
-                      console.error('Failed to conclude current session:', err);
-                    }
-                  }
-                  
-                  // Then start new temporary chat
-                  const sessionContext = {
-                    database_filters: filters.workspaces,
-                    model_used: selectedModel.id,
-                    initial_filters: filters
-                  };
-                  chatSessions.startTemporaryChat(sessionContext);
-                }}
-                className="gap-1 h-8 px-3 text-xs hover:bg-accent transition-colors"
-              >
-                <Plus className="h-3 w-3" />
-                <span className="hidden sm:inline">New Chat</span>
-              </Button>
-            )}
+
             
             {/* Model Selector */}
             <Popover open={modelSelectorOpen} onOpenChange={setModelSelectorOpen}>

@@ -28,12 +28,11 @@ interface SidebarProps {
   selectedWorkspace: string | 'global' | null;
   onSelectWorkspace: (id: string) => void;
   onNewChat?: () => void;
-  onStartGlobalChat?: () => void;
   onChatSelect?: (chatId: string) => void;
   chatRefreshTrigger?: number; // Trigger to refresh recent chats
 }
 
-export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onStartGlobalChat, onChatSelect, chatRefreshTrigger }: SidebarProps) {
+export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onChatSelect, chatRefreshTrigger }: SidebarProps) {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
   const { connection, isConnected, syncNotion } = useNotionConnection();
   const { databases, loading: databasesLoading } = useNotionDatabases();
@@ -60,11 +59,7 @@ export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onSta
     }
   };
 
-  const handleStartChat = () => {
-    if (onStartGlobalChat) {
-      onStartGlobalChat();
-    }
-  };
+
 
   const handleChatSelect = (chatId: string, workspaceId?: string) => {
     // In single workspace model, we don't need workspaceId
@@ -120,10 +115,10 @@ export function Sidebar({ selectedWorkspace, onSelectWorkspace, onNewChat, onSta
             <Button 
               className="w-full justify-start" 
               variant={selectedWorkspace === 'global' ? "default" : "ghost"}
-              onClick={handleStartChat}
+              onClick={() => onNewChat?.()}
             >
               <MessageSquarePlus className="mr-2 h-4 w-4" />
-              Start Chat
+              New Chat
             </Button>
 
             {selectedWorkspace && selectedWorkspace !== 'global' && (

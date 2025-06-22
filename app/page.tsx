@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { useChatSessions } from '@/hooks/use-chat-sessions';
 import { useSessionLifecycle } from '@/hooks/use-session-lifecycle';
+import { apiClient } from '@/lib/api';
 import { toast } from 'sonner';
 
 export default function Home() {
@@ -68,10 +69,42 @@ export default function Home() {
 
   const handleNewChat = async () => {
     console.log('handleNewChat called - starting temporary chat');
+    
+    // Check if user is already in an empty chat
+    const hasUserMessages = chatSessions.currentMessages.some(m => m.type === 'user');
+    const isAlreadyEmpty = chatSessions.isTemporaryChat || (!chatSessions.currentSession && !hasUserMessages);
+    
+    if (isAlreadyEmpty) {
+      toast.info("You're already in a new chat! Start typing to begin a conversation.");
+      return;
+    }
+    
+    // First conclude current session if it exists and has user messages
+    if (chatSessions.currentSession && hasUserMessages) {
+      try {
+        console.log('Concluding current session before starting new chat, session ID:', chatSessions.currentSession.id);
+        console.log('Current messages:', chatSessions.currentMessages.length, 'messages');
+        const result = await apiClient.concludeCurrentAndStartNew(chatSessions.currentSession.id);
+        console.log('Conclusion result:', result);
+      } catch (err) {
+        console.error('Failed to conclude current session:', err);
+      }
+    } else {
+      console.log('No session to conclude or no user messages found');
+      console.log('Current session:', chatSessions.currentSession?.id);
+      console.log('User messages:', chatSessions.currentMessages.filter(m => m.type === 'user').length);
+    }
+    
     // Always start with temporary chat - session will be created when user sends first message
     chatSessions.startTemporaryChat();
+    setSelectedWorkspace('global');
     setChatKey(prev => prev + 1);
     setChatRefreshTrigger(prev => prev + 1); // Trigger recent chats refresh
+    
+    // Auto-collapse sidebar on mobile when starting chat
+    if (isMobile) {
+      setSidebarCollapsed(true);
+    }
   };
 
   const handleSelectWorkspace = (workspaceId: string | 'global') => {
@@ -82,18 +115,7 @@ export default function Home() {
     }
   };
 
-  const handleStartGlobalChat = async () => {
-    console.log('handleStartGlobalChat called - starting temporary chat');
-    // Always start temporary chat mode - session will be created when user sends first message
-    chatSessions.startTemporaryChat();
-    setSelectedWorkspace('global');
-    setChatKey(prev => prev + 1);
-    
-    // Auto-collapse sidebar on mobile when starting chat
-    if (isMobile) {
-      setSidebarCollapsed(true);
-    }
-  };
+
 
   const handleChatSelect = async (chatId: string) => {
     try {
@@ -170,7 +192,6 @@ export default function Home() {
                   selectedWorkspace={selectedWorkspace}
                   onSelectWorkspace={setSelectedWorkspace}
                   onNewChat={handleNewChat}
-                  onStartGlobalChat={handleStartGlobalChat}
                   onChatSelect={handleChatSelect}
                   chatRefreshTrigger={chatRefreshTrigger}
                 />
@@ -190,7 +211,6 @@ export default function Home() {
               <DashboardHome 
                 onSelectWorkspace={setSelectedWorkspace}
                 onNewChat={handleNewChat}
-                onStartGlobalChat={handleStartGlobalChat}
               />
             )}
           </div>
@@ -206,7 +226,6 @@ export default function Home() {
                     selectedWorkspace={selectedWorkspace}
                     onSelectWorkspace={setSelectedWorkspace}
                     onNewChat={handleNewChat}
-                    onStartGlobalChat={handleStartGlobalChat}
                     onChatSelect={handleChatSelect}
                     chatRefreshTrigger={chatRefreshTrigger}
                   />
@@ -227,7 +246,6 @@ export default function Home() {
                   <DashboardHome 
                     onSelectWorkspace={setSelectedWorkspace}
                     onNewChat={handleNewChat}
-                    onStartGlobalChat={handleStartGlobalChat}
                   />
                 )}
               </div>
