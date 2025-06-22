@@ -1,79 +1,58 @@
 from fastapi import APIRouter, HTTPException
 from database import get_db
 from services.openai_service import get_openai_service
+from services.contextual_search_engine import ContextualSearchEngine
 from models import SearchRequest, SearchResponse, SearchResult
 
 router = APIRouter()
 
 @router.post("/search", response_model=SearchResponse)
-async def search_endpoint(request: SearchRequest):
+async def enhanced_search_endpoint(request: SearchRequest):
+    """Enhanced search endpoint with contextual retrieval and context enrichment."""
     try:
         db = get_db()
         openai_service = get_openai_service()
         
-        # Generate embedding for the search query
-        embedding_response = await openai_service.generate_embedding(request.query)
+        # Initialize contextual search engine
+        contextual_engine = ContextualSearchEngine(db, openai_service)
         
-        # Search both documents and chunks
-        doc_results = db.vector_search_documents(
-            query_embedding=embedding_response.embedding,
-            database_filter=request.database_filters,
+        # Use enhanced contextual search
+        results = await contextual_engine.contextual_search(
+            query=request.query,
+            database_filters=request.database_filters,
+            include_context=True,  # Enable context enrichment
             match_threshold=0.7,
             match_count=request.limit
         )
-        
-        chunk_results = db.vector_search_chunks(
-            query_embedding=embedding_response.embedding,
-            database_filter=request.database_filters,
-            match_threshold=0.7,
-            match_count=request.limit
-        )
-        
-        # Combine and sort results by similarity
-        all_results = []
-        
-        # Add document results
-        for doc in doc_results:
-            all_results.append({
-                'id': doc['id'],
-                'title': doc['title'],
-                'content': doc['content'][:200] + '...' if len(doc['content']) > 200 else doc['content'],
-                'similarity': doc['similarity'],
-                'metadata': doc.get('metadata', {}),
-                'notion_page_id': doc['notion_page_id'],
-                'page_url': doc.get('page_url', ''),
-                'type': 'document'
-            })
-        
-        # Add chunk results
-        for chunk in chunk_results:
-            all_results.append({
-                'id': chunk['chunk_id'],
-                'title': chunk['title'],
-                'content': chunk['chunk_content'],
-                'similarity': chunk['similarity'],
-                'metadata': {'chunk_index': chunk['chunk_index'], 'type': 'chunk'},
-                'notion_page_id': chunk['notion_page_id'],
-                'page_url': chunk.get('page_url', ''),
-                'type': 'chunk'
-            })
-        
-        # Sort by similarity and limit results
-        all_results.sort(key=lambda x: x['similarity'], reverse=True)
-        final_results = all_results[:request.limit]
         
         # Format results for client
-        search_results = [
-            SearchResult(
-                id=result['id'],
+        search_results = []
+        for result in results:
+            # Use enriched content if available, otherwise fall back to regular content
+            display_content = result.get('enriched_content', result.get('content', ''))
+            
+            # Truncate very long content for display
+            if len(display_content) > 500:
+                display_content = display_content[:500] + '...'
+            
+            search_results.append(SearchResult(
+                id=result['chunk_id'],
                 title=result['title'],
-                content=result['content'],
-                similarity=result['similarity'],
-                metadata=result['metadata'],
+                content=display_content,
+                similarity=result.get('final_score', result.get('combined_score', 0.0)),
+                metadata={
+                    'chunk_context': result.get('chunk_context', ''),
+                    'chunk_summary': result.get('chunk_summary', ''),
+                    'document_section': result.get('document_section', ''),
+                    'context_type': result.get('context_type', 'standard'),
+                    'has_context_enrichment': result.get('has_context_enrichment', False),
+                    'chunk_index': result.get('chunk_index', 0),
+                    'contextual_similarity': result.get('contextual_similarity', 0.0),
+                    'content_similarity': result.get('content_similarity', 0.0),
+                    'type': 'contextual_chunk'
+                },
                 notion_page_id=result['notion_page_id']
-            )
-            for result in final_results
-        ]
+            ))
         
         return SearchResponse(
             results=search_results,
@@ -82,4 +61,58 @@ async def search_endpoint(request: SearchRequest):
         )
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Enhanced search failed: {str(e)}")
+
+@router.post("/search/hybrid", response_model=SearchResponse)
+async def hybrid_search_endpoint(request: SearchRequest):
+    """Hybrid search endpoint combining documents and contextual chunks."""
+    try:
+        db = get_db()
+        openai_service = get_openai_service()
+        
+        # Initialize contextual search engine
+        contextual_engine = ContextualSearchEngine(db, openai_service)
+        
+        # Use hybrid contextual search
+        results = await contextual_engine.hybrid_contextual_search(
+            query=request.query,
+            database_filters=request.database_filters,
+            content_type_filter=None,  # Could be added to SearchRequest in future
+            match_threshold=0.7,
+            match_count=request.limit
+        )
+        
+        # Format results for client
+        search_results = []
+        for result in results:
+            # Handle both document and chunk results
+            result_id = result.get('id')
+            content = result.get('content', '')
+            
+            # Truncate content for display
+            if len(content) > 500:
+                content = content[:500] + '...'
+            
+            search_results.append(SearchResult(
+                id=result_id,
+                title=result['title'],
+                content=content,
+                similarity=result.get('similarity', 0.0),
+                metadata={
+                    'result_type': result.get('result_type', 'unknown'),
+                    'chunk_context': result.get('chunk_context', ''),
+                    'chunk_summary': result.get('chunk_summary', ''),
+                    'has_adjacent_context': result.get('has_adjacent_context', False),
+                    'type': 'hybrid_result'
+                },
+                notion_page_id=result['notion_page_id']
+            ))
+        
+        return SearchResponse(
+            results=search_results,
+            query=request.query,
+            total=len(search_results)
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Hybrid search failed: {str(e)}")

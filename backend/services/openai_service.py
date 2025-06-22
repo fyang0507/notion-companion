@@ -63,7 +63,7 @@ class OpenAIService:
             "content": system_prompt
         }
         
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=chat_config.model,
             messages=[system_message] + messages,
             temperature=chat_config.temperature,

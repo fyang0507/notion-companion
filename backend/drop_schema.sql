@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS database_schemas;
 DROP TABLE IF EXISTS chat_messages;
 DROP TABLE IF EXISTS chat_sessions;
 DROP TABLE IF EXISTS workspaces;
+DROP TABLE IF EXISTS notion_databases;
 
 
 -- Note: Extensions (vector, pg_trgm) are kept as they're managed by Supabase

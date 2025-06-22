@@ -10,6 +10,7 @@ import re
 import tiktoken
 from services.openai_service import OpenAIService
 from services.database_schema_manager import DatabaseSchemaManager
+from services.contextual_chunker import ContextualChunker
 from database import Database
 from config.model_config import get_model_config
 import asyncio
@@ -36,10 +37,83 @@ class DocumentProcessor:
         self.max_chunk_tokens = limits_config.chunk_size_tokens
         self.chunk_overlap_tokens = limits_config.chunk_overlap_tokens
         self.min_chunk_tokens = 50
+        
+        # Initialize contextual chunker for enhanced RAG
+        self.contextual_chunker = ContextualChunker(
+            openai_service=openai_service,
+            max_tokens=self.max_chunk_tokens,
+            overlap_tokens=self.chunk_overlap_tokens
+        )
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text using tiktoken."""
         return len(self.encoding.encode(text))
+    
+    async def chunk_document(self, content: str, title: str = "") -> List[str]:
+        """
+        Legacy method for backward compatibility with sync script.
+        Uses contextual chunking but returns simple content list.
+        """
+        try:
+            # Use contextual chunking
+            contextual_chunks = await self.contextual_chunker.chunk_with_context(
+                content=content,
+                title=title,
+                page_data={}
+            )
+            
+            # Extract just the content for legacy compatibility
+            return [chunk['content'] for chunk in contextual_chunks]
+            
+        except Exception as e:
+            self.logger.warning(f"Contextual chunking failed, falling back to basic chunking: {str(e)}")
+            # Fallback to basic chunking
+            return self._basic_chunk_fallback(content, title)
+    
+    def _basic_chunk_fallback(self, text: str, title: str = "") -> List[str]:
+        """Basic chunking fallback if contextual chunking fails."""
+        if not text.strip():
+            return []
+        
+        # Simple chunking by paragraphs and token limits
+        sections = re.split(r'\n\s*\n', text)
+        chunks = []
+        current_chunk = ""
+        
+        # Add title context to first chunk if provided
+        title_context = f"# {title}\n\n" if title else ""
+        title_tokens = self.count_tokens(title_context)
+        
+        for section in sections:
+            section = section.strip()
+            if not section:
+                continue
+            
+            section_tokens = self.count_tokens(section)
+            
+            # Check if adding this section would exceed chunk size
+            if current_chunk and self.count_tokens(current_chunk + "\n\n" + section) > self.max_chunk_tokens - title_tokens:
+                # Save current chunk
+                if current_chunk.strip():
+                    chunk_content = title_context + current_chunk if len(chunks) == 0 else current_chunk
+                    chunks.append(chunk_content.strip())
+                    title_context = ""  # Only add title to first chunk
+                
+                # Start new chunk
+                current_chunk = section
+            else:
+                # Add section to current chunk
+                if current_chunk:
+                    current_chunk += "\n\n" + section
+                else:
+                    current_chunk = section
+        
+        # Add final chunk
+        if current_chunk.strip():
+            chunk_content = title_context + current_chunk if len(chunks) == 0 else current_chunk
+            chunks.append(chunk_content.strip())
+        
+        return chunks
     
     def chunk_text(self, text: str, title: str = "") -> List[Dict[str, Any]]:
         """Split text into chunks with overlap, preserving semantic boundaries."""
@@ -313,15 +387,19 @@ class DocumentProcessor:
             return {'document_id': document_id, 'chunks_created': 0}
         
         else:
-            # Chunk the document
-            chunks = self.chunk_text(content, title)
+            # Use contextual chunking for enhanced RAG
+            contextual_chunks = await self.contextual_chunker.chunk_with_context(
+                content=content,
+                title=title,
+                page_data=page_data
+            )
             
-            if not chunks:
+            if not contextual_chunks:
                 raise ValueError(f"No valid chunks generated for page {notion_page_id}")
             
             document_data.update({
                 'is_chunked': True,
-                'chunk_count': len(chunks),
+                'chunk_count': len(contextual_chunks),
                 'processing_status': 'completed'
             })
             
@@ -333,11 +411,11 @@ class DocumentProcessor:
                 metadata_record['document_id'] = document_id
                 self._store_document_metadata(metadata_record)
             
-            # Generate and store chunks
-            await self._store_document_chunks(document_id, chunks, title)
+            # Generate embeddings and store enhanced chunks
+            await self._store_contextual_chunks(document_id, contextual_chunks, title)
             
-            self.logger.info(f"Stored document {notion_page_id} with {len(chunks)} chunks")
-            return {'document_id': document_id, 'chunks_created': len(chunks)}
+            self.logger.info(f"Stored document {notion_page_id} with {len(contextual_chunks)} chunks")
+            return {'document_id': document_id, 'chunks_created': len(contextual_chunks)}
     
     def _determine_content_type(self, title: str, content: str, page_data: Dict[str, Any]) -> str:
         """Determine the content type based on title, content, and properties."""
@@ -383,39 +461,92 @@ class DocumentProcessor:
             self.logger.error(f"Failed to store metadata for document {metadata_record['document_id']}: {str(e)}")
             raise
     
-    async def _store_document_chunks(self, document_id: str, chunks: List[Dict[str, Any]], title: str) -> None:
-        """Generate embeddings and store document chunks."""
-        chunk_data_list = []
+    async def _store_contextual_chunks(self, document_id: str, chunks: List[Dict[str, Any]], title: str) -> None:
+        """Generate embeddings and store enhanced contextual chunks."""
+        # First, generate embeddings for all chunks
+        chunks_with_embeddings = await self.contextual_chunker.generate_chunk_embeddings(chunks)
         
-        for chunk in chunks:
+        chunk_data_list = []
+        chunk_id_mapping = {}  # Track temp IDs to real IDs for linking
+        
+        # First pass: create chunks with embeddings
+        for chunk in chunks_with_embeddings:
             try:
-                embedding_response = await self.openai_service.generate_embedding(chunk['content'])
+                chunk_id = str(uuid.uuid4())
+                chunk_id_mapping[chunk.get('temp_id')] = chunk_id
+                
+                # Extract embedding responses
+                content_embedding = chunk.get('content_embedding_response')
+                contextual_embedding = chunk.get('contextual_embedding_response')
                 
                 chunk_data = {
-                    'id': str(uuid.uuid4()),
+                    'id': chunk_id,
                     'document_id': document_id,
-                    'chunk_index': chunk['index'],
+                    'chunk_order': chunk['index'],
                     'content': chunk['content'],
-                    'embedding': embedding_response.embedding,
                     'token_count': chunk['token_count'],
-                    'content_type': 'text'  # Default for now
+                    
+                    # Contextual retrieval fields
+                    'chunk_context': chunk.get('chunk_context', ''),
+                    'chunk_summary': chunk.get('chunk_summary', ''),
+                    'document_section': chunk.get('section_title', ''),
+                    'section_hierarchy': chunk.get('hierarchy', {}),
+                    
+                    # Content type awareness
+                    'chunk_type': chunk.get('chunk_type', 'content'),
+                    'content_density_score': 0.5,  # Default value
+                    
+                    # Positional metadata
+                    'chunk_position_metadata': chunk.get('chunk_position', {}),
+                    
+                    # Embeddings (both strategies)
+                    'embedding': content_embedding.embedding if content_embedding else None,
+                    'contextual_embedding': contextual_embedding.embedding if contextual_embedding else None
                 }
+                
                 chunk_data_list.append(chunk_data)
                 
-                # Add small delay to avoid rate limits
-                await asyncio.sleep(0.1)
-                
             except Exception as e:
-                self.logger.error(f"Failed to process chunk {chunk['index']} for document {document_id}: {str(e)}")
+                self.logger.error(f"Failed to process contextual chunk {chunk['index']} for document {document_id}: {str(e)}")
                 continue
         
         # Store chunks in database
         if chunk_data_list:
             try:
                 self.db.client.table('document_chunks').upsert(chunk_data_list).execute()
+                self.logger.info(f"Stored {len(chunk_data_list)} contextual chunks for document {document_id}")
             except Exception as e:
-                self.logger.error(f"Failed to store chunks for document {document_id}: {str(e)}")
+                self.logger.error(f"Failed to store contextual chunks for document {document_id}: {str(e)}")
                 raise
+        
+        # Second pass: update positional links between chunks
+        await self._update_chunk_positional_links(chunks, chunk_id_mapping)
+    
+    async def _update_chunk_positional_links(self, chunks: List[Dict[str, Any]], chunk_id_mapping: Dict[str, str]) -> None:
+        """Update positional links between adjacent chunks."""
+        try:
+            for chunk in chunks:
+                chunk_id = chunk_id_mapping.get(chunk.get('temp_id'))
+                if not chunk_id:
+                    continue
+                
+                prev_chunk_id = chunk_id_mapping.get(chunk.get('prev_chunk_ref'))
+                next_chunk_id = chunk_id_mapping.get(chunk.get('next_chunk_ref'))
+                
+                if prev_chunk_id or next_chunk_id:
+                    update_data = {}
+                    if prev_chunk_id:
+                        update_data['prev_chunk_id'] = prev_chunk_id
+                    if next_chunk_id:
+                        update_data['next_chunk_id'] = next_chunk_id
+                    
+                    self.db.client.table('document_chunks').update(update_data).eq('id', chunk_id).execute()
+            
+            self.logger.debug("Updated positional links between chunks")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to update chunk positional links: {str(e)}")
+            # Continue without positional links - not critical for basic functionality
     
     async def update_document(self, 
                              database_id: str,
