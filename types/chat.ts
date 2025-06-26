@@ -10,10 +10,10 @@ export interface Citation {
 
 export interface ChatMessage {
   id: string;
-  type: 'user' | 'bot';
+  role: 'user' | 'assistant' | 'bot';
   content: string;
   timestamp: Date;
-  citations: Citation[];
+  citations?: Citation[];
 }
 
 export interface Workspace {

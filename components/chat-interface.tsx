@@ -514,10 +514,10 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
               key={message.id}
               className={cn(
                 "flex gap-3 md:gap-4",
-                message.type === 'user' ? "justify-end" : "justify-start"
+                message.role === 'user' ? "justify-end" : "justify-start"
               )}
             >
-              {message.type === 'bot' && (
+              {message.role === 'bot' && (
                 <div className="w-8 h-8 rounded-full gradient-bg flex items-center justify-center flex-shrink-0">
                   <Bot className="h-4 w-4 text-white" />
                 </div>
@@ -525,11 +525,11 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
 
               <div className={cn(
                 "flex flex-col gap-2 max-w-[85%] md:max-w-[70%]",
-                message.type === 'user' ? "items-end" : "items-start"
+                message.role === 'user' ? "items-end" : "items-start"
               )}>
                 <Card className={cn(
                   "message-stream",
-                  message.type === 'user' 
+                  message.role === 'user' 
                     ? "bg-primary text-primary-foreground" 
                     : "bg-muted/50"
                 )}>
@@ -552,12 +552,12 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
                 </Card>
 
                 {/* Citations */}
-                {message.type === 'bot' && message.citations.length > 0 && message.content && (
+                {message.role === 'bot' && message.citations.length > 0 && message.content && (
                   <MessageCitations citations={message.citations} />
                 )}
 
                 {/* Message Actions */}
-                {message.type === 'bot' && !streamingMessageId && message.content && !isMobile && (
+                {message.role === 'bot' && !streamingMessageId && message.content && !isMobile && (
                   <div className="flex items-center gap-1">
                     <Button 
                       variant="ghost" 
@@ -576,7 +576,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
                 )}
               </div>
 
-              {message.type === 'user' && (
+              {message.role === 'user' && (
                 <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
                   <User className="h-4 w-4 text-primary-foreground" />
                 </div>

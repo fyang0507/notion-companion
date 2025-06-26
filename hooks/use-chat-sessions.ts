@@ -171,7 +171,7 @@ export function useChatSessions(): ChatSessionHook {
 
   const addMessage = useCallback(async (message: ChatMessage, sessionContext?: Record<string, any>): Promise<string | null> => {
     // If we're in temporary chat mode and this is a user message, create the session
-    if (isTemporaryChat && message.type === 'user') {
+    if (isTemporaryChat && message.role === 'user') {
       try {
         console.log('Creating session for first user message in temporary chat');
         const contextToUse = sessionContext || pendingSessionContext || {};
@@ -222,7 +222,7 @@ export function useChatSessions(): ChatSessionHook {
     
     // For existing sessions, save user messages immediately to prevent duplicates
     // Bot messages are saved later when streaming is complete
-    if (currentSession && message.type === 'user') {
+    if (currentSession && message.role === 'user') {
       try {
         const backendMessage: ChatMessageCreate = {
           role: 'user',
@@ -256,7 +256,7 @@ export function useChatSessions(): ChatSessionHook {
     try {
       // Convert frontend message to backend format
       const backendMessage: ChatMessageCreate = {
-        role: message.type === 'user' ? 'user' : 'assistant',
+        role: message.role === 'user' ? 'user' : 'assistant',
         content: message.content,
         citations: message.citations || [],
         context_used: {}
