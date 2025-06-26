@@ -50,7 +50,22 @@ def mock_openai_client():
 @pytest.fixture
 def mock_notion_client():
     """Mock Notion client for testing."""
-    mock_client = AsyncMock()
+    mock_client = Mock()
+    
+    # Mock search response
+    mock_client.search.return_value = {
+        "results": [
+            {
+                "id": "test-page-id",
+                "properties": {
+                    "Name": {"title": [{"text": {"content": "Test Page"}}]},
+                    "Content": {"rich_text": [{"text": {"content": "Test content"}}]}
+                },
+                "last_edited_time": "2023-01-01T00:00:00.000Z"
+            }
+        ],
+        "has_more": False
+    }
     
     # Mock database query response
     mock_client.databases.query.return_value = {

@@ -110,6 +110,7 @@ class TestDatabase:
     def test_vector_search_functionality(self, database_service, mock_supabase_client):
         """Test vector search functionality."""
         # Mock vector search response
+        mock_rpc_chain = Mock()
         mock_response = Mock()
         mock_response.data = [
             {
@@ -125,13 +126,13 @@ class TestDatabase:
                 "document_id": "doc-2"
             }
         ]
-        mock_supabase_client.rpc.return_value = mock_response
+        mock_rpc_chain.execute.return_value = mock_response
+        mock_supabase_client.rpc.return_value = mock_rpc_chain
         
         # Mock embedding vector
         test_embedding = [0.1] * 1536
         
-        # Call vector search (assuming this method exists in your Database class)
-        # Note: You may need to adjust this based on your actual implementation
+        # Call vector search
         result = database_service.client.rpc('match_contextual_chunks', {
             'query_embedding': test_embedding,
             'database_filter': None,
@@ -144,7 +145,12 @@ class TestDatabase:
         assert result.data[0]["similarity"] == 0.85
         
         # Verify RPC was called correctly
-        mock_supabase_client.rpc.assert_called_once()
+        mock_supabase_client.rpc.assert_called_once_with('match_contextual_chunks', {
+            'query_embedding': test_embedding,
+            'database_filter': None,
+            'match_threshold': 0.7,
+            'match_count': 5
+        })
     
     def test_document_operations(self, database_service, mock_supabase_client):
         """Test document CRUD operations."""

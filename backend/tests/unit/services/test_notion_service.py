@@ -155,22 +155,27 @@ class TestNotionService:
     
     async def test_search_pages_pagination_safety_limit(self, notion_service, mock_notion_client):
         """Test pagination safety limit prevents infinite loops."""
-        # Always return has_more=True to test safety limit
-        mock_response = {
-            "results": [{"id": f"page-{i}"} for i in range(100)],
-            "has_more": True,
-            "next_cursor": "cursor-123"
-        }
-        mock_notion_client.search.return_value = mock_response
+        # Create responses that would exceed 1000 if not limited
+        responses = []
+        # Create 15 pages of 100 results each (would be 1500 total)
+        for i in range(15):
+            is_last = i == 14
+            response = {
+                "results": [{"id": f"page-{i * 100 + j}"} for j in range(100)],
+                "has_more": not is_last,
+                "next_cursor": f"cursor-{i}" if not is_last else None
+            }
+            responses.append(response)
+        
+        mock_notion_client.search.side_effect = responses
         
         # Call the service
         result = await notion_service.search_pages()
         
         # Should stop at safety limit (1000 pages)
         assert len(result) <= 1000
-        # Should have made multiple calls but not infinite
-        assert mock_notion_client.search.call_count >= 1
-        assert mock_notion_client.search.call_count <= 10  # Reasonable upper bound
+        # Should have made exactly 10 calls to reach the 1000 limit
+        assert mock_notion_client.search.call_count == 10
     
     async def test_search_pages_page_size_parameter(self, notion_service, mock_notion_client):
         """Test page size parameter is passed correctly."""
