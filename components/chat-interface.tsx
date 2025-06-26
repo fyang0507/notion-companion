@@ -110,16 +110,6 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   // Use chat session messages when available, otherwise fall back to local state
   const [fallbackMessages, setFallbackMessages] = useState<ChatMessage[]>(localMessages);
   
-  // Get messages from chat sessions if available, otherwise use local state
-  const messages = activeChatSessions?.currentMessages || fallbackMessages;
-  
-  // Sync local messages when chat sessions change (for session loading)
-  useEffect(() => {
-    if (activeChatSessions?.currentMessages) {
-      setFallbackMessages(activeChatSessions.currentMessages);
-    }
-  }, [activeChatSessions?.currentMessages]);
-
   // Initialize temporary chat mode if no session exists
   useEffect(() => {
     if (activeChatSessions && !activeChatSessions.currentSession && !activeChatSessions.isTemporaryChat && !hasInitialized.current) {
@@ -132,6 +122,21 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  
+  // Sync local messages when chat sessions change (for session loading)
+  // But DON'T sync during streaming to avoid overwriting the assistant placeholder
+  useEffect(() => {
+    if (activeChatSessions?.currentMessages && !streamingMessageId) {
+      setFallbackMessages(activeChatSessions.currentMessages);
+    }
+  }, [activeChatSessions?.currentMessages, streamingMessageId]);
+  
+  // Get messages from chat sessions if available, otherwise use local state
+  // During streaming, prioritize fallbackMessages to show real-time updates
+  const messages = (streamingMessageId && fallbackMessages.length > 0) 
+    ? fallbackMessages 
+    : (activeChatSessions?.currentMessages || fallbackMessages);
+  
   const [selectedModel, setSelectedModel] = useState<AIModel>(availableModels[0]); // Default to GPT-4o Mini
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [filters, setFilters] = useState<ChatFilter>({
@@ -162,12 +167,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Start temporary chat on mount
-  useEffect(() => {
-    if (activeChatSessions?.startTemporaryChat) {
-      activeChatSessions.startTemporaryChat();
-    }
-  }, []); // Empty dependency array means this runs once on mount
+  // Removed redundant temporary chat initialization - handled by the main useEffect above
 
   const handleCopyMessage = async (text: string, messageId: string) => {
     try {
@@ -200,11 +200,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     // Clear any previous errors
     setError(null);
 
-    console.log('handleSend called', { 
-      hasChatSessions: !!activeChatSessions, 
-      isTemporaryChat: activeChatSessions?.isTemporaryChat,
-      currentSession: activeChatSessions?.currentSession?.id 
-    });
+    // Debug logging removed to reduce console noise
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -231,6 +227,10 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       };
       
       sessionId = await activeChatSessions.addMessage(userMessage, sessionContext);
+      
+      // CRITICAL: Ensure fallback messages include the user message before adding assistant placeholder
+      const messagesWithUser = [...fallbackMessages, userMessage];
+      setFallbackMessages(messagesWithUser);
     } else {
       setFallbackMessages(prev => [...prev, userMessage]);
     }
@@ -249,14 +249,14 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       isStreaming: true
     };
 
-    // Add assistant message placeholder
-    if (activeChatSessions) {
-      setFallbackMessages(prev => [...activeChatSessions.currentMessages, assistantMessage]);
-    } else {
-      setFallbackMessages(prev => [...prev, assistantMessage]);
-    }
-
+    // CRITICAL: Set streaming ID FIRST to prevent sync effect from interfering
     setStreamingMessageId(assistantMessageId);
+
+    // Add assistant message placeholder
+    // Use the most recent messages state (either from session sync or manual user message addition)
+    const currentFallback = activeChatSessions ? [...fallbackMessages] : fallbackMessages;
+    const messagesWithAssistant = [...currentFallback, assistantMessage];
+    setFallbackMessages(messagesWithAssistant);
 
     try {
       // Prepare request data using the existing ChatRequest interface
@@ -284,12 +284,22 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
+            const dataContent = line.slice(6);
+            console.log('Processing SSE line:', dataContent);
+            
+            // Check for stream termination signal
+            if (dataContent === '[DONE]') {
+              console.log('Received [DONE] signal, breaking');
+              break;
+            }
+            
             try {
-              const data = JSON.parse(line.slice(6));
+              const data = JSON.parse(dataContent);
+              console.log('Parsed SSE data:', data);
               
-              if (data.type === 'content') {
+              if (data.content) {
                 fullContent += data.content;
-                
+                console.log('Received content chunk:', data.content, 'Total content:', fullContent.length);
                 // Update streaming message
                 const updateMessage = (msgs: ChatMessage[]) => 
                   msgs.map(msg => 
@@ -302,11 +312,12 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
                   const allMessages = activeChatSessions.currentMessages.some(m => m.id === assistantMessageId) 
                     ? activeChatSessions.currentMessages 
                     : [...activeChatSessions.currentMessages, assistantMessage];
-                  setFallbackMessages(updateMessage(allMessages));
+                  const updatedMessages = updateMessage(allMessages);
+                  setFallbackMessages(updatedMessages);
                 } else {
                   setFallbackMessages(updateMessage);
                 }
-              } else if (data.type === 'citations') {
+              } else if (data.citations) {
                 citations = data.citations;
               } else if (data.type === 'done') {
                 break;
@@ -331,6 +342,12 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       // Save the final assistant message to session if available
       if (activeChatSessions) {
         await activeChatSessions.saveMessageImmediately(finalAssistantMessage);
+        // CRITICAL: Update the assistant message in session state to trigger re-renders
+        activeChatSessions.updateMessage(assistantMessageId, {
+          content: fullContent,
+          isStreaming: false,
+          citations: citations
+        });
       }
 
       // Update messages to show final message
@@ -350,6 +367,12 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
         setFallbackMessages(updateFinalMessage);
       }
 
+      // CRITICAL: Ensure the final message persists in fallback messages before clearing streaming
+      const finalMessages = activeChatSessions?.currentMessages?.length 
+        ? [...activeChatSessions.currentMessages, finalAssistantMessage]
+        : updateFinalMessage(fallbackMessages);
+      setFallbackMessages(finalMessages);
+      
       setStreamingMessageId(null);
       setIsLoading(false);
       

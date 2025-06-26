@@ -87,7 +87,7 @@ class OpenAIService:
             "content": system_prompt
         }
         
-        stream = self.client.chat.completions.create(
+        stream = await self.client.chat.completions.create(
             model=chat_config.model,
             messages=[system_message] + messages,
             temperature=chat_config.temperature,
@@ -95,7 +95,7 @@ class OpenAIService:
             stream=True,
         )
         
-        for chunk in stream:
+        async for chunk in stream:
             content = chunk.choices[0].delta.content
             if content:
                 yield content
@@ -132,7 +132,7 @@ class OpenAIService:
             max_length=max_length
         )
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=summarization_config.model,
             messages=[{
                 "role": "user", 
@@ -179,7 +179,7 @@ class OpenAIService:
         )
 
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=summarization_config.model,
                 messages=[{
                     "role": "user", 
@@ -238,7 +238,7 @@ class OpenAIService:
             # Use centralized prompt management
             summary_prompt = self.model_config.format_chat_summary_prompt(conversation_text)
             
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=summarization_config.model,
                 messages=[
                     {"role": "user", "content": summary_prompt}

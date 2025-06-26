@@ -25,9 +25,13 @@ export function RecentChats({ onChatSelect, refreshTrigger }: RecentChatsProps) 
   const [error, setError] = useState<string | null>(null);
 
   // Load recent chats on component mount and when refresh trigger changes
+  // Add debounce to prevent excessive API calls
   useEffect(() => {
-    console.log('Recent chats refresh triggered, refreshTrigger:', refreshTrigger);
-    loadRecentChats();
+    const timeoutId = setTimeout(() => {
+      loadRecentChats();
+    }, 100); // 100ms debounce
+
+    return () => clearTimeout(timeoutId);
   }, [refreshTrigger]);
 
   const loadRecentChats = async () => {

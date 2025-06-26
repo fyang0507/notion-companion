@@ -303,7 +303,6 @@ export function useChatSessions(): ChatSessionHook {
   const startTemporaryChat = useCallback((sessionContext?: Record<string, any>): void => {
     // This is the main entry point for starting new chats
     // Session will be created automatically when user sends first message
-    console.log('Starting temporary chat mode');
     
     // Clear any existing session and messages
     setCurrentSession(null);
