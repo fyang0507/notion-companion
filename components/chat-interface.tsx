@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -16,7 +17,9 @@ import {
   ArrowLeft,
   ChevronDown,
   Check,
-  Plus
+  Plus,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MessageCitations } from '@/components/message-citations';
@@ -26,7 +29,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { apiClient } from '@/lib/api';
 import { useNotionConnection } from '@/hooks/use-notion-connection';
 import { useNotionDatabases } from '@/hooks/use-notion-databases';
-import { ChatSessionHook } from '@/hooks/use-chat-sessions';
+import { ChatSessionHook, useChatSessions } from '@/hooks/use-chat-sessions';
 import { useSessionLifecycle } from '@/hooks/use-session-lifecycle';
 
 interface ChatInterfaceProps {
@@ -86,8 +89,12 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   const { connection, isConnected } = useNotionConnection();
   const { databases } = useNotionDatabases();
   
+  // Use the hook as fallback when no chatSessions prop is provided
+  const hookChatSessions = useChatSessions();
+  const activeChatSessions = chatSessions || hookChatSessions;
+  
   // Set up session lifecycle management (window close, idle detection, etc.)
-  useSessionLifecycle({ chatSessions: chatSessions || null });
+  useSessionLifecycle({ chatSessions: activeChatSessions || null });
   
   // Use messages from chat sessions if available, otherwise use local state
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([
@@ -104,23 +111,23 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   const [fallbackMessages, setFallbackMessages] = useState<ChatMessage[]>(localMessages);
   
   // Get messages from chat sessions if available, otherwise use local state
-  const messages = chatSessions?.currentMessages || fallbackMessages;
+  const messages = activeChatSessions?.currentMessages || fallbackMessages;
   
   // Sync local messages when chat sessions change (for session loading)
   useEffect(() => {
-    if (chatSessions?.currentMessages) {
-      setFallbackMessages(chatSessions.currentMessages);
+    if (activeChatSessions?.currentMessages) {
+      setFallbackMessages(activeChatSessions.currentMessages);
     }
-  }, [chatSessions?.currentMessages]);
+  }, [activeChatSessions?.currentMessages]);
 
   // Initialize temporary chat mode if no session exists
   useEffect(() => {
-    if (chatSessions && !chatSessions.currentSession && !chatSessions.isTemporaryChat && !hasInitialized.current) {
+    if (activeChatSessions && !activeChatSessions.currentSession && !activeChatSessions.isTemporaryChat && !hasInitialized.current) {
       console.log('Chat interface loaded without session - starting temporary chat mode');
       hasInitialized.current = true;
-      chatSessions.startTemporaryChat();
+      activeChatSessions.startTemporaryChat();
     }
-  }, [chatSessions, chatSessions?.currentSession, chatSessions?.isTemporaryChat]);
+  }, [activeChatSessions, activeChatSessions?.currentSession, activeChatSessions?.isTemporaryChat]);
   
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -137,9 +144,13 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   });
   const [isMobile, setIsMobile] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  
+  // Error handling state
+  const [error, setError] = useState<string | null>(null);
+  const [lastFailedMessage, setLastFailedMessage] = useState<string>('');
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const hasInitialized = useRef(false);
 
   // Check if mobile
@@ -175,13 +186,24 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     }
   }, [messages]);
 
+  const handleRetry = () => {
+    if (lastFailedMessage) {
+      setInput(lastFailedMessage);
+      setError(null);
+      setLastFailedMessage('');
+    }
+  };
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
+    // Clear any previous errors
+    setError(null);
+
     console.log('handleSend called', { 
-      hasChatSessions: !!chatSessions, 
-      isTemporaryChat: chatSessions?.isTemporaryChat,
-      currentSession: chatSessions?.currentSession?.id 
+      hasChatSessions: !!activeChatSessions, 
+      isTemporaryChat: activeChatSessions?.isTemporaryChat,
+      currentSession: activeChatSessions?.currentSession?.id 
     });
 
     const userMessage: ChatMessage = {
@@ -192,38 +214,44 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       citations: []
     };
 
+    // Store the message for potential retry
+    setLastFailedMessage(input);
+
     // Add message through chat sessions if available
     // addMessage will handle session creation if we're in temporary chat mode
     let sessionId: string | null = null;
-    if (chatSessions) {
+    if (activeChatSessions) {
       const sessionContext = {
         database_filters: filters.workspaces,
-        model_used: selectedModel.id,
-        initial_filters: filters
+        document_type_filters: filters.documentTypes,
+        author_filters: filters.authors,
+        tag_filters: filters.tags,
+        date_range_filter: filters.dateRange,
+        search_query_filter: filters.searchQuery
       };
-      sessionId = await chatSessions.addMessage(userMessage, sessionContext);
+      
+      sessionId = await activeChatSessions.addMessage(userMessage, sessionContext);
     } else {
       setFallbackMessages(prev => [...prev, userMessage]);
     }
 
-    const currentInput = input;
     setInput('');
     setIsLoading(true);
-
-    // Create placeholder for bot response with streaming indicator
+    
+    // Create bot message placeholder
     const botMessageId = `bot-${Date.now()}`;
     const botMessage: ChatMessage = {
       id: botMessageId,
-      role: 'assistant',
+      role: 'bot',
       content: '',
       timestamp: new Date(),
-      citations: []
+      citations: [],
+      isStreaming: true
     };
 
-    // Add empty bot message immediately for streaming visualization
-    if (chatSessions) {
-      const currentMessages = chatSessions.currentMessages;
-      setFallbackMessages([...currentMessages, botMessage]);
+    // Add bot message placeholder
+    if (activeChatSessions) {
+      setFallbackMessages(prev => [...activeChatSessions.currentMessages, botMessage]);
     } else {
       setFallbackMessages(prev => [...prev, botMessage]);
     }
@@ -231,19 +259,20 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     setStreamingMessageId(botMessageId);
 
     try {
-      const finalSessionId = sessionId || 'temp-session';
-      
-      const response = await apiClient.sendChatMessage({
+      // Prepare request data using the existing ChatRequest interface
+      const requestData: import('@/lib/api').ChatRequest = {
         messages: [
-          { role: 'user', content: currentInput }
+          { role: 'user', content: userMessage.content }
         ],
         database_filters: filters.workspaces,
-        session_id: finalSessionId
-      });
+        session_id: sessionId || 'temp-session'
+      };
 
-      const reader = response.getReader();
+      const responseStream = await apiClient.sendChatMessage(requestData);
+      
+      const reader = responseStream.getReader();
       const decoder = new TextDecoder();
-      let accumulatedContent = '';
+      let fullContent = '';
       let citations: any[] = [];
 
       while (true) {
@@ -255,52 +284,53 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') continue;
-
             try {
-              const parsed = JSON.parse(data);
+              const data = JSON.parse(line.slice(6));
               
-              if (parsed.content) {
-                accumulatedContent += parsed.content;
+              if (data.type === 'content') {
+                fullContent += data.content;
                 
-                // Update the streaming message
+                // Update streaming message
                 const updateMessage = (msgs: ChatMessage[]) => 
                   msgs.map(msg => 
                     msg.id === botMessageId 
-                      ? { ...msg, content: accumulatedContent, citations: parsed.citations || citations }
+                      ? { ...msg, content: fullContent, isStreaming: true }
                       : msg
                   );
 
-                if (chatSessions) {
-                  setFallbackMessages(updateMessage(chatSessions.currentMessages.concat([botMessage])));
+                if (activeChatSessions) {
+                  const allMessages = activeChatSessions.currentMessages.some(m => m.id === botMessageId) 
+                    ? activeChatSessions.currentMessages 
+                    : [...activeChatSessions.currentMessages, botMessage];
+                  setFallbackMessages(updateMessage(allMessages));
                 } else {
                   setFallbackMessages(updateMessage);
                 }
-              }
-
-              if (parsed.citations) {
-                citations = parsed.citations;
+              } else if (data.type === 'citations') {
+                citations = data.citations;
+              } else if (data.type === 'done') {
+                break;
               }
             } catch (e) {
-              // Skip malformed JSON
+              console.error('Error parsing SSE data:', e);
             }
           }
         }
       }
 
-      // Finalize the message
+      // Create final bot message
       const finalBotMessage: ChatMessage = {
         id: botMessageId,
-        role: 'assistant',
-        content: accumulatedContent,
+        role: 'bot',
+        content: fullContent,
         timestamp: new Date(),
-        citations: citations
+        citations: citations,
+        isStreaming: false
       };
 
       // Save the final bot message to session if available
-      if (chatSessions && sessionId) {
-        await chatSessions.saveMessageImmediately(finalBotMessage);
+      if (activeChatSessions && sessionId) {
+        await activeChatSessions.saveMessageImmediately(finalBotMessage);
       }
 
       // Update final state
@@ -311,24 +341,30 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
             : msg
         );
 
-      if (chatSessions) {
-        const allMessages = chatSessions.currentMessages.some(m => m.id === botMessageId) 
-          ? chatSessions.currentMessages 
-          : [...chatSessions.currentMessages, botMessage];
+      if (activeChatSessions) {
+        const allMessages = activeChatSessions.currentMessages.some(m => m.id === botMessageId) 
+          ? activeChatSessions.currentMessages 
+          : [...activeChatSessions.currentMessages, botMessage];
         setFallbackMessages(updateFinalMessage(allMessages));
       } else {
         setFallbackMessages(updateFinalMessage);
       }
 
+      // Clear the stored message on success
+      setLastFailedMessage('');
+
     } catch (error) {
       console.error('Chat error:', error);
+      
+      // Set error state
+      setError('Failed to send message. Please check your connection and try again.');
       
       // Remove the empty bot message on error
       const removeFailedMessage = (msgs: ChatMessage[]) => 
         msgs.filter(msg => msg.id !== botMessageId);
 
-      if (chatSessions) {
-        setFallbackMessages(removeFailedMessage(chatSessions.currentMessages.concat([botMessage])));
+      if (activeChatSessions) {
+        setFallbackMessages(removeFailedMessage(activeChatSessions.currentMessages.concat([botMessage])));
       } else {
         setFallbackMessages(removeFailedMessage);
       }
@@ -369,6 +405,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       e.preventDefault();
       handleSend();
     }
+    // Allow Shift+Enter for multiline input - don't prevent default
   };
 
   const handleBackToHome = () => {
@@ -381,6 +418,17 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   };
 
   const getWorkspaceDisplayName = () => {
+    // Show session title if we have a current session
+    if (activeChatSessions?.currentSession?.title) {
+      return activeChatSessions.currentSession.title;
+    }
+    
+    // Show "New Chat" for temporary chat sessions
+    if (activeChatSessions?.isTemporaryChat) {
+      return 'New Chat';
+    }
+    
+    // Fall back to workspace/database filtering display
     if (filters.workspaces.length === 0) {
       return isConnected && connection ? connection.name : 'AI Chat';
     }
@@ -391,6 +439,21 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     }
     
     return `${filters.workspaces.length} Databases`;
+  };
+
+  const getSubtitleText = () => {
+    // Show "Chat Session" for active sessions
+    if (activeChatSessions?.currentSession?.title) {
+      return 'Chat Session';
+    }
+    
+    // Show "New Chat" subtitle for temporary sessions
+    if (activeChatSessions?.isTemporaryChat) {
+      return 'Start a conversation to save this session';
+    }
+    
+    // Default subtitle for workspace mode
+    return 'AI-powered search with intelligent filtering';
   };
 
   return (
@@ -426,10 +489,10 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
             
             <div className="min-w-0 flex-1">
               <h2 className="font-semibold text-base md:text-lg truncate">
-                {chatSessions?.currentSession?.title || getWorkspaceDisplayName()}
+                {getWorkspaceDisplayName()}
               </h2>
               <p className="text-xs md:text-sm text-muted-foreground">
-                {chatSessions?.currentSession?.title ? 'Chat Session' : 'AI-powered search with intelligent filtering'}
+                {getSubtitleText()}
               </p>
             </div>
           </div>
@@ -511,6 +574,35 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       {/* Messages */}
       <ScrollArea className="flex-1 p-3 md:p-4" ref={scrollAreaRef}>
         <div className="space-y-4 md:space-y-6 max-w-4xl mx-auto">
+          {/* Error Message */}
+          {(error || activeChatSessions?.error) && (
+            <div className="flex justify-center">
+              <Card className="bg-destructive/10 border-destructive/20 max-w-md">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm text-destructive font-medium mb-2">
+                        {error || activeChatSessions?.error}
+                      </p>
+                      {(lastFailedMessage || activeChatSessions?.error) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRetry}
+                          className="gap-2 text-destructive border-destructive/20 hover:bg-destructive/10"
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Retry
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
           {messages.map((message) => (
             <div
               key={message.id}
@@ -591,21 +683,35 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       {/* Input */}
       <div className="border-t p-3 md:p-4">
         <div className="max-w-4xl mx-auto">
-          <div className="flex gap-2">
-            <Input
+          <div className="flex gap-2 items-end">
+            <Textarea
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyPress}
               placeholder={`Ask me anything${getFilterContext()}...`}
               disabled={isLoading || chatOperationLoading}
-              className="flex-1"
+              className="flex-1 min-h-[44px] max-h-32 resize-none"
+              rows={1}
+              aria-label="message input"
+              tabIndex={0}
+              style={{
+                height: 'auto',
+                minHeight: '44px'
+              }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = 'auto';
+                target.style.height = `${Math.min(target.scrollHeight, 128)}px`;
+              }}
             />
             <Button 
               onClick={handleSend} 
               disabled={!input.trim() || isLoading || chatOperationLoading}
               size="icon"
-              className="flex-shrink-0"
+              className="flex-shrink-0 h-11 w-11"
+              aria-label="Send message"
+              tabIndex={1}
             >
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

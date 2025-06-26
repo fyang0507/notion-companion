@@ -14,6 +14,7 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   citations?: Citation[];
+  isStreaming?: boolean;
 }
 
 export interface Workspace {
