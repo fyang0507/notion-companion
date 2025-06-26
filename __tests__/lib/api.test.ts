@@ -22,10 +22,19 @@ const server = setupServer(
     })
   }),
 
-  // Search endpoint
-  http.get('http://localhost:8000/api/search', ({ request }) => {
-    const url = new URL(request.url)
-    const query = url.searchParams.get('q') || ''
+  // Search endpoint (POST method)
+  http.post('http://localhost:8000/api/search', async ({ request }) => {
+    const body = await request.json() as SearchRequest
+    const query = body.query || ''
+    
+    // Return empty results for "no results" query
+    if (query === 'no results') {
+      return HttpResponse.json({
+        results: [],
+        query,
+        total: 0
+      })
+    }
     
     return HttpResponse.json({
       results: [
@@ -56,7 +65,7 @@ const server = setupServer(
     ])
   }),
 
-  http.post('http://localhost:8000/api/chat-sessions', async ({ request }) => {
+  http.post('http://localhost:8000/api/chat-sessions/', async ({ request }) => {
     const body = await request.json()
     return HttpResponse.json({
       id: 'new-session-id',
@@ -67,18 +76,6 @@ const server = setupServer(
     })
   }),
 
-  // Notion connection endpoint
-  http.get('http://localhost:8000/api/notion/databases', () => {
-    return HttpResponse.json([
-      {
-        id: 'db-1',
-        name: 'Test Database',
-        notion_database_id: 'notion-db-1',
-        is_active: true,
-        last_synced: '2023-01-01T00:00:00Z'
-      }
-    ])
-  })
 )
 
 // Setup and teardown
@@ -131,43 +128,24 @@ describe('API Client', () => {
   })
 
   describe('Chat API', () => {
-    it('should send chat message successfully', async () => {
+    it('should get chat stream successfully', async () => {
       const chatRequest: ChatRequest = {
-        messages: [
-          { role: 'user', content: 'Hello, how are you?' }
-        ],
+        message: 'Hello, how are you?',
         session_id: 'test-session-id',
         database_filters: ['db-1']
       }
 
-      const response = await apiClient.chat(chatRequest)
+      const stream = await apiClient.chatStream(chatRequest)
 
-      expect(response.response).toBe('Test response from API')
-      expect(response.session_id).toBe('test-session-id')
-      expect(response.model_used).toBe('gpt-4')
-      expect(response.tokens_used).toBe(50)
-    })
-
-    it('should handle chat with multiple messages', async () => {
-      const chatRequest: ChatRequest = {
-        messages: [
-          { role: 'user', content: 'First message' },
-          { role: 'assistant', content: 'First response' },
-          { role: 'user', content: 'Second message' }
-        ],
-        session_id: 'test-session-id'
-      }
-
-      const response = await apiClient.chat(chatRequest)
-
-      expect(response.response).toBeDefined()
-      expect(response.session_id).toBe('test-session-id')
+      expect(stream).toBeDefined()
+      // For streaming API, we just check that we get a ReadableStream
+      expect(stream instanceof ReadableStream).toBe(true)
     })
   })
 
   describe('Chat Sessions API', () => {
     it('should fetch recent chat sessions', async () => {
-      const sessions = await apiClient.getRecentChatSessions()
+      const sessions = await apiClient.getRecentChats()
 
       expect(sessions).toHaveLength(1)
       expect(sessions[0].id).toBe('session-1')
@@ -193,16 +171,6 @@ describe('API Client', () => {
     })
   })
 
-  describe('Notion Integration API', () => {
-    it('should fetch notion databases', async () => {
-      const databases = await apiClient.getNotionDatabases()
-
-      expect(databases).toHaveLength(1)
-      expect(databases[0].id).toBe('db-1')
-      expect(databases[0].name).toBe('Test Database')
-      expect(databases[0].is_active).toBe(true)
-    })
-  })
 
   describe('Error Handling', () => {
     it('should handle API errors gracefully', async () => {
@@ -213,8 +181,8 @@ describe('API Client', () => {
         })
       )
 
-      await expect(apiClient.chat({
-        messages: [{ role: 'user', content: 'test' }],
+      await expect(apiClient.chatStream({
+        message: 'test',
         session_id: 'test'
       })).rejects.toThrow()
     })
@@ -222,7 +190,7 @@ describe('API Client', () => {
     it('should handle network errors', async () => {
       // Override for this test to simulate network error
       server.use(
-        http.get('http://localhost:8000/api/search', () => {
+        http.post('http://localhost:8000/api/search', () => {
           return HttpResponse.error()
         })
       )

@@ -8,6 +8,19 @@ if (typeof global.TextEncoder === 'undefined') {
   global.TextDecoder = TextDecoder
 }
 
+// BroadcastChannel polyfill for MSW
+if (typeof global.BroadcastChannel === 'undefined') {
+  global.BroadcastChannel = class BroadcastChannel {
+    constructor(name) {
+      this.name = name
+    }
+    postMessage() {}
+    addEventListener() {}
+    removeEventListener() {}
+    close() {}
+  }
+}
+
 // Stream API polyfills for MSW
 if (typeof global.TransformStream === 'undefined') {
   const { TransformStream } = require('stream/web')
