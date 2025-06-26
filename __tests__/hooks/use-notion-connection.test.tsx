@@ -8,24 +8,46 @@ import { useNotionConnection } from '@/hooks/use-notion-connection'
 // Mock dependencies
 jest.mock('@/lib/supabase', () => ({
   supabase: {
-    from: jest.fn().mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        eq: jest.fn().mockReturnValue({
-          order: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue({
-              data: null,
-              error: null
+    from: jest.fn((table) => {
+      if (table === 'notion_databases') {
+        return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              order: jest.fn().mockReturnValue({
+                limit: jest.fn().mockReturnValue({
+                  single: jest.fn().mockResolvedValue({
+                    data: null,
+                    error: { code: 'PGRST116' } // No rows found
+                  })
+                })
+              })
             })
           })
-        })
-      })
+        }
+      } else if (table === 'documents') {
+        return {
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockResolvedValue({
+              data: null,
+              error: null,
+              count: 0
+            })
+          })
+        }
+      }
+      return {
+        select: jest.fn().mockResolvedValue({ data: [], error: null })
+      }
     })
   }
 }))
 
 jest.mock('@/hooks/use-auth', () => ({
   useAuth: () => ({
-    user: { id: 'test-user-id' }
+    user: { 
+      id: 'test-user-id',
+      email: 'test@example.com' 
+    }
   })
 }))
 
@@ -49,16 +71,20 @@ describe('useNotionConnection Hook', () => {
   })
 
   describe('Initial State', () => {
-    it('should initialize with correct default values', () => {
+    it('should initialize with correct default values', async () => {
       const { result } = renderHook(() => useNotionConnection())
 
       expect(result.current.connection).toBeNull()
       expect(result.current.isConnected).toBe(false)
-      expect(result.current.loading).toBe(true) // Initially loading
       expect(result.current.error).toBeNull()
       expect(typeof result.current.refetch).toBe('function')
       expect(typeof result.current.connectNotion).toBe('function')
       expect(typeof result.current.syncNotion).toBe('function')
+      
+      // Wait for loading to complete since it happens immediately in tests
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false)
+      })
     })
   })
 

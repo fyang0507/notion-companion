@@ -33,22 +33,21 @@ const server = setupServer(
     const body = await request.json()
     const userMessage = body.messages[body.messages.length - 1]
     
-    return HttpResponse.json({
-      response: `Echo: ${userMessage.content}`,
-      session_id: body.session_id,
-      model_used: 'gpt-4',
-      tokens_used: 25,
-      response_time_ms: 500,
-      citations: [
-        {
-          source: 'Test Document',
-          page_id: 'page-123',
-          similarity: 0.85
-        }
-      ],
-      context_used: {
-        documents_found: 1,
-        search_query: userMessage.content
+    // Create a streaming response with Server-Sent Events format
+    const stream = new ReadableStream({
+      start(controller) {
+        // Send the echo response as streaming data
+        const responseText = `Echo: ${userMessage.content}`
+        controller.enqueue(new TextEncoder().encode(`data: {"type":"content","content":"${responseText}"}\n\n`))
+        controller.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'))
+        controller.close()
+      }
+    })
+    
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain',
+        'X-Request-ID': 'integration-test-request'
       }
     })
   }),
@@ -89,7 +88,7 @@ const server = setupServer(
     ])
   }),
 
-  http.post('http://localhost:8000/api/chat-sessions', async ({ request }) => {
+  http.post('http://localhost:8000/api/chat-sessions/', async ({ request }) => {
     const body = await request.json()
     return HttpResponse.json({
       id: 'new-integration-session',

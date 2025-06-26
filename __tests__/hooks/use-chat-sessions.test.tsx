@@ -349,15 +349,10 @@ describe('useChatSessions Hook', () => {
         await result.current.addMessage(initialMessage)
       })
 
-      mockApiClient.updateChatSession.mockResolvedValue({
-        id: 'new-session-id',
-        title: 'New Chat',
-        status: 'concluded',
-        created_at: '2023-01-01T00:00:00Z',
-        updated_at: '2023-01-01T00:00:00Z',
-        message_count: 1,
-        last_message_at: '2023-01-01T00:00:00Z',
-        session_context: {}
+      mockApiClient.concludeChatSession.mockResolvedValue({
+        message: 'Session concluded successfully',
+        title: 'Generated Session Title',
+        summary: 'Generated session summary'
       })
 
       await act(async () => {
@@ -365,9 +360,9 @@ describe('useChatSessions Hook', () => {
       })
 
       await waitFor(() => {
-        expect(mockApiClient.updateChatSession).toHaveBeenCalledWith(
+        expect(mockApiClient.concludeChatSession).toHaveBeenCalledWith(
           'new-session-id',
-          expect.objectContaining({ status: 'concluded' })
+          'Session completed'
         )
       })
     })

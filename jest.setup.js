@@ -1,9 +1,17 @@
 import '@testing-library/jest-dom'
+import 'whatwg-fetch'
 import { TextEncoder, TextDecoder } from 'util'
 
 // Polyfills
 global.TextEncoder = TextEncoder
 global.TextDecoder = TextDecoder
+
+// Mock ReadableStream for streaming responses
+global.ReadableStream = jest.fn().mockImplementation(() => ({
+  getReader: () => ({
+    read: () => Promise.resolve({ done: true, value: undefined }),
+  }),
+}))
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {

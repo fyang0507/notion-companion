@@ -8,17 +8,25 @@ import { http, HttpResponse } from 'msw'
 
 // Mock server for API calls
 const server = setupServer(
-  // Chat endpoint
+  // Chat endpoint - returns streaming response
   http.post('http://localhost:8000/api/chat', async ({ request }) => {
     const body = await request.json() as ChatRequest
-    return HttpResponse.json({
-      response: 'Test response from API',
-      session_id: body.session_id,
-      model_used: 'gpt-4',
-      tokens_used: 50,
-      response_time_ms: 1000,
-      citations: [],
-      context_used: {}
+    
+    // Create a mock ReadableStream
+    const stream = new ReadableStream({
+      start(controller) {
+        // Send some test streaming data
+        controller.enqueue(new TextEncoder().encode('data: {"type":"content","content":"Test response"}\n\n'))
+        controller.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'))
+        controller.close()
+      }
+    })
+    
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain',
+        'X-Request-ID': 'test-request-id'
+      }
     })
   }),
 
@@ -53,7 +61,10 @@ const server = setupServer(
   }),
 
   // Chat sessions endpoint
-  http.get('http://localhost:8000/api/chat-sessions/recent', () => {
+  http.get('http://localhost:8000/api/chat-sessions/recent', ({ request }) => {
+    const url = new URL(request.url)
+    const limit = url.searchParams.get('limit') || '20'
+    
     return HttpResponse.json([
       {
         id: 'session-1',
@@ -79,11 +90,28 @@ const server = setupServer(
 )
 
 // Setup and teardown
-beforeAll(() => server.listen())
+beforeAll(() => {
+  server.listen({ 
+    onUnhandledRequest: 'error',
+  })
+})
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
 describe('API Client', () => {
+  // Simple test to verify MSW is working
+  it('should verify MSW is intercepting requests', async () => {
+    const response = await fetch('http://localhost:8000/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: 'test' })
+    })
+    
+    expect(response.ok).toBe(true)
+    const data = await response.json()
+    expect(data.results).toBeDefined()
+  })
+
   describe('Search API', () => {
     it('should perform search request successfully', async () => {
       const searchRequest: SearchRequest = {
@@ -130,12 +158,12 @@ describe('API Client', () => {
   describe('Chat API', () => {
     it('should get chat stream successfully', async () => {
       const chatRequest: ChatRequest = {
-        message: 'Hello, how are you?',
+        messages: [{ role: 'user', content: 'Hello, how are you?' }],
         session_id: 'test-session-id',
         database_filters: ['db-1']
       }
 
-      const stream = await apiClient.chatStream(chatRequest)
+      const stream = await apiClient.sendChatMessage(chatRequest)
 
       expect(stream).toBeDefined()
       // For streaming API, we just check that we get a ReadableStream
@@ -181,8 +209,8 @@ describe('API Client', () => {
         })
       )
 
-      await expect(apiClient.chatStream({
-        message: 'test',
+      await expect(apiClient.sendChatMessage({
+        messages: [{ role: 'user', content: 'test' }],
         session_id: 'test'
       })).rejects.toThrow()
     })
