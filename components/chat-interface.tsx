@@ -142,6 +142,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     tags: [],
     searchQuery: ''
   });
+  
   const [isMobile, setIsMobile] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   
@@ -161,6 +162,13 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Start temporary chat on mount
+  useEffect(() => {
+    if (activeChatSessions?.startTemporaryChat) {
+      activeChatSessions.startTemporaryChat();
+    }
+  }, []); // Empty dependency array means this runs once on mount
+
   const handleCopyMessage = async (text: string, messageId: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -171,14 +179,6 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       console.error('Failed to copy text:', err);
     }
   };
-
-  // Convert databases to workspace format for filter bar compatibility
-  // In single workspace model, each database acts like a "workspace" for filtering
-  const availableWorkspaces = databases.map(db => ({
-    id: db.database_id,
-    name: db.database_name,
-    documentCount: db.document_count || 0
-  }));
 
   useEffect(() => {
     if (scrollAreaRef.current) {
@@ -379,8 +379,8 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     
     if (filters.workspaces.length > 0) {
       const workspaceNames = filters.workspaces.map(id => {
-        const workspace = availableWorkspaces.find(w => w.id === id);
-        return workspace ? workspace.name : id;
+        const workspace = databases.find(w => w.database_id === id);
+        return workspace ? workspace.database_name : id;
       });
       parts.push(`in ${workspaceNames.join(', ')}`);
     }
@@ -434,8 +434,8 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     }
     
     if (filters.workspaces.length === 1) {
-      const database = availableWorkspaces.find(w => w.id === filters.workspaces[0]);
-      return database ? `${database.name}` : 'AI Chat';
+      const database = databases.find(w => w.database_id === filters.workspaces[0]);
+      return database ? `${database.database_name}` : 'AI Chat';
     }
     
     return `${filters.workspaces.length} Databases`;
@@ -567,8 +567,12 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       <ChatFilterBar
         filters={filters}
         onFiltersChange={setFilters}
-        availableWorkspaces={availableWorkspaces}
-        disabled={chatOperationLoading}
+        availableWorkspaces={databases.map(db => ({
+          id: db.database_id,
+          name: db.database_name,
+          documentCount: db.document_count || 0
+        }))}
+        disabled={isLoading || activeChatSessions?.isLoading}
       />
 
       {/* Messages */}
@@ -610,6 +614,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
                 "flex gap-3 md:gap-4",
                 message.role === 'user' ? "justify-end" : "justify-start"
               )}
+              data-role={message.role === 'bot' ? 'assistant' : message.role}
             >
               {message.role === 'bot' && (
                 <div className="w-8 h-8 rounded-full gradient-bg flex items-center justify-center flex-shrink-0">
@@ -690,7 +695,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyPress}
               placeholder={`Ask me anything${getFilterContext()}...`}
-              disabled={isLoading || chatOperationLoading}
+              disabled={isLoading || chatOperationLoading || activeChatSessions?.isLoading}
               className="flex-1 min-h-[44px] max-h-32 resize-none"
               rows={1}
               aria-label="message input"
@@ -707,14 +712,14 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
             />
             <Button 
               onClick={handleSend} 
-              disabled={!input.trim() || isLoading || chatOperationLoading}
+              disabled={!input.trim() || isLoading || chatOperationLoading || activeChatSessions?.isLoading}
               size="icon"
               className="flex-shrink-0 h-11 w-11"
               aria-label="Send message"
               tabIndex={1}
             >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+              {(isLoading || activeChatSessions?.isLoading) ? (
+                <Loader2 className="h-4 w-4 animate-spin" data-testid="loading-indicator" />
               ) : (
                 <Send className="h-4 w-4" />
               )}
