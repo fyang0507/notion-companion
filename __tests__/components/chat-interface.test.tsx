@@ -12,6 +12,8 @@ import { useNotionDatabases } from '@/hooks/use-notion-databases'
 // Mock the hooks
 jest.mock('@/hooks/use-chat-sessions')
 jest.mock('@/hooks/use-notion-databases')
+jest.mock('@/hooks/use-notion-connection')
+jest.mock('@/hooks/use-session-lifecycle')
 jest.mock('@/lib/api')
 
 const mockUseChatSessions = useChatSessions as jest.MockedFunction<typeof useChatSessions>
@@ -44,15 +46,17 @@ const mockNotionDatabasesHook = {
   databases: [
     {
       id: 'db-1',
-      name: 'Test Database 1',
-      notion_database_id: 'notion-db-1',
-      is_active: true
+      database_id: 'notion-db-1',
+      database_name: 'Test Database 1',
+      is_active: true,
+      document_count: 10
     },
     {
       id: 'db-2',
-      name: 'Test Database 2',
-      notion_database_id: 'notion-db-2',
-      is_active: true
+      database_id: 'notion-db-2', 
+      database_name: 'Test Database 2',
+      is_active: true,
+      document_count: 5
     }
   ],
   selectedDatabases: ['db-1'],
@@ -63,6 +67,14 @@ const mockNotionDatabasesHook = {
   clearSelection: jest.fn(),
   loadDatabases: jest.fn(),
 }
+
+// Mock notion connection hook
+jest.mock('@/hooks/use-notion-connection', () => ({
+  useNotionConnection: () => ({
+    connection: { name: 'Test Workspace' },
+    isConnected: true
+  })
+}))
 
 describe('ChatInterface Component', () => {
   beforeEach(() => {
@@ -75,7 +87,7 @@ describe('ChatInterface Component', () => {
     it('should render chat interface with message input', () => {
       render(<ChatInterface />)
 
-      expect(screen.getByPlaceholderText(/type your message/i)).toBeInTheDocument()
+      expect(screen.getByPlaceholderText(/ask me anything/i)).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /send/i })).toBeInTheDocument()
     })
 
@@ -98,7 +110,7 @@ describe('ChatInterface Component', () => {
       const user = userEvent.setup()
       render(<ChatInterface />)
 
-      const messageInput = screen.getByPlaceholderText(/type your message/i)
+      const messageInput = screen.getByPlaceholderText(/ask me anything/i)
       const sendButton = screen.getByRole('button', { name: /send/i })
 
       await user.type(messageInput, 'Hello, this is a test message')
@@ -119,7 +131,7 @@ describe('ChatInterface Component', () => {
       const user = userEvent.setup()
       render(<ChatInterface />)
 
-      const messageInput = screen.getByPlaceholderText(/type your message/i)
+      const messageInput = screen.getByPlaceholderText(/ask me anything/i)
 
       await user.type(messageInput, 'Test message{enter}')
 
@@ -137,7 +149,7 @@ describe('ChatInterface Component', () => {
       const user = userEvent.setup()
       render(<ChatInterface />)
 
-      const messageInput = screen.getByPlaceholderText(/type your message/i) as HTMLInputElement
+      const messageInput = screen.getByPlaceholderText(/ask me anything/i) as HTMLInputElement
 
       await user.type(messageInput, 'Test message')
       await user.keyboard('{enter}')
@@ -162,7 +174,7 @@ describe('ChatInterface Component', () => {
       const user = userEvent.setup()
       render(<ChatInterface />)
 
-      const messageInput = screen.getByPlaceholderText(/type your message/i)
+      const messageInput = screen.getByPlaceholderText(/ask me anything/i)
 
       await user.type(messageInput, '   ')
       await user.keyboard('{enter}')
@@ -178,13 +190,15 @@ describe('ChatInterface Component', () => {
           id: 'msg-1',
           role: 'user' as const,
           content: 'Hello',
-          timestamp: new Date('2023-01-01T00:00:00Z')
+          timestamp: new Date('2023-01-01T00:00:00Z'),
+          citations: []
         },
         {
           id: 'msg-2',
           role: 'assistant' as const,
           content: 'Hi there! How can I help you?',
-          timestamp: new Date('2023-01-01T00:01:00Z')
+          timestamp: new Date('2023-01-01T00:01:00Z'),
+          citations: []
         }
       ]
 
@@ -241,7 +255,7 @@ describe('ChatInterface Component', () => {
 
       render(<ChatInterface />)
 
-      const messageInput = screen.getByPlaceholderText(/type your message/i)
+      const messageInput = screen.getByPlaceholderText(/ask me anything/i)
 
       await user.type(messageInput, 'Test with database filter')
       await user.keyboard('{enter}')
@@ -277,7 +291,7 @@ describe('ChatInterface Component', () => {
 
       render(<ChatInterface />)
 
-      const messageInput = screen.getByPlaceholderText(/type your message/i)
+      const messageInput = screen.getByPlaceholderText(/ask me anything/i)
       const sendButton = screen.getByRole('button', { name: /send/i })
 
       expect(messageInput).toBeDisabled()
@@ -358,7 +372,7 @@ describe('ChatInterface Component', () => {
       const user = userEvent.setup()
       render(<ChatInterface />)
 
-      const messageInput = screen.getByPlaceholderText(/type your message/i)
+      const messageInput = screen.getByPlaceholderText(/ask me anything/i)
 
       await user.type(messageInput, 'Line 1{shift}{enter}Line 2')
 
@@ -381,7 +395,7 @@ describe('ChatInterface Component', () => {
 
       // Tab to message input
       await user.tab()
-      expect(screen.getByPlaceholderText(/type your message/i)).toHaveFocus()
+      expect(screen.getByPlaceholderText(/ask me anything/i)).toHaveFocus()
 
       // Tab to send button
       await user.tab()

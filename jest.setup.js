@@ -1,4 +1,60 @@
 import '@testing-library/jest-dom'
+import { TextEncoder, TextDecoder } from 'util'
+
+// Polyfills
+global.TextEncoder = TextEncoder
+global.TextDecoder = TextDecoder
+
+// Mock window.matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+})
+
+// Mock IntersectionObserver
+global.IntersectionObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}))
+
+// Mock ResizeObserver
+global.ResizeObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}))
+
+// Completely silence console for tests
+const originalConsole = global.console
+global.console = {
+  ...originalConsole,
+  log: jest.fn(),
+  debug: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+}
+
+// Mock EventSource for SSE
+global.EventSource = jest.fn().mockImplementation(() => ({
+  addEventListener: jest.fn(),
+  removeEventListener: jest.fn(),
+  close: jest.fn(),
+  readyState: 1,
+  CONNECTING: 0,
+  OPEN: 1,
+  CLOSED: 2,
+}))
 
 // Mock Next.js router
 jest.mock('next/navigation', () => ({
@@ -20,38 +76,6 @@ jest.mock('next/navigation', () => ({
   },
 }))
 
-// Mock window.matchMedia
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: jest.fn().mockImplementation(query => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: jest.fn(), // deprecated
-    removeListener: jest.fn(), // deprecated
-    addEventListener: jest.fn(),
-    removeEventListener: jest.fn(),
-    dispatchEvent: jest.fn(),
-  })),
-})
-
-// Mock ResizeObserver
-global.ResizeObserver = jest.fn().mockImplementation(() => ({
-  observe: jest.fn(),
-  unobserve: jest.fn(),
-  disconnect: jest.fn(),
-}))
-
-// Mock IntersectionObserver
-global.IntersectionObserver = jest.fn().mockImplementation(() => ({
-  observe: jest.fn(),
-  unobserve: jest.fn(),
-  disconnect: jest.fn(),
-}))
-
-// Mock scrollTo
-global.scrollTo = jest.fn()
-
 // Mock localStorage
 const localStorageMock = {
   getItem: jest.fn(),
@@ -70,5 +94,10 @@ const sessionStorageMock = {
 }
 global.sessionStorage = sessionStorageMock
 
-// Global test timeout
-jest.setTimeout(10000)
+// Mock scrollTo
+global.scrollTo = jest.fn()
+
+afterAll(() => {
+  // Restore console
+  global.console = originalConsole
+})

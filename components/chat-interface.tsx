@@ -93,7 +93,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([
     {
       id: '1',
-      type: 'bot',
+      role: 'bot',
       content: 'Hello! I\'m your Notion Companion. I can help you search through your workspace and answer questions about your content. Use the filters above to narrow down the scope of my search, or ask me anything about your knowledge base.',
       timestamp: new Date(),
       citations: []
@@ -186,7 +186,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
 
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
-      type: 'user',
+      role: 'user',
       content: input,
       timestamp: new Date(),
       citations: []
@@ -214,7 +214,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     const botMessageId = `bot-${Date.now()}`;
     const botMessage: ChatMessage = {
       id: botMessageId,
-      type: 'bot',
+      role: 'assistant',
       content: '',
       timestamp: new Date(),
       citations: []
@@ -292,7 +292,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       // Finalize the message
       const finalBotMessage: ChatMessage = {
         id: botMessageId,
-        type: 'bot',
+        role: 'assistant',
         content: accumulatedContent,
         timestamp: new Date(),
         citations: citations
@@ -425,9 +425,11 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
             </Button>
             
             <div className="min-w-0 flex-1">
-              <h2 className="font-semibold text-base md:text-lg truncate">{getWorkspaceDisplayName()}</h2>
+              <h2 className="font-semibold text-base md:text-lg truncate">
+                {chatSessions?.currentSession?.title || getWorkspaceDisplayName()}
+              </h2>
               <p className="text-xs md:text-sm text-muted-foreground">
-                AI-powered search with intelligent filtering
+                {chatSessions?.currentSession?.title ? 'Chat Session' : 'AI-powered search with intelligent filtering'}
               </p>
             </div>
           </div>
@@ -552,7 +554,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
                 </Card>
 
                 {/* Citations */}
-                {message.role === 'bot' && message.citations.length > 0 && message.content && (
+                {message.role === 'bot' && message.citations && message.citations.length > 0 && message.content && (
                   <MessageCitations citations={message.citations} />
                 )}
 
