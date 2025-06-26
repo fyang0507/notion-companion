@@ -1,15 +1,24 @@
+# Core Dependencies
 fastapi
 uvicorn[standard]
 pydantic
 python-dotenv
-openai
-supabase
 httpx
 python-multipart
-notion-client
-tiktoken 
-uvicorn
 click
 h11
 starlette
-python-dotenv
+tiktoken
+
+# Database
+supabase
+
+# External APIs
+openai
+notion-client
+
+# Testing Dependencies  
+pytest
+pytest-mock
+pytest-asyncio
+respx  # for mocking HTTP requests
