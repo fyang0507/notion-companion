@@ -80,7 +80,7 @@ export function useChatSessions(): ChatSessionHook {
       // If there are any remaining unsaved messages, save them
       if (unsavedMessages.current.length > 0) {
         const backendMessages: ChatMessageCreate[] = unsavedMessages.current.map(msg => ({
-          role: msg.type === 'user' ? 'user' : 'assistant',
+          role: msg.role === 'user' ? 'user' : 'assistant',
           content: msg.content,
           citations: msg.citations || [],
           context_used: {}
@@ -107,7 +107,7 @@ export function useChatSessions(): ChatSessionHook {
       setError(null);
 
       // Conclude current session before loading new one if user has sent at least one message
-      const userMessageCount = currentMessages.filter(msg => msg.type === 'user').length;
+      const userMessageCount = currentMessages.filter(msg => msg.role === 'user').length;
       if (currentSession && userMessageCount > 0) {
         await saveCurrentSession();
         try {
@@ -125,7 +125,7 @@ export function useChatSessions(): ChatSessionHook {
       // Convert backend messages to frontend format
       const frontendMessages: ChatMessage[] = sessionData.messages.map(msg => ({
         id: msg.id,
-        type: msg.role === 'user' ? 'user' : 'bot',
+        role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content,
         timestamp: new Date(msg.created_at),
         citations: msg.citations || []
@@ -221,7 +221,7 @@ export function useChatSessions(): ChatSessionHook {
     setCurrentMessages(prev => [...prev, message]);
     
     // For existing sessions, save user messages immediately to prevent duplicates
-    // Bot messages are saved later when streaming is complete
+    // Assistant messages are saved later when streaming is complete
     if (currentSession && message.role === 'user') {
       try {
         const backendMessage: ChatMessageCreate = {
@@ -240,7 +240,7 @@ export function useChatSessions(): ChatSessionHook {
         unsavedMessages.current.push(message);
       }
     } else {
-      // No session yet, or bot message - add to unsaved queue
+      // No session yet, or assistant message - add to unsaved queue
       unsavedMessages.current.push(message);
     }
     

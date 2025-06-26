@@ -19,7 +19,7 @@ export function useSessionLifecycle({ chatSessions }: UseSessionLifecycleProps) 
 
   // Handle session conclusion before page unload
   const handleBeforeUnload = useCallback((e: BeforeUnloadEvent) => {
-    if (chatSessions?.currentSession && chatSessions.currentMessages.some(m => m.type === 'user')) {
+    if (chatSessions?.currentSession && chatSessions.currentMessages.some(m => m.role === 'user')) {
       console.log('Window closing - concluding session via sendBeacon');
       
       // Use sendBeacon for reliable delivery during page unload
@@ -40,7 +40,7 @@ export function useSessionLifecycle({ chatSessions }: UseSessionLifecycleProps) 
   const handleVisibilityChange = useCallback(() => {
     if (document.visibilityState === 'hidden') {
       // User switched away from the tab
-      if (chatSessions?.currentSession && chatSessions.currentMessages.some(m => m.type === 'user')) {
+      if (chatSessions?.currentSession && chatSessions.currentMessages.some(m => m.role === 'user')) {
         console.log('Tab/window hidden - concluding session');
         
         // Use conclude for proper archiving and summary generation
@@ -56,7 +56,7 @@ export function useSessionLifecycle({ chatSessions }: UseSessionLifecycleProps) 
 
   // Check for idle sessions periodically
   const checkIdleSession = useCallback(() => {
-    if (!chatSessions?.currentSession || !chatSessions.currentMessages.some(m => m.type === 'user')) {
+    if (!chatSessions?.currentSession || !chatSessions.currentMessages.some(m => m.role === 'user')) {
       return;
     }
 

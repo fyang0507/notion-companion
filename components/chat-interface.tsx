@@ -100,7 +100,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   const [localMessages, setLocalMessages] = useState<ChatMessage[]>([
     {
       id: '1',
-      role: 'bot',
+      role: 'assistant',
       content: 'Hello! I\'m your Notion Companion. I can help you search through your workspace and answer questions about your content. Use the filters above to narrow down the scope of my search, or ask me anything about your knowledge base.',
       timestamp: new Date(),
       citations: []
@@ -238,25 +238,25 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     setInput('');
     setIsLoading(true);
     
-    // Create bot message placeholder
-    const botMessageId = `bot-${Date.now()}`;
-    const botMessage: ChatMessage = {
-      id: botMessageId,
-      role: 'bot',
+    // Create assistant message placeholder
+    const assistantMessageId = `assistant-${Date.now()}`;
+    const assistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
       content: '',
       timestamp: new Date(),
       citations: [],
       isStreaming: true
     };
 
-    // Add bot message placeholder
+    // Add assistant message placeholder
     if (activeChatSessions) {
-      setFallbackMessages(prev => [...activeChatSessions.currentMessages, botMessage]);
+      setFallbackMessages(prev => [...activeChatSessions.currentMessages, assistantMessage]);
     } else {
-      setFallbackMessages(prev => [...prev, botMessage]);
+      setFallbackMessages(prev => [...prev, assistantMessage]);
     }
 
-    setStreamingMessageId(botMessageId);
+    setStreamingMessageId(assistantMessageId);
 
     try {
       // Prepare request data using the existing ChatRequest interface
@@ -293,15 +293,15 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
                 // Update streaming message
                 const updateMessage = (msgs: ChatMessage[]) => 
                   msgs.map(msg => 
-                    msg.id === botMessageId 
+                    msg.id === assistantMessageId 
                       ? { ...msg, content: fullContent, isStreaming: true }
                       : msg
                   );
 
                 if (activeChatSessions) {
-                  const allMessages = activeChatSessions.currentMessages.some(m => m.id === botMessageId) 
+                  const allMessages = activeChatSessions.currentMessages.some(m => m.id === assistantMessageId) 
                     ? activeChatSessions.currentMessages 
-                    : [...activeChatSessions.currentMessages, botMessage];
+                    : [...activeChatSessions.currentMessages, assistantMessage];
                   setFallbackMessages(updateMessage(allMessages));
                 } else {
                   setFallbackMessages(updateMessage);
@@ -318,59 +318,60 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
         }
       }
 
-      // Create final bot message
-      const finalBotMessage: ChatMessage = {
-        id: botMessageId,
-        role: 'bot',
+      // Create final assistant message
+      const finalAssistantMessage: ChatMessage = {
+        id: assistantMessageId,
+        role: 'assistant',
         content: fullContent,
         timestamp: new Date(),
         citations: citations,
         isStreaming: false
       };
 
-      // Save the final bot message to session if available
-      if (activeChatSessions && sessionId) {
-        await activeChatSessions.saveMessageImmediately(finalBotMessage);
+      // Save the final assistant message to session if available
+      if (activeChatSessions) {
+        await activeChatSessions.saveMessageImmediately(finalAssistantMessage);
       }
 
-      // Update final state
+      // Update messages to show final message
       const updateFinalMessage = (msgs: ChatMessage[]) => 
         msgs.map(msg => 
-          msg.id === botMessageId 
-            ? finalBotMessage
+          msg.id === assistantMessageId
+            ? finalAssistantMessage
             : msg
         );
 
       if (activeChatSessions) {
-        const allMessages = activeChatSessions.currentMessages.some(m => m.id === botMessageId) 
+        const allMessages = activeChatSessions.currentMessages.some(m => m.id === assistantMessageId) 
           ? activeChatSessions.currentMessages 
-          : [...activeChatSessions.currentMessages, botMessage];
+          : [...activeChatSessions.currentMessages, assistantMessage];
         setFallbackMessages(updateFinalMessage(allMessages));
       } else {
         setFallbackMessages(updateFinalMessage);
       }
 
-      // Clear the stored message on success
+      setStreamingMessageId(null);
+      setIsLoading(false);
+      
+      // Clear the stored message since it was successful
       setLastFailedMessage('');
+      setError(null);
 
     } catch (error) {
       console.error('Chat error:', error);
-      
-      // Set error state
-      setError('Failed to send message. Please check your connection and try again.');
-      
-      // Remove the empty bot message on error
+      setError('Failed to send message. Please try again.');
+      setIsLoading(false);
+      setStreamingMessageId(null);
+
+      // Remove the empty assistant message on error
       const removeFailedMessage = (msgs: ChatMessage[]) => 
-        msgs.filter(msg => msg.id !== botMessageId);
+        msgs.filter(msg => msg.id !== assistantMessageId);
 
       if (activeChatSessions) {
-        setFallbackMessages(removeFailedMessage(activeChatSessions.currentMessages.concat([botMessage])));
+        setFallbackMessages(removeFailedMessage(activeChatSessions.currentMessages.concat([assistantMessage])));
       } else {
         setFallbackMessages(removeFailedMessage);
       }
-    } finally {
-      setIsLoading(false);
-      setStreamingMessageId(null);
     }
   };
 
@@ -614,9 +615,9 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
                 "flex gap-3 md:gap-4",
                 message.role === 'user' ? "justify-end" : "justify-start"
               )}
-              data-role={message.role === 'bot' ? 'assistant' : message.role}
+              data-role={message.role === 'assistant' ? 'assistant' : message.role}
             >
-              {message.role === 'bot' && (
+              {message.role === 'assistant' && (
                 <div className="w-8 h-8 rounded-full gradient-bg flex items-center justify-center flex-shrink-0">
                   <Bot className="h-4 w-4 text-white" />
                 </div>
@@ -640,23 +641,27 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
                       )}
                     </div>
                     
-                    {/* Show thinking indicator for empty bot messages that are streaming */}
-                    {streamingMessageId === message.id && !message.content && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Searching through your filtered content...</span>
+                    {/* Show thinking indicator for empty assistant messages that are streaming */}
+                    {message.isStreaming && !message.content && (
+                      <div className="flex items-center space-x-2 text-muted-foreground">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></div>
+                        </div>
+                        <span className="text-sm">Thinking...</span>
                       </div>
                     )}
                   </CardContent>
                 </Card>
 
                 {/* Citations */}
-                {message.role === 'bot' && message.citations && message.citations.length > 0 && message.content && (
+                {message.role === 'assistant' && message.citations && message.citations.length > 0 && message.content && (
                   <MessageCitations citations={message.citations} />
                 )}
 
                 {/* Message Actions */}
-                {message.role === 'bot' && !streamingMessageId && message.content && !isMobile && (
+                {message.role === 'assistant' && !streamingMessageId && message.content && !isMobile && (
                   <div className="flex items-center gap-1">
                     <Button 
                       variant="ghost" 

@@ -73,7 +73,7 @@ export default function Home() {
     console.log('handleNewChat called - starting temporary chat');
     
     // Check if user is already in an empty chat
-    const hasUserMessages = chatSessions.currentMessages.some(m => m.type === 'user');
+    const hasUserMessages = chatSessions.currentMessages.some(m => m.role === 'user');
     const isAlreadyEmpty = chatSessions.isTemporaryChat || (!chatSessions.currentSession && !hasUserMessages);
     
     if (isAlreadyEmpty) {
@@ -95,7 +95,7 @@ export default function Home() {
       } else {
         console.log('No session to conclude or no user messages found');
         console.log('Current session:', chatSessions.currentSession?.id);
-        console.log('User messages:', chatSessions.currentMessages.filter(m => m.type === 'user').length);
+        console.log('User messages:', chatSessions.currentMessages.filter(m => m.role === 'user').length);
       }
       
       setChatOperationStatus('Starting new chat...');
