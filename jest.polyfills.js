@@ -1,4 +1,5 @@
 // Add global polyfills for Jest environment
+require('whatwg-fetch')
 
 // TextEncoder/TextDecoder polyfill for Node.js environment
 if (typeof global.TextEncoder === 'undefined') {
@@ -7,7 +8,18 @@ if (typeof global.TextEncoder === 'undefined') {
   global.TextDecoder = TextDecoder
 }
 
-// Fetch polyfill
-if (typeof global.fetch === 'undefined') {
-  global.fetch = require('node-fetch')
+// Stream API polyfills for MSW
+if (typeof global.TransformStream === 'undefined') {
+  const { TransformStream } = require('stream/web')
+  global.TransformStream = TransformStream
+}
+
+if (typeof global.ReadableStream === 'undefined') {
+  const { ReadableStream } = require('stream/web')
+  global.ReadableStream = ReadableStream
+}
+
+if (typeof global.WritableStream === 'undefined') {
+  const { WritableStream } = require('stream/web')
+  global.WritableStream = WritableStream
 }
