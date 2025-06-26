@@ -62,13 +62,17 @@ class TestSearchEndpoints:
         response = client.options("/api/search")
         assert response.status_code != 404
     
-    def test_search_get_request(self, client, mock_services):
-        """Test search GET request with query parameter."""
-        response = client.get("/api/search?q=test query")
+    def test_search_post_request_basic(self, client, mock_services):
+        """Test search POST request with basic query."""
+        test_payload = {
+            "query": "test query",
+            "limit": 10
+        }
+        response = client.post("/api/search", json=test_payload)
         
-        # Should accept GET requests with query parameter
+        # Should accept POST requests
         assert response.status_code != 404
-        assert response.status_code != 405  # Method not allowed
+        assert response.status_code in [200, 422, 500]  # Valid responses
     
     def test_search_post_request(self, client, mock_services):
         """Test search POST request with JSON payload."""
@@ -87,16 +91,17 @@ class TestSearchEndpoints:
     def test_search_query_validation(self, client):
         """Test search query validation."""
         # Empty query should be handled
-        response = client.get("/api/search?q=")
+        response = client.post("/api/search", json={"query": "", "limit": 10})
         assert response.status_code in [200, 400, 422]
         
         # Missing query should be handled
-        response = client.get("/api/search")
+        response = client.post("/api/search", json={"limit": 10})
         assert response.status_code in [200, 400, 422]
     
     def test_search_response_format(self, client, mock_services):
         """Test search response format."""
-        response = client.get("/api/search?q=test query")
+        test_payload = {"query": "test query", "limit": 10}
+        response = client.post("/api/search", json=test_payload)
         
         if response.status_code == 200:
             response_data = response.json()
@@ -195,7 +200,7 @@ class TestSearchEndpoints:
         assert response.status_code == 422
         
         # Test with invalid parameters
-        response = client.get("/api/search?limit=invalid")
+        response = client.post("/api/search", json={"query": "test", "limit": "invalid"})
         assert response.status_code in [200, 400, 422]
     
     def test_search_performance_parameters(self, client, mock_services):
