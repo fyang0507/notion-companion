@@ -38,7 +38,7 @@ cd notion-companion
 
 2. **Install frontend dependencies**:
 ```bash
-npm install
+pnpm install
 ```
 
 3. **Install backend dependencies**:
@@ -67,16 +67,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 Option A - Start both frontend and backend:
 ```bash
-npm run dev:full
+pnpm run dev:full
 ```
 
 Option B - Start separately:
 ```bash
 # Terminal 1 - Frontend
-npm run dev
+pnpm run dev
 
 # Terminal 2 - Backend
-npm run backend
+pnpm run backend
 ```
 
 ### Database Setup

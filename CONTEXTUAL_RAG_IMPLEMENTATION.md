@@ -110,7 +110,7 @@ cd backend
 ### 4. Test Enhanced Search
 ```bash
 # Start backend
-npm run backend
+pnpm run backend
 
 # Test contextual search
 curl -X POST "http://localhost:8000/api/search" \

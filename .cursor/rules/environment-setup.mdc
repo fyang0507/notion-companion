@@ -83,7 +83,7 @@ cp .env.local.example .env.local
 cp backend/.env.example backend/.env
 
 # Start development servers
-npm run dev:full  # or use separate terminals
+pnpm run dev:full  # or use separate terminals
 ```
 
 ## Model Configuration
@@ -166,15 +166,15 @@ cd backend && uv pip install -r requirements.in  # Backend only
 ### Development Servers
 ```bash
 make dev              # Both frontend and backend
-npm run dev           # Frontend only (port 3000)
-npm run backend       # Backend only (port 8000)
-npm run dev:full      # Both servers concurrently
+pnpm run dev           # Frontend only (port 3000)
+pnpm run backend       # Backend only (port 8000)
+pnpm run dev:full      # Both servers concurrently
 ```
 
 ### Build and Deploy
 ```bash
-npm run build         # Build Next.js for static export
-npm run lint          # Run ESLint validation
+pnpm run build         # Build Next.js for static export
+pnpm run lint          # Run ESLint validation
 ```
 
 ### Database Operations
@@ -226,7 +226,7 @@ cd backend && python -m scripts.test_ingestion
 
 ## Testing & Quality Guidelines
 
-1. Always run `npm run lint` before committing changes
+1. Always run `pnpm run lint` before committing changes
 2. The application uses static export configuration in [next.config.js](mdc:next.config.js)
 3. Ensure all features work without server-side rendering
 4. Backend uses FastAPI with automatic OpenAPI documentation at `/docs`

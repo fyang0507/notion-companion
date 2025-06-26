@@ -57,13 +57,13 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `make setup-env` - Create environment file templates
 
 ### Individual Services
-- `npm run dev` - Frontend only (port 3000)
-- `npm run backend` - Backend only (port 8000) 
-- `npm run dev:full` - Both frontend and backend concurrently
+- `pnpm run dev` - Frontend only (port 3000)
+- `pnpm run backend` - Backend only (port 8000)
+- `pnpm run dev:full` - Both frontend and backend concurrently
 
 ### Build & Quality
-- `npm run build` - Build Next.js for production (static export)
-- `npm run lint` - Run ESLint validation
+- `pnpm run build` - Build Next.js for production (static export)
+- `pnpm run lint` - Run ESLint validation
 
 ### Database & Synchronization
 - `make sync-notion` - Sync Notion databases using [sync_notion_databases.sh](mdc:backend/sync_notion_databases.sh)

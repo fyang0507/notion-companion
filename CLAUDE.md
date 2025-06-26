@@ -15,12 +15,12 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 ## Development & Testing
 
 ### Basic Development Commands
-- `npm run dev` - Frontend only (port 3000)
-- `npm run backend` - Backend only (port 8000) 
-- `npm run dev:full` - Both frontend and backend concurrently
+- `pnpm run dev` - Frontend only (port 3000)
+- `pnpm run backend` - Backend only (port 8000) 
+- `pnpm run dev:full` - Both frontend and backend concurrently
 - `make dev` - Alternative using Makefile
-- `npm run build` - Build Next.js for production
-- `npm run lint` - Run ESLint validation (ALWAYS run before committing)
+- `pnpm run build` - Build Next.js for production
+- `pnpm run lint` - Run ESLint validation (ALWAYS run before committing)
 
 ### Backend Operations
 - `cd backend && uv run python scripts/sync_databases.py` - Sync Notion databases with enhanced contextual processing
@@ -41,11 +41,11 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 
 **🚫 CRITICAL: NEVER start backend services in Claude Code**
 - Commands with `&` cause 2-minute timeouts
-- `npm run backend` doesn't persist in Claude Code environment
+- `pnpm run backend` doesn't persist in Claude Code environment
 
 **✅ CORRECT TESTING WORKFLOW:**
 1. Claude identifies need to test backend API
-2. Claude asks: "Please start the backend with `npm run backend` so I can test [feature]"
+2. Claude asks: "Please start the backend with `pnpm run backend` so I can test [feature]"
 3. User starts backend in their environment  
 4. Claude runs curl tests against localhost:8000
 5. Claude asks user to stop backend when testing is complete
@@ -264,7 +264,7 @@ The previous v2.0 approach attempted to simplify multi-workspace to single works
 
 ## Quality Guidelines
 
-- Always run `npm run lint` before committing changes
+- Always run `pnpm run lint` before committing changes
 - The application uses static export configuration, so ensure all features work without server-side rendering
 - See `backend/docs/TESTING_BEST_PRACTICES.md` for detailed testing patterns
 

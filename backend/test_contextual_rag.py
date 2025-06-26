@@ -39,7 +39,7 @@ async def test_content_type_detection():
         },
         {
             'title': 'API Documentation',
-            'content': '# Setup Guide\n\n1. Install dependencies\n2. Configure environment\n\n```bash\nnpm install\n```\n\n## Authentication\nUse Bearer tokens...',
+            'content': '# Setup Guide\n\n1. Install dependencies\n2. Configure environment\n\n```bash\npnpm install\n```\n\n## Authentication\nUse Bearer tokens...',
             'expected': 'documentation'
         }
     ]

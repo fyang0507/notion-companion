@@ -11,7 +11,7 @@ alwaysApply: false
 1. Run `make install` to install all dependencies (uses uv for Python, pnpm for Node.js)
 2. Run `make setup-env` to create environment templates
 3. Configure environment variables in `.env.local` and `backend/.env`
-4. Run `make dev` or `npm run dev:full` to start both servers concurrently
+4. Run `make dev` or `pnpm run dev:full` to start both servers concurrently
 
 ### File Organization Patterns
 

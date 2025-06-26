@@ -10,7 +10,7 @@
     "lint": "next lint",
     "backend": "cd backend && CLEAR_LOGS=true .venv/bin/python start.py",
     "dev:full": "concurrently --kill-others-on-fail --kill-others \"pnpm run dev\" \"pnpm run backend\"",
-    "test": "npm run test:backend",
+    "test": "pnpm run test:backend",
     "test:backend": "cd backend && python run_tests.py all",
     "test:backend:unit": "cd backend && python run_tests.py unit",
     "test:backend:integration": "cd backend && python run_tests.py integration",

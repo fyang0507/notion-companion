@@ -523,7 +523,7 @@ $$;`;
             <div className="space-y-2">
               <p className="text-sm font-medium">Next steps:</p>
               <ol className="space-y-1 text-sm text-muted-foreground">
-                <li>1. Start your development server: <code className="bg-muted px-1 rounded">npm run dev</code></li>
+                <li>1. Start your development server: <code className="bg-muted px-1 rounded">pnpm run dev</code></li>
                 <li>2. Visit your application and sign up</li>
                 <li>3. Configure your databases in the backend config</li>
                 <li>4. Start chatting with your knowledge base!</li>
