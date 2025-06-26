@@ -1,0 +1,29 @@
+[project]
+name = "notion-companion-backend"
+version = "0.1.0"
+description = "Backend API for Notion Companion RAG application"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "python-dotenv",
+    "httpx",
+    "python-multipart",
+    "click",
+    "h11",
+    "starlette",
+    "tiktoken",
+    "supabase",
+    "openai",
+    "notion-client",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "pytest-mock",
+    "pytest-asyncio",
+    "respx",
+    "coverage",
+]

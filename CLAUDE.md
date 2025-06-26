@@ -23,17 +23,19 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `npm run lint` - Run ESLint validation (ALWAYS run before committing)
 
 ### Backend Operations
-- `cd backend && .venv/bin/python scripts/sync_databases.py` - Sync Notion databases with enhanced contextual processing
-- `cd backend && .venv/bin/python scripts/sync_databases.py --dry-run` - Test sync configuration
-- `cd backend && .venv/bin/python scripts/model_config_demo.py` - Test model configuration
-- `cd backend && .venv/bin/python test_contextual_rag.py` - Test enhanced RAG components
+- `cd backend && uv run python scripts/sync_databases.py` - Sync Notion databases with enhanced contextual processing
+- `cd backend && uv run python scripts/sync_databases.py --dry-run` - Test sync configuration
+- `cd backend && uv run python scripts/model_config_demo.py` - Test model configuration
+- `cd backend && uv run python test_contextual_rag.py` - Test enhanced RAG components
 
 ### Python Environment Management
-**IMPORTANT: Always use uv-managed virtual environment for Python operations**
-- **Activate environment**: `cd backend && source .venv/bin/activate`
-- **Direct execution**: Use `.venv/bin/python` instead of `python` or `python3`
-- **Package management**: `uv add package_name` (not pip install)
-- **All Python scripts**: Must run from backend directory with `.venv/bin/python path/to/script.py`
+**IMPORTANT: Always use uv for Python operations with pyproject.toml**
+- **Install dependencies**: `cd backend && uv sync` (replaces pip install -r requirements.txt)
+- **Add new dependency**: `uv add package_name` (automatically updates pyproject.toml)
+- **Add dev dependency**: `uv add --dev package_name`
+- **Remove dependency**: `uv remove package_name`
+- **Run commands**: `uv run command` (replaces .venv/bin/python)
+- **All Python scripts**: Must run from backend directory with `uv run python path/to/script.py`
 
 ### Claude Code Testing Guidelines
 
