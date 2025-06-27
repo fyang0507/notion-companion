@@ -90,7 +90,9 @@ export function DashboardHome({ onSelectWorkspace, onNewChat }: DashboardHomePro
     documentsProcessed: totalDocuments
   };
 
-  const usagePercentage = (usageStats.tokensUsed / usageStats.tokensLimit) * 100;
+  const usagePercentage = usageStats.tokensLimit > 0 
+    ? Math.min(100, Math.max(0, (usageStats.tokensUsed / usageStats.tokensLimit) * 100))
+    : 0;
 
   return (
     <div className="flex-1 overflow-auto">
