@@ -310,9 +310,8 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
         isStreaming: false
       };
 
-      // Save the final assistant message and update in session
+      // Update the assistant message in UI (backend already saved it)
       if (activeChatSessions) {
-        await activeChatSessions.saveMessageImmediately(finalAssistantMessage);
         activeChatSessions.updateMessage(assistantMessageId, {
           content: fullContent,
           isStreaming: false,

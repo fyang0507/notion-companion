@@ -192,16 +192,8 @@ export function useChatSessions(): ChatSessionHook {
         // Add the message to the new session
         setCurrentMessages(prev => [...prev, message]);
         
-        // Immediately save this first user message to the database
-        const backendMessage: ChatMessageCreate = {
-          role: 'user',
-          content: message.content,
-          citations: message.citations || [],
-          context_used: contextToUse
-        };
-        
-        await apiClient.addMessageToSession(newSession.id, backendMessage);
-        console.log('First user message saved to session:', newSession.id);
+        // User message will be saved by backend when chat request is processed
+        console.log('First user message added to UI, will be saved by backend:', newSession.id);
         
         // Refresh recent sessions to include the new one
         await loadRecentSessions();
@@ -220,60 +212,18 @@ export function useChatSessions(): ChatSessionHook {
     
     setCurrentMessages(prev => [...prev, message]);
     
-    // For existing sessions, save user messages immediately to prevent duplicates
-    // Assistant messages are saved later when streaming is complete
-    if (currentSession && message.role === 'user') {
-      try {
-        const backendMessage: ChatMessageCreate = {
-          role: 'user',
-          content: message.content,
-          citations: message.citations || [],
-          context_used: {}
-        };
-        
-        // Save immediately to database
-        await apiClient.addMessageToSession(currentSession.id, backendMessage);
-        console.log('User message saved immediately to existing session:', currentSession.id);
-      } catch (err) {
-        console.error('Failed to save user message immediately to existing session:', err);
-        // Fall back to unsaved messages queue
-        unsavedMessages.current.push(message);
-      }
-    } else {
-      // No session yet, or assistant message - add to unsaved queue
-      unsavedMessages.current.push(message);
-    }
+    // Messages will be saved by backend when chat request is processed
+    // Frontend only manages UI state, not persistence
+    console.log('Message added to UI:', message.role, 'for session:', currentSession?.id || 'temporary');
     
     // Return current session ID if available, null otherwise
     return currentSession?.id || null;
   }, [isTemporaryChat, pendingSessionContext, loadRecentSessions, onSessionCreatedCallback, currentSession]);
 
   const saveMessageImmediately = useCallback(async (message: ChatMessage): Promise<void> => {
-    if (!currentSession) {
-      return;
-    }
-
-    try {
-      // Convert frontend message to backend format
-      const backendMessage: ChatMessageCreate = {
-        role: message.role === 'user' ? 'user' : 'assistant',
-        content: message.content,
-        citations: message.citations || [],
-        context_used: {}
-      };
-
-      await apiClient.addMessageToSession(currentSession.id, backendMessage);
-      
-      // Remove from unsaved messages if it exists there
-      const messageIndex = unsavedMessages.current.findIndex(msg => msg.id === message.id);
-      if (messageIndex !== -1) {
-        unsavedMessages.current.splice(messageIndex, 1);
-      }
-
-    } catch (err) {
-      console.error('Failed to save message immediately:', err);
-      // Don't throw here as this is often called automatically
-    }
+    // No-op: Backend handles all message persistence
+    // This method is kept for compatibility but does nothing
+    console.log('saveMessageImmediately called (no-op):', message.role, 'message for session:', currentSession?.id);
   }, [currentSession]);
 
   const updateMessage = useCallback((messageId: string, updates: Partial<ChatMessage>): void => {
