@@ -44,6 +44,34 @@ class PerformanceConfig:
     retry_delay_seconds: float
 
 @dataclass
+class VectorSearchConfig:
+    """Vector similarity search configuration."""
+    # Basic search parameters
+    match_threshold: float
+    match_count_default: int
+    match_count_max: int
+    
+    # Context enrichment settings
+    enable_context_enrichment: bool
+    adjacent_chunks_count: int
+    context_enrichment_timeout: float
+    
+    # Hybrid search settings
+    document_weight: float
+    chunk_weight: float
+    
+    # Contextual embeddings settings
+    contextual_weight: float
+    content_weight: float
+    enable_contextual_fallback: bool
+    
+    # Re-ranking settings
+    enable_reranking: bool
+    context_boost_factor: float
+    summary_boost_factor: float
+    section_boost_factor: float
+
+@dataclass
 class ChatPromptsConfig:
     """Chat-related prompt configurations."""
     system_prompt: str
@@ -185,6 +213,37 @@ class ModelConfigManager:
             summarization_delay_seconds=perf.get("summarization_delay_seconds", 1.0),
             max_retries=perf.get("max_retries", 3),
             retry_delay_seconds=perf.get("retry_delay_seconds", 2.0)
+        )
+    
+    def get_vector_search_config(self) -> VectorSearchConfig:
+        """Get vector search configuration."""
+        search = self._config.get("vector_search", {})
+        
+        return VectorSearchConfig(
+            # Basic search parameters
+            match_threshold=search.get("match_threshold", 0.1),
+            match_count_default=search.get("match_count_default", 10),
+            match_count_max=search.get("match_count_max", 50),
+            
+            # Context enrichment settings
+            enable_context_enrichment=search.get("enable_context_enrichment", True),
+            adjacent_chunks_count=search.get("adjacent_chunks_count", 2),
+            context_enrichment_timeout=search.get("context_enrichment_timeout", 5.0),
+            
+            # Hybrid search settings
+            document_weight=search.get("document_weight", 0.3),
+            chunk_weight=search.get("chunk_weight", 0.7),
+            
+            # Contextual embeddings settings
+            contextual_weight=search.get("contextual_weight", 0.7),
+            content_weight=search.get("content_weight", 0.3),
+            enable_contextual_fallback=search.get("enable_contextual_fallback", True),
+            
+            # Re-ranking settings
+            enable_reranking=search.get("enable_reranking", True),
+            context_boost_factor=search.get("context_boost_factor", 0.05),
+            summary_boost_factor=search.get("summary_boost_factor", 0.03),
+            section_boost_factor=search.get("section_boost_factor", 0.02)
         )
     
     def get_prompts_config(self) -> PromptsConfig:

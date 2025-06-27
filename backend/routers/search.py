@@ -3,6 +3,7 @@ from database import get_db
 from services.openai_service import get_openai_service
 from services.contextual_search_engine import ContextualSearchEngine
 from models import SearchRequest, SearchResponse, SearchResult
+from config.model_config import get_model_config
 
 router = APIRouter()
 
@@ -12,17 +13,19 @@ async def enhanced_search_endpoint(request: SearchRequest):
     try:
         db = get_db()
         openai_service = get_openai_service()
+        model_config = get_model_config()
+        search_config = model_config.get_vector_search_config()
         
         # Initialize contextual search engine
-        contextual_engine = ContextualSearchEngine(db, openai_service)
+        contextual_engine = ContextualSearchEngine(db, openai_service, search_config)
         
-        # Use enhanced contextual search
+        # Use enhanced contextual search with configurable parameters
         results = await contextual_engine.contextual_search(
             query=request.query,
             database_filters=request.database_filters,
-            include_context=True,  # Enable context enrichment
-            match_threshold=0.7,
-            match_count=request.limit
+            include_context=search_config.enable_context_enrichment,
+            match_threshold=search_config.match_threshold,
+            match_count=min(request.limit, search_config.match_count_max)
         )
         
         # Format results for client
@@ -69,17 +72,19 @@ async def hybrid_search_endpoint(request: SearchRequest):
     try:
         db = get_db()
         openai_service = get_openai_service()
+        model_config = get_model_config()
+        search_config = model_config.get_vector_search_config()
         
         # Initialize contextual search engine
-        contextual_engine = ContextualSearchEngine(db, openai_service)
+        contextual_engine = ContextualSearchEngine(db, openai_service, search_config)
         
-        # Use hybrid contextual search
+        # Use hybrid contextual search with configurable parameters
         results = await contextual_engine.hybrid_contextual_search(
             query=request.query,
             database_filters=request.database_filters,
             content_type_filter=None,  # Could be added to SearchRequest in future
-            match_threshold=0.7,
-            match_count=request.limit
+            match_threshold=search_config.match_threshold,
+            match_count=min(request.limit, search_config.match_count_max)
         )
         
         # Format results for client

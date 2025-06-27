@@ -59,6 +59,32 @@ summarization_delay_seconds = 1.0  # Delay between summarization calls
 max_retries = 3                    # Max retries for failed API calls
 retry_delay_seconds = 2.0          # Delay between retries
 
+[vector_search]
+# Vector similarity search parameters
+match_threshold = 0.1              # Similarity threshold for relevant results (0.0-1.0)
+match_count_default = 10           # Default number of results to return
+match_count_max = 50               # Maximum number of results allowed
+
+# Context enrichment settings
+enable_context_enrichment = true   # Enable adjacent chunk context enrichment
+adjacent_chunks_count = 2          # Number of adjacent chunks to retrieve (each side)
+context_enrichment_timeout = 5.0   # Timeout for context enrichment in seconds
+
+# Hybrid search settings
+document_weight = 0.3              # Weight for document-level results in hybrid search
+chunk_weight = 0.7                # Weight for chunk-level results in hybrid search
+
+# Contextual embeddings settings (Anthropic-style contextual retrieval)
+contextual_weight = 0.7            # Weight for contextual embeddings
+content_weight = 0.3               # Weight for content embeddings
+enable_contextual_fallback = true  # Fall back to content embeddings if contextual unavailable
+
+# Re-ranking settings
+enable_reranking = true            # Enable contextual re-ranking of results
+context_boost_factor = 0.05        # Boost for results with context information
+summary_boost_factor = 0.03        # Boost for results with summaries
+section_boost_factor = 0.02        # Boost for results with section information
+
 # ============================================================================
 # PROMPT TEMPLATES - Centralized prompt management for active LLM processes
 # ============================================================================

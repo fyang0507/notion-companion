@@ -10,35 +10,49 @@ from typing import List, Dict, Any, Optional
 import logging
 from services.openai_service import OpenAIService
 from database import Database
+from config.model_config import VectorSearchConfig
 
 class ContextualSearchEngine:
     """Enhanced search engine with contextual retrieval and adjacent chunk context."""
     
-    def __init__(self, db: Database, openai_service: OpenAIService):
+    def __init__(self, db: Database, openai_service: OpenAIService, search_config: Optional[VectorSearchConfig] = None):
         self.db = db
         self.openai_service = openai_service
         self.logger = logging.getLogger(__name__)
+        
+        # Use provided config or create default
+        if search_config is None:
+            from config.model_config import get_model_config
+            search_config = get_model_config().get_vector_search_config()
+        self.config = search_config
     
     async def contextual_search(self, 
                               query: str, 
                               database_filters: Optional[List[str]] = None, 
-                              include_context: bool = True,
-                              match_threshold: float = 0.7,
-                              match_count: int = 10) -> List[Dict[str, Any]]:
+                              include_context: Optional[bool] = None,
+                              match_threshold: Optional[float] = None,
+                              match_count: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Enhanced search with contextual retrieval and adjacent chunk context.
         
         Args:
             query: Search query
             database_filters: List of database IDs to filter by
-            include_context: Whether to include adjacent chunk context
-            match_threshold: Similarity threshold for matches
-            match_count: Maximum number of results to return
+            include_context: Whether to include adjacent chunk context (uses config default if None)
+            match_threshold: Similarity threshold for matches (uses config default if None)
+            match_count: Maximum number of results to return (uses config default if None)
             
         Returns:
             List of enhanced search results with contextual information
         """
         try:
+            # Apply config defaults for None parameters
+            if include_context is None:
+                include_context = self.config.enable_context_enrichment
+            if match_threshold is None:
+                match_threshold = self.config.match_threshold
+            if match_count is None:
+                match_count = self.config.match_count_default
             # 1. Generate query embedding
             embedding_response = await self.openai_service.generate_embedding(query)
             
@@ -52,7 +66,19 @@ class ContextualSearchEngine:
             
             # 3. Enrich results with adjacent chunks if requested
             if include_context:
-                enriched_results = await self._enrich_with_adjacent_chunks(chunk_results)
+                try:
+                    enriched_results = await self._enrich_with_adjacent_chunks(chunk_results)
+                except Exception as e:
+                    self.logger.warning(f"Context enrichment failed, using basic results: {e}")
+                    # Fallback to basic results with minimal enrichment structure
+                    enriched_results = []
+                    for result in chunk_results:
+                        enriched_results.append({
+                            **result,
+                            'enriched_content': result.get('content', ''),
+                            'context_type': 'basic',
+                            'has_context_enrichment': False
+                        })
             else:
                 enriched_results = chunk_results
             
@@ -73,10 +99,16 @@ class ContextualSearchEngine:
     async def _search_contextual_chunks(self, 
                                       query_embedding: List[float], 
                                       database_filters: Optional[List[str]] = None,
-                                      match_threshold: float = 0.7,
-                                      match_count: int = 20) -> List[Dict[str, Any]]:
+                                      match_threshold: Optional[float] = None,
+                                      match_count: Optional[int] = None) -> List[Dict[str, Any]]:
         """Search using contextual embeddings with enhanced SQL function."""
         try:
+            # Apply config defaults
+            if match_threshold is None:
+                match_threshold = self.config.match_threshold
+            if match_count is None:
+                match_count = self.config.match_count_default * 2  # Get more for enrichment
+            
             # Use the enhanced match_contextual_chunks function
             response = self.db.client.rpc('match_contextual_chunks', {
                 'query_embedding': query_embedding,
@@ -186,18 +218,18 @@ class ContextualSearchEngine:
             for result in results:
                 base_score = result.get('combined_score', result.get('contextual_similarity', 0.0))
                 
-                # Boost score for results with contextual information
+                # Boost score for results with contextual information (using config)
                 context_boost = 0.0
                 if result.get('chunk_context'):
-                    context_boost += 0.05
+                    context_boost += self.config.context_boost_factor
                 if result.get('chunk_summary'):
-                    context_boost += 0.03
+                    context_boost += self.config.summary_boost_factor
                 if result.get('has_context_enrichment'):
-                    context_boost += 0.02
+                    context_boost += self.config.context_boost_factor / 2  # Half boost for enrichment
                 
                 # Boost score for results with section information
                 if result.get('document_section'):
-                    context_boost += 0.02
+                    context_boost += self.config.section_boost_factor
                 
                 final_score = base_score + context_boost
                 
@@ -218,10 +250,16 @@ class ContextualSearchEngine:
     async def _fallback_basic_search(self, 
                                    query: str, 
                                    database_filters: Optional[List[str]] = None,
-                                   match_threshold: float = 0.7,
-                                   match_count: int = 10) -> List[Dict[str, Any]]:
+                                   match_threshold: Optional[float] = None,
+                                   match_count: Optional[int] = None) -> List[Dict[str, Any]]:
         """Fallback to basic search if contextual search fails."""
         try:
+            # Apply config defaults
+            if match_threshold is None:
+                match_threshold = self.config.match_threshold
+            if match_count is None:
+                match_count = self.config.match_count_default
+            
             # Generate embedding for basic search
             embedding_response = await self.openai_service.generate_embedding(query)
             
@@ -264,10 +302,16 @@ class ContextualSearchEngine:
     async def _fallback_chunk_search(self, 
                                    query_embedding: List[float], 
                                    database_filters: Optional[List[str]] = None,
-                                   match_threshold: float = 0.7,
-                                   match_count: int = 10) -> List[Dict[str, Any]]:
+                                   match_threshold: Optional[float] = None,
+                                   match_count: Optional[int] = None) -> List[Dict[str, Any]]:
         """Fallback chunk search using basic match_chunks function."""
         try:
+            # Apply config defaults
+            if match_threshold is None:
+                match_threshold = self.config.match_threshold
+            if match_count is None:
+                match_count = self.config.match_count_default
+            
             response = self.db.client.rpc('match_chunks', {
                 'query_embedding': query_embedding,
                 'database_filter': database_filters,
@@ -285,8 +329,8 @@ class ContextualSearchEngine:
                                      query: str,
                                      database_filters: Optional[List[str]] = None,
                                      content_type_filter: Optional[List[str]] = None,
-                                     match_threshold: float = 0.7,
-                                     match_count: int = 10) -> List[Dict[str, Any]]:
+                                     match_threshold: Optional[float] = None,
+                                     match_count: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Perform hybrid search combining documents and contextual chunks.
         
@@ -294,13 +338,18 @@ class ContextualSearchEngine:
             query: Search query
             database_filters: Database IDs to filter by
             content_type_filter: Content types to filter by
-            match_threshold: Similarity threshold
-            match_count: Maximum results to return
+            match_threshold: Similarity threshold (uses config default if None)
+            match_count: Maximum results to return (uses config default if None)
             
         Returns:
             Combined results from documents and contextual chunks
         """
         try:
+            # Apply config defaults
+            if match_threshold is None:
+                match_threshold = self.config.match_threshold
+            if match_count is None:
+                match_count = self.config.match_count_default
             # Generate query embedding
             embedding_response = await self.openai_service.generate_embedding(query)
             
