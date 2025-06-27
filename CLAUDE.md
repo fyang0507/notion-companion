@@ -161,7 +161,37 @@ Enhanced Single-Database Model (v4.0) with Contextual Retrieval:
 - **Token Limits**: Set conservative limits for different operations
 - **Performance Settings**: Configure batch sizes, delays, and retry policies
 - **Prompt Templates**: Centralized prompt management for all LLM interactions
+- **Vector Search Parameters**: Configurable similarity thresholds, context enrichment, and re-ranking settings
 - **Future Services**: When adding new LLM services, add configuration sections to `models.toml`
+
+**Vector Search Configuration**: All RAG search parameters are now configurable in `models.toml`:
+```toml
+[vector_search]
+# Core search parameters
+match_threshold = 0.1              # Similarity threshold (0.0-1.0) - lower = more results
+match_count_default = 10           # Default number of results to return
+match_count_max = 50               # Maximum results allowed per query
+
+# Context enrichment settings
+enable_context_enrichment = true   # Enable adjacent chunk context retrieval
+adjacent_chunks_count = 2          # Number of adjacent chunks to retrieve (each side)
+context_enrichment_timeout = 5.0   # Timeout for context enrichment in seconds
+
+# Hybrid search weights
+document_weight = 0.3              # Weight for document-level results
+chunk_weight = 0.7                # Weight for chunk-level results
+
+# Contextual embeddings (Anthropic-style)
+contextual_weight = 0.7            # Weight for contextual embeddings
+content_weight = 0.3               # Weight for content embeddings
+enable_contextual_fallback = true  # Fall back to content embeddings
+
+# Re-ranking boost factors
+enable_reranking = true            # Enable contextual re-ranking
+context_boost_factor = 0.05        # Boost for results with context information
+summary_boost_factor = 0.03        # Boost for results with summaries
+section_boost_factor = 0.02        # Boost for results with section information
+```
 
 **Pattern for New LLM Services**: Follow the established structure:
 ```toml
@@ -338,6 +368,50 @@ curl -X GET http://localhost:8000/health
 ```
 
 **Key Learning**: Always **test the actual data flow** rather than **assuming where the problem is**. The chat sessions bug was caused by `execute_query()` returning empty results for unsupported queries, not routing issues.
+
+### RAG Search Configuration and Threshold Fix (v4.1) - June 2025
+**MAJOR ENHANCEMENT**: Fixed RAG "no relevant documents" issue and implemented configurable search parameters:
+
+#### ✅ **Root Cause Resolution**
+- **Problem**: Hardcoded similarity threshold of 0.7 was too high, filtering out all results
+- **Semantic Similarity Reality**: Good matches typically score 0.1-0.5, rarely exceed 0.6
+- **Solution**: Lowered default threshold to 0.1 and made all parameters configurable
+
+#### 🔄 **What Was Implemented**
+
+**New Configuration System:**
+- **`[vector_search]` section** in `backend/config/models.toml` with 13 configurable parameters
+- **`VectorSearchConfig` dataclass** in `backend/config/model_config.py` for type-safe config loading
+- **Backward compatible** parameter system - config defaults with optional overrides
+
+**Enhanced Search Engine:**
+- **`ContextualSearchEngine`** now accepts optional `VectorSearchConfig` parameter
+- **All search methods** use config defaults when parameters not provided
+- **API endpoints** automatically use configured thresholds and limits
+
+**Key Configurable Parameters:**
+```toml
+match_threshold = 0.1              # Fixed: was 0.7 (too high)
+enable_context_enrichment = true   # Adjacent chunk context retrieval
+contextual_weight = 0.7            # Anthropic-style contextual vs content embedding weights
+context_boost_factor = 0.05        # Re-ranking boost for contextual information
+```
+
+#### 🎯 **Benefits (v4.1)**
+- **No Code Changes**: Tune search performance by editing TOML file
+- **Production Flexibility**: Adjust thresholds based on content and user feedback
+- **Debug Friendly**: Clear configuration makes troubleshooting similarity issues easier
+- **Performance Tuning**: Easy A/B testing of different threshold values
+
+#### 📊 **Performance Impact**
+- **Search Quality**: Dramatically improved from 0 results to relevant matches
+- **Recall vs Precision**: Configurable threshold allows tuning recall/precision balance
+- **Context Enrichment**: Configurable adjacent chunk retrieval for richer results
+
+#### 🧪 **Testing & Validation**
+- **Step-by-step debugging** confirmed database functions work with proper thresholds
+- **Configuration loading** validated with comprehensive test suite
+- **API integration** verified with both default and override parameters
 
 ## Future Considerations
 
