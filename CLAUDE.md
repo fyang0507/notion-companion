@@ -20,7 +20,8 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `pnpm run dev:full` - Both frontend and backend concurrently
 - `make dev` - Alternative using Makefile
 - `pnpm run build` - Build Next.js for production
-- `pnpm run lint` - Run ESLint validation (ALWAYS run before committing)
+- `pnpm run lint` - Run ESLint validation
+- `pnpm run pre-commit-test` - **OPTIONAL: Full test suite before committing when changes are significant or with dependency updates**
 
 ### Backend Operations
 - `cd backend && uv run python scripts/sync_databases.py` - Sync Notion databases with enhanced contextual processing
@@ -292,11 +293,46 @@ The previous v2.0 approach attempted to simplify multi-workspace to single works
 - **API Tests**: Enhanced search endpoints verified with contextual responses
 - **Performance Tests**: Embedding generation and search quality validated
 
-## Quality Guidelines
+## Quality Guidelines & Pre-Commit Testing
 
-- Always run `pnpm run lint` before committing changes
-- The application uses static export configuration, so ensure all features work without server-side rendering
-- See `backend/docs/TESTING_BEST_PRACTICES.md` for detailed testing patterns
+### **OPTIONAL: Pre-Commit Testing Workflow**
+
+**For significant code changes:**
+```bash
+pnpm run pre-commit-test
+# OR
+./scripts/pre-commit-test.sh
+```
+
+This comprehensive test ensures:
+- ✅ TypeScript compilation passes
+- ✅ ESLint validation passes  
+- ✅ Production build succeeds
+- ✅ All pages generate correctly
+
+### **Alternative Manual Testing (if script unavailable):**
+```bash
+# 1. TypeScript check (30 seconds)
+npx tsc --noEmit
+
+# 2. Linting check (1 minute)
+pnpm run lint
+
+# 3. Build test (2-3 minutes) - MOST IMPORTANT
+rm -rf .next && pnpm run build
+```
+
+### **Why This Workflow is Critical:**
+- **Prevents CI/CD failures**: Local build mirrors GitHub Actions
+- **Catches template literal issues**: JavaScript compilation can fail even when TypeScript passes
+- **Ensures static export works**: Verifies all pages generate correctly
+- **Saves time**: 3 minutes locally vs 10+ minute failed CI/CD cycles
+
+### **Development Best Practices:**
+- Run the full test suite before every commit (no exceptions)
+- The application uses static export configuration
+- See `docs/DEVELOPMENT_WORKFLOW.md` for detailed testing procedures
+- See `backend/docs/TESTING_BEST_PRACTICES.md` for backend testing patterns
 
 ## Debugging Methodology
 
@@ -435,7 +471,16 @@ The current no-workspace model (v3.0) could theoretically be extended to support
 **Recommendation**: Only implement multi-workspace if there is clear user demand, as the current single-workspace model significantly simplifies the application architecture and user experience.
 
 ## Documentation References
+
+All documentation has been consolidated in the `docs/` directory:
+
+- **[Documentation Index](docs/README.md)** - Complete overview of all project documentation
+- **[Development Workflow](docs/DEVELOPMENT_WORKFLOW.md)** - Testing procedures and development best practices
+- **[Backend Setup](docs/backend/BACKEND_SETUP.md)** - Backend installation and configuration guide
+- **[RAG Implementation](docs/CONTEXTUAL_RAG_IMPLEMENTATION.md)** - Enhanced RAG system technical details
+- **[RAG Improvements](docs/RAG_IMPROVEMENT_ROADMAP.md)** - Future enhancement roadmap
+- **[Multimedia Strategy](docs/backend/MULTIMEDIA_STRATEGY.md)** - Media handling and processing plans
+- **[Data Pipeline](docs/backend/DATA_INGESTION_PIPELINE.md)** - How data flows from Notion to vector database
+- **[Configuration Guide](docs/backend/CONFIG_GUIDE.md)** - Model and system configuration
 - **Setup Guide**: Visit `/setup` page for complete database schema and environment setup
-- **RAG Improvements**: `backend/docs/RAG_IMPROVEMENT_ROADMAP.md` - Future enhancements
-- **Multimedia Strategy**: `backend/docs/MULTIMEDIA_STRATEGY.md` - Media handling plans
-- **Architecture History**: See this file's "Recent Architecture Changes" section for v3.0 workspace removal details
+- **Architecture History**: See this file's "Recent Architecture Changes" section for workspace removal details

@@ -16,7 +16,8 @@
     "test:backend:integration": "cd backend && python run_tests.py integration",
     "test:backend:api": "cd backend && python run_tests.py api",
     "test:backend:coverage": "cd backend && python run_tests.py coverage",
-    "test:install": "cd backend && python run_tests.py install"
+    "test:install": "cd backend && python run_tests.py install",
+    "pre-commit-test": "./scripts/pre-commit-test.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

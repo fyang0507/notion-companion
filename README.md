@@ -208,12 +208,34 @@ Processes Notion page updates, creation, and deletion events.
 - `MessageCitations` - Source reference display
 - `NotionDatabases` - Real-time database management
 
+## 📚 Documentation
+
+Comprehensive documentation has been consolidated in the `docs/` directory:
+
+- **[📖 Documentation Index](docs/README.md)** - Complete overview of all documentation
+- **[🚀 Development Workflow](docs/DEVELOPMENT_WORKFLOW.md)** - Testing, development practices, and pre-commit procedures
+- **[⚙️ Backend Setup](docs/backend/BACKEND_SETUP.md)** - Backend installation and configuration
+- **[🤖 RAG Implementation](docs/CONTEXTUAL_RAG_IMPLEMENTATION.md)** - Technical details of the enhanced RAG system
+
+### Quick Testing Before Commits
+
+Always run the pre-commit test suite before committing:
+
+```bash
+pnpm run pre-commit-test
+```
+
+This ensures TypeScript compilation, linting, and production build all pass.
+
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Make changes with tests
-4. Submit a pull request
+3. **Run pre-commit tests**: `pnpm run pre-commit-test`
+4. Make changes with tests
+5. Submit a pull request
+
+See [Development Workflow](docs/DEVELOPMENT_WORKFLOW.md) for detailed contribution guidelines.
 
 ## License
 
