@@ -5,6 +5,7 @@ import { useAnalytics } from '@/hooks/use-analytics';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -215,12 +216,7 @@ export default function AnalyticsPage() {
                       {overviewStats.totalTokens.toLocaleString()} / {overviewStats.monthlyLimit.toLocaleString()}
                     </span>
                   </div>
-                  <div className="h-3 bg-secondary rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-primary transition-all" 
-                      style={{ width: `${Math.round(usagePercentage)}%` }}
-                    />
-                  </div>
+                  <Progress value={usagePercentage} className="h-3" />
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>{Math.round(usagePercentage)}% used</span>
                     <span>{(overviewStats.monthlyLimit - overviewStats.totalTokens).toLocaleString()} remaining</span>
@@ -321,12 +317,7 @@ export default function AnalyticsPage() {
                         </div>
                         <div className="text-sm font-medium">${day.cost.toFixed(2)}</div>
                       </div>
-                      <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary transition-all" 
-                          style={{ width: `${Math.min(100, Math.max(0, (day.tokens / 16000) * 100))}%` }}
-                        />
-                      </div>
+                      <Progress value={(day.tokens / 16000) * 100} className="h-2" />
                     </div>
                   ))}
                 </div>
@@ -398,12 +389,7 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary transition-all" 
-                          style={{ width: `${workspace.percentage}%` }}
-                        />
-                      </div>
+                      <Progress value={workspace.percentage} className="flex-1 h-2" />
                       <span className="text-sm font-medium w-12">{workspace.percentage}%</span>
                     </div>
                   </div>
