@@ -55,6 +55,10 @@ export default function AnalyticsPage() {
   const recentOperations = analytics?.recentOperations || [];
   const topQueries = analytics?.topQueries || [];
 
+  const usagePercentage = overviewStats.monthlyLimit > 0 
+    ? Math.min(100, Math.max(0, (overviewStats.totalTokens / overviewStats.monthlyLimit) * 100))
+    : 0;
+
   const getOperationIcon = (type: string) => {
     switch (type) {
       case 'chat': return <MessageSquare className="h-4 w-4" />;
@@ -313,7 +317,7 @@ export default function AnalyticsPage() {
                         </div>
                         <div className="text-sm font-medium">${day.cost.toFixed(2)}</div>
                       </div>
-                      <Progress value={(day.tokens / 16000) * 100} className="h-2" />
+                      <Progress value={Math.min(100, Math.max(0, (day.tokens / 16000) * 100))} className="h-2" />
                     </div>
                   ))}
                 </div>

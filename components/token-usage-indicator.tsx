@@ -26,7 +26,7 @@ export function TokenUsageIndicator() {
     avgResponseTime: 1.2
   });
 
-  const usagePercentage = (usage.currentTokens / usage.monthlyLimit) * 100;
+  const usagePercentage = Math.min(100, Math.max(0, (usage.currentTokens / usage.monthlyLimit) * 100));
   const getUsageColor = () => {
     if (usagePercentage < 50) return 'text-green-500';
     if (usagePercentage < 80) return 'text-yellow-500';

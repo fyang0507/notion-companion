@@ -60,7 +60,7 @@ export function useNotionDatabases() {
       // Get document counts for each database
       const databasesWithCounts = await Promise.all(
         (databaseData || []).map(async (db) => {
-          const { count } = await supabase
+          const { count } = await supabase!
             .from('documents')
             .select('*', { count: 'exact', head: true })
             .eq('notion_database_id', db.database_id)
