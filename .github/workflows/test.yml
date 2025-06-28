@@ -27,39 +27,37 @@ jobs:
         cd backend
         uv sync --frozen
 
-    - name: Run backend unit tests
+    - name: Run backend tests (CI mode)
       run: |
         cd backend
-        uv run pytest tests/unit/ -v --tb=short
+        uv run python run_tests.py ci
 
-    - name: Run backend integration tests
-      run: |
-        cd backend
-        uv run pytest tests/integration/ -v --tb=short
+  frontend-tests:
+    runs-on: ubuntu-latest
+    name: Frontend Tests
 
-    - name: Run backend API tests
-      run: |
-        cd backend
-        uv run pytest tests/api/ -v --tb=short
+    steps:
+    - uses: actions/checkout@v4
 
-    - name: Run backend tests with coverage
-      run: |
-        cd backend
-        uv run coverage run -m pytest tests/
-        uv run coverage report
-        uv run coverage xml
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
 
-    - name: Upload backend coverage to Codecov
-      uses: codecov/codecov-action@v3
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
       with:
-        files: ./backend/coverage.xml
-        flags: backend
-        name: backend-coverage
+        node-version: '18'
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Run frontend tests
+      run: pnpm run test:frontend:ci
 
   build-test:
     runs-on: ubuntu-latest
     name: Build Test
-    needs: [backend-tests]
+    needs: [backend-tests, frontend-tests]
 
     steps:
     - uses: actions/checkout@v4

@@ -12,6 +12,7 @@
     "dev:full": "concurrently --kill-others-on-fail --kill-others \"pnpm run dev\" \"pnpm run backend\"",
     "test": "pnpm run test:frontend && pnpm run test:backend",
     "test:frontend": "vitest",
+    "test:frontend:ci": "vitest --run --reporter=verbose --bail=1 --passWithNoTests",
     "test:backend": "cd backend && python run_tests.py all",
     "test:backend:unit": "cd backend && python run_tests.py unit",
     "test:backend:integration": "cd backend && python run_tests.py integration",

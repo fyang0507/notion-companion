@@ -30,12 +30,13 @@ def run_command(cmd, description):
 def main():
     """Main test runner."""
     if len(sys.argv) < 2:
-        print("Usage: python run_tests.py [unit|integration|api|all|install]")
+        print("Usage: python run_tests.py [unit|integration|api|all|install|ci]")
         print("\nOptions:")
         print("  unit        - Run unit tests only")
         print("  integration - Run integration tests only") 
         print("  api         - Run API tests only")
         print("  all         - Run all tests")
+        print("  ci          - Run all tests (optimized for CI)")
         print("  install     - Install test dependencies")
         print("  coverage    - Run tests with coverage report")
         sys.exit(1)
@@ -107,6 +108,26 @@ def main():
             sys.exit(0)
         else:
             print("\n💥 Some tests failed!")
+            sys.exit(1)
+            
+    elif command == "ci":
+        print("🏗️ Running tests in CI mode (fail-fast, concise output)...")
+        
+        # Run all tests with CI-optimized flags
+        success = run_command([
+            ".venv/bin/python", "-m", "pytest", "tests/", 
+            "-x",  # Stop on first failure
+            "--tb=short",  # Short traceback format
+            "--disable-warnings",  # Suppress warnings for cleaner output
+            "-q",  # Quiet mode (less verbose than -v)
+            "--no-header"  # No pytest header
+        ], "Running all tests (CI mode)")
+        
+        if success:
+            print("\n✅ All tests passed in CI mode!")
+            sys.exit(0)
+        else:
+            print("\n❌ Tests failed in CI mode!")
             sys.exit(1)
             
     elif command == "coverage":
