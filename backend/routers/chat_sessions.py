@@ -370,75 +370,25 @@ async def add_message_to_session(
         logger.error(f"Error adding message to session {session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to add message")
 
-@router.post("/{session_id}/save")
-async def save_chat_session(
+
+
+@router.post("/{session_id}/conclude-for-new-chat")
+async def conclude_for_new_chat(
     session_id: str,
-    messages: List[ChatMessageCreate],
     db=Depends(get_db)
 ):
-    """Save multiple messages to a chat session at once."""
+    """
+    Conclude current session when starting a new chat.
+    Used when user clicks 'New Chat' button.
+    """
     try:
-        # Check if session exists (allow active and concluded sessions)
-        check_response = db.client.table('chat_sessions').select('id, status').eq('id', session_id).in_('status', ['active', 'concluded']).execute()
+        chat_service = get_chat_session_service()
+        result = await chat_service.handle_new_chat_trigger(session_id)
+        return result
         
-        if not check_response.data:
-            raise HTTPException(status_code=404, detail="Chat session not found")
-        
-        saved_messages = []
-        
-        for i, message_data in enumerate(messages):
-            # Generate title from first user message using LLM (max 10 words)
-            # Check if this is the first message in the session
-            if len(saved_messages) == 0 and message_data.role == 'user':
-                try:
-                    title = await generate_title_from_first_message(message_data.content)
-                    success = db.update_session_title(session_id, title)
-                    if success:
-                        logger.info(f"Generated title from first message for session {session_id}: {title}")
-                except Exception as e:
-                    logger.error(f"Failed to generate title from first message: {e}")
-                    # Keep "New Chat" as fallback
-            
-            # Use the existing add_message_to_session method instead of raw SQL
-            message_dict = {
-                'role': message_data.role,
-                'content': message_data.content,
-                'model_used': message_data.model_used,
-                'tokens_used': message_data.tokens_used,
-                'response_time_ms': message_data.response_time_ms,
-                'citations': message_data.citations,
-                'context_used': message_data.context_used
-            }
-            
-            result = db.add_message_to_session(session_id, message_dict)
-            
-            if result:
-                saved_messages.append(ChatMessage(
-                    id=str(result['id']),
-                    session_id=str(result['session_id']),
-                    role=result['role'],
-                    content=result['content'],
-                    model_used=result.get('model_used'),
-                    tokens_used=result.get('tokens_used'),
-                    response_time_ms=result.get('response_time_ms'),
-                    citations=result.get('citations') or [],
-                    context_used=result.get('context_used') or {},
-                    created_at=result['created_at'],
-                    message_order=result['message_order']
-                ))
-        
-        # Note: Title and summary generation now happens only at session end (conclusion)
-        
-        logger.info(f"Saved {len(saved_messages)} messages to session {session_id}")
-        return {"message": f"Saved {len(saved_messages)} messages", "messages": saved_messages}
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error saving messages to session {session_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save messages")
-
-
+        logger.error(f"Error handling new chat trigger: {e}")
+        raise HTTPException(status_code=500, detail="Failed to handle new chat")
 
 @router.post("/{session_id}/conclude")
 async def conclude_chat_session(
@@ -461,28 +411,6 @@ async def conclude_chat_session(
     except Exception as e:
         logger.error(f"Error concluding session {session_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to conclude session")
-
-@router.post("/conclude-current")
-async def conclude_current_and_start_new(
-    current_session_id: Optional[str] = None,
-    db=Depends(get_db)
-):
-    """
-    Conclude current session when starting a new chat.
-    Used when user clicks 'New Chat' button.
-    """
-    try:
-        chat_service = get_chat_session_service()
-        
-        if current_session_id:
-            result = await chat_service.handle_new_chat_trigger(current_session_id)
-            return result
-        else:
-            return {"message": "No current session to conclude"}
-        
-    except Exception as e:
-        logger.error(f"Error handling new chat trigger: {e}")
-        raise HTTPException(status_code=500, detail="Failed to handle new chat")
 
 class ResumeRequest(BaseModel):
     resuming_session_id: str

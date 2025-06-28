@@ -90,7 +90,7 @@ export default function Home() {
         setChatOperationStatus('Concluding current chat...');
         console.log('Concluding current session before starting new chat, session ID:', chatSessions.currentSession.id);
         console.log('Current messages:', chatSessions.currentMessages.length, 'messages');
-        const result = await apiClient.concludeCurrentAndStartNew(chatSessions.currentSession.id);
+        const result = await apiClient.concludeForNewChat(chatSessions.currentSession.id);
         console.log('Conclusion result:', result);
       } else {
         console.log('No session to conclude or no user messages found');

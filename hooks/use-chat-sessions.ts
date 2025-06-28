@@ -71,30 +71,20 @@ export function useChatSessions(): ChatSessionHook {
   }, []);
 
   const saveCurrentSession = useCallback(async (): Promise<void> => {
-    // Messages are now saved immediately, so this mainly refreshes recent sessions
+    // Messages are saved individually during chat flow, so this just refreshes recent sessions
     if (!currentSession) {
       return;
     }
 
     try {
-      // If there are any remaining unsaved messages, save them
-      if (unsavedMessages.current.length > 0) {
-        const backendMessages: ChatMessageCreate[] = unsavedMessages.current.map(msg => ({
-          role: msg.role === 'user' ? 'user' : 'assistant',
-          content: msg.content,
-          citations: msg.citations || [],
-          context_used: {}
-        }));
-
-        await apiClient.saveChatSession(currentSession.id, backendMessages);
-        unsavedMessages.current = [];
-      }
+      // Clear any remaining unsaved messages (they should have been saved individually)
+      unsavedMessages.current = [];
 
       // Refresh recent sessions to update message counts and timestamps
       await loadRecentSessions();
 
     } catch (err) {
-      console.error('Failed to save session:', err);
+      console.error('Failed to refresh session:', err);
       // Don't throw here as this is often called automatically
     }
   }, [currentSession, loadRecentSessions]);

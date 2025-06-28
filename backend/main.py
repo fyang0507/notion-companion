@@ -106,11 +106,12 @@ app.include_router(logs.router, prefix="/api", tags=["logs"])
 
 @app.get("/")
 async def root():
-    return {"message": "Notion Companion API is running"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+    return {
+        "name": "Notion Companion API",
+        "version": "1.0.0",
+        "status": "healthy",
+        "message": "FastAPI backend for Notion RAG application"
+    }
 
 if __name__ == "__main__":
     import uvicorn

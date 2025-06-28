@@ -7,16 +7,16 @@ This directory contains comprehensive documentation for the Notion Companion pro
 ### Development & Workflow
 - **[Development Workflow](DEVELOPMENT_WORKFLOW.md)** - Complete guide to development practices, testing, and pre-commit workflows
 - **[Contextual RAG Implementation](CONTEXTUAL_RAG_IMPLEMENTATION.md)** - Technical overview of the enhanced RAG system with Anthropic-style contextual retrieval
+- **[RAG Improvement Roadmap](RAG_IMPROVEMENT_ROADMAP.md)** - Future enhancements and optimization plans
+- **[TODO](TODO.md)** - Current development tasks and planned improvements
 
 ### Backend Documentation
 - **[Backend Setup](backend/BACKEND_SETUP.md)** - Backend installation, configuration, and development setup
 - **[Data Ingestion Pipeline](backend/DATA_INGESTION_PIPELINE.md)** - How data flows from Notion into the vector database
+- **[Notion Sync User Guide](backend/NOTION_SYNC_USER_GUIDE.md)** - Guide for syncing and managing Notion databases
 - **[Multimedia Strategy](backend/MULTIMEDIA_STRATEGY.md)** - Handling images, files, and multimedia content
-- **[RAG Improvement Roadmap](backend/RAG_IMPROVEMENT_ROADMAP.md)** - Future enhancements and optimization plans
-- **[Chat Session Setup](backend/CHAT_SESSIONS_SETUP.md)** - Chat functionality configuration and usage
 - **[Chat Session Migration](backend/CHAT_SESSION_STATUS_MIGRATION.md)** - Database migration procedures for chat sessions
 - **[Configuration Guide](backend/CONFIG_GUIDE.md)** - Model configuration and settings management
-- **[Scripts Guide](backend/SCRIPTS_GUIDE.md)** - Backend utility scripts and their usage
 
 ### Frontend Documentation
 - **[Frontend docs coming soon]** - Frontend-specific documentation will be added here

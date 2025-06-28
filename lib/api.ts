@@ -270,11 +270,6 @@ export class ApiClient {
     return data;
   }
 
-  async saveChatSession(sessionId: string, messages: ChatMessageCreate[]): Promise<{ message: string; messages: ChatSessionMessage[] }> {
-    const { data } = await this.makeRequest<{ message: string; messages: ChatSessionMessage[] }>('POST', `/api/chat-sessions/${sessionId}/save`, messages);
-    return data;
-  }
-
 
 
   async concludeChatSession(sessionId: string, reason: string = 'manual'): Promise<{ message: string; title: string; summary: string }> {
@@ -282,18 +277,17 @@ export class ApiClient {
     return data;
   }
 
-  async concludeCurrentAndStartNew(currentSessionId?: string): Promise<{ message: string; title?: string; summary?: string }> {
-    const endpoint = currentSessionId 
-      ? `/api/chat-sessions/conclude-current?current_session_id=${currentSessionId}`
-      : '/api/chat-sessions/conclude-current';
-    const { data } = await this.makeRequest<{ message: string; title?: string; summary?: string }>('POST', endpoint);
-    return data;
-  }
+
 
   async concludeForResume(currentSessionId: string, resumingSessionId: string): Promise<{ message: string; title: string; summary: string }> {
     const { data } = await this.makeRequest<{ message: string; title: string; summary: string }>('POST', `/api/chat-sessions/${currentSessionId}/conclude-for-resume`, { 
       resuming_session_id: resumingSessionId 
     });
+    return data;
+  }
+
+  async concludeForNewChat(currentSessionId: string): Promise<{ message: string; title?: string; summary?: string }> {
+    const { data } = await this.makeRequest<{ message: string; title?: string; summary?: string }>('POST', `/api/chat-sessions/${currentSessionId}/conclude-for-new-chat`);
     return data;
   }
 }
