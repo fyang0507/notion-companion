@@ -372,3 +372,54 @@ class ContextualSearchEngine:
             self.logger.error(f"Error in hybrid contextual search: {str(e)}")
             # Fallback to regular contextual search
             return await self.contextual_search(query, database_filters, True, match_threshold, match_count)
+    
+    async def enhanced_metadata_search(self, 
+                                     query: str,
+                                     filters: Dict[str, Any],
+                                     match_threshold: Optional[float] = None,
+                                     match_count: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Enhanced search with comprehensive metadata filtering support.
+        
+        Args:
+            query: Search query
+            filters: Dictionary containing all filter parameters
+            match_threshold: Similarity threshold (uses config default if None)
+            match_count: Maximum results to return (uses config default if None)
+            
+        Returns:
+            Search results with enhanced metadata filtering
+        """
+        try:
+            # Apply config defaults
+            if match_threshold is None:
+                match_threshold = self.config.match_threshold
+            if match_count is None:
+                match_count = self.config.match_count_default
+                
+            # Generate query embedding
+            embedding_response = await self.openai_service.generate_embedding(query)
+            
+            # Prepare parameters for the enhanced_metadata_search function
+            search_params = {
+                'query_embedding': embedding_response.embedding,
+                'match_threshold': match_threshold,
+                'match_count': match_count
+            }
+            
+            # Add filter parameters
+            search_params.update(filters)
+            
+            # Use the enhanced metadata search function
+            response = self.db.client.rpc('enhanced_metadata_search', search_params).execute()
+            
+            results = response.data if response.data else []
+            
+            self.logger.info(f"Enhanced metadata search for '{query}' with filters returned {len(results)} results")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced metadata search: {str(e)}")
+            # Fallback to basic contextual search
+            database_filters = filters.get('database_filter')
+            return await self.contextual_search(query, database_filters, True, match_threshold, match_count)

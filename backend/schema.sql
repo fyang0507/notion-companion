@@ -127,12 +127,16 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     UNIQUE(document_id, chunk_order)
 );
 
--- Extracted metadata for queryable fields (performance optimization)
+-- Enhanced metadata for multi-database filtering and search
 CREATE TABLE IF NOT EXISTS document_metadata (
     document_id UUID PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
     notion_database_id TEXT NOT NULL REFERENCES notion_databases(database_id) ON DELETE CASCADE,
     
-    -- Common queryable fields (can be extended per database)
+    -- Common typed fields for fast querying (mapped from database-specific fields)
+    title TEXT,
+    created_date DATE,
+    modified_date DATE,
+    author TEXT,
     status TEXT,
     tags TEXT[],
     priority TEXT,
@@ -140,12 +144,35 @@ CREATE TABLE IF NOT EXISTS document_metadata (
     due_date DATE,
     completion_date DATE,
     
-    -- Flexible additional metadata
-    custom_fields JSONB DEFAULT '{}',
+    -- Multi-database flexible storage
+    database_fields JSONB DEFAULT '{}',     -- Raw database-specific field values
+    search_metadata JSONB DEFAULT '{}',     -- Normalized metadata for search/filtering
+    field_mappings JSONB DEFAULT '{}',      -- Maps database fields to common fields
     
     -- Search optimization
     metadata_search tsvector,
     
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Database schema registry for multi-database metadata handling
+CREATE TABLE IF NOT EXISTS database_field_schemas (
+    database_id TEXT PRIMARY KEY,
+    database_name TEXT NOT NULL,
+    
+    -- Schema analysis results
+    field_definitions JSONB NOT NULL DEFAULT '{}',      -- Complete field schema from Notion
+    queryable_fields JSONB NOT NULL DEFAULT '{}',       -- Fields suitable for filtering
+    field_mappings JSONB DEFAULT '{}',                   -- Maps to common typed fields
+    common_field_stats JSONB DEFAULT '{}',              -- Usage stats for common fields
+    
+    -- Analysis metadata
+    total_documents INTEGER DEFAULT 0,
+    last_analyzed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    analysis_version INTEGER DEFAULT 1,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -762,6 +789,163 @@ BEGIN
 END;
 $$;
 
+-- Enhanced metadata search with comprehensive filtering support
+CREATE OR REPLACE FUNCTION enhanced_metadata_search(
+    query_embedding vector(1536),
+    database_filter text[] DEFAULT NULL,
+    metadata_filters jsonb DEFAULT '{}',
+    content_type_filter text[] DEFAULT NULL,
+    date_range_filter jsonb DEFAULT '{}',
+    author_filter text[] DEFAULT NULL,
+    tag_filter text[] DEFAULT NULL,
+    status_filter text[] DEFAULT NULL,
+    match_threshold float DEFAULT 0.1,
+    match_count int DEFAULT 10
+)
+RETURNS TABLE (
+    result_type text,
+    id uuid,
+    title text,
+    content text,
+    chunk_context text,
+    chunk_summary text,
+    similarity real,
+    metadata jsonb,
+    document_metadata jsonb,
+    notion_page_id text,
+    page_url text,
+    has_adjacent_context boolean,
+    database_id text,
+    author text,
+    tags text[],
+    status text,
+    created_date date,
+    modified_date date
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    date_from date;
+    date_to date;
+BEGIN
+    -- Extract date range parameters if provided
+    date_from := CASE 
+        WHEN date_range_filter ? 'from' THEN (date_range_filter->>'from')::date 
+        ELSE NULL 
+    END;
+    date_to := CASE 
+        WHEN date_range_filter ? 'to' THEN (date_range_filter->>'to')::date 
+        ELSE NULL 
+    END;
+
+    RETURN QUERY
+    WITH document_results AS (
+        SELECT 
+            'document'::text as result_type,
+            d.id,
+            d.title,
+            d.content,
+            NULL::text as chunk_context,
+            NULL::text as chunk_summary,
+            CASE 
+                WHEN d.summary_embedding IS NOT NULL AND d.content_embedding IS NOT NULL THEN
+                    (
+                        (1 - (d.summary_embedding <=> query_embedding)) * 0.6 +
+                        (1 - (d.content_embedding <=> query_embedding)) * 0.4
+                    )::real
+                WHEN d.summary_embedding IS NOT NULL THEN
+                    (1 - (d.summary_embedding <=> query_embedding))::real
+                WHEN d.content_embedding IS NOT NULL THEN
+                    (1 - (d.content_embedding <=> query_embedding))::real
+                ELSE 0.0::real
+            END as similarity,
+            d.extracted_metadata as metadata,
+            COALESCE(dm.search_metadata, '{}'::jsonb) as document_metadata,
+            d.notion_page_id,
+            d.page_url,
+            false as has_adjacent_context,
+            d.notion_database_id as database_id,
+            COALESCE(dm.author, '') as author,
+            COALESCE(dm.tags, ARRAY[]::text[]) as tags,
+            COALESCE(dm.status, '') as status,
+            dm.created_date,
+            dm.modified_date
+        FROM documents d
+        LEFT JOIN document_metadata dm ON d.id = dm.document_id
+        WHERE (d.summary_embedding IS NOT NULL OR d.content_embedding IS NOT NULL)
+            AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
+            AND (content_type_filter IS NULL OR d.content_type = ANY(content_type_filter))
+            AND (author_filter IS NULL OR dm.author = ANY(author_filter))
+            AND (tag_filter IS NULL OR dm.tags && tag_filter)
+            AND (status_filter IS NULL OR dm.status = ANY(status_filter))
+            AND (date_from IS NULL OR dm.created_date >= date_from)
+            AND (date_to IS NULL OR dm.created_date <= date_to)
+            -- Custom metadata filters using JSONB containment
+            AND (metadata_filters = '{}' OR dm.search_metadata @> metadata_filters)
+            AND (
+                (d.summary_embedding IS NOT NULL AND 1 - (d.summary_embedding <=> query_embedding) > match_threshold) OR
+                (d.content_embedding IS NOT NULL AND 1 - (d.content_embedding <=> query_embedding) > match_threshold)
+            )
+    ),
+    chunk_results AS (
+        SELECT 
+            'chunk'::text as result_type,
+            dc.id,
+            d.title,
+            dc.content,
+            dc.chunk_context,
+            dc.chunk_summary,
+            CASE 
+                WHEN dc.contextual_embedding IS NOT NULL AND dc.embedding IS NOT NULL THEN
+                    (
+                        (1 - (dc.contextual_embedding <=> query_embedding)) * 0.7 +
+                        (1 - (dc.embedding <=> query_embedding)) * 0.3
+                    )::real
+                WHEN dc.contextual_embedding IS NOT NULL THEN
+                    (1 - (dc.contextual_embedding <=> query_embedding))::real
+                WHEN dc.embedding IS NOT NULL THEN
+                    (1 - (dc.embedding <=> query_embedding))::real
+                ELSE 0.0::real
+            END as similarity,
+            d.extracted_metadata as metadata,
+            COALESCE(dm.search_metadata, '{}'::jsonb) as document_metadata,
+            d.notion_page_id,
+            d.page_url,
+            (dc.prev_chunk_id IS NOT NULL OR dc.next_chunk_id IS NOT NULL) as has_adjacent_context,
+            d.notion_database_id as database_id,
+            COALESCE(dm.author, '') as author,
+            COALESCE(dm.tags, ARRAY[]::text[]) as tags,
+            COALESCE(dm.status, '') as status,
+            dm.created_date,
+            dm.modified_date
+        FROM document_chunks dc
+        JOIN documents d ON dc.document_id = d.id
+        LEFT JOIN document_metadata dm ON d.id = dm.document_id
+        WHERE (dc.contextual_embedding IS NOT NULL OR dc.embedding IS NOT NULL)
+            AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
+            AND (content_type_filter IS NULL OR d.content_type = ANY(content_type_filter))
+            AND (author_filter IS NULL OR dm.author = ANY(author_filter))
+            AND (tag_filter IS NULL OR dm.tags && tag_filter)
+            AND (status_filter IS NULL OR dm.status = ANY(status_filter))
+            AND (date_from IS NULL OR dm.created_date >= date_from)
+            AND (date_to IS NULL OR dm.created_date <= date_to)
+            -- Custom metadata filters using JSONB containment
+            AND (metadata_filters = '{}' OR dm.search_metadata @> metadata_filters)
+            AND (
+                (dc.contextual_embedding IS NOT NULL AND 1 - (dc.contextual_embedding <=> query_embedding) > match_threshold) OR
+                (dc.embedding IS NOT NULL AND 1 - (dc.embedding <=> query_embedding) > match_threshold)
+            )
+    )
+    SELECT * FROM (
+        SELECT * FROM document_results
+        UNION ALL
+        SELECT * FROM chunk_results
+    ) combined_results
+    ORDER BY similarity DESC
+    LIMIT match_count;
+END;
+$$;
+
 -- ============================================================================
 -- TRIGGERS FOR AUTOMATIC UPDATES
 -- ============================================================================
@@ -857,6 +1041,7 @@ CREATE TRIGGER chat_messages_update_session
 ALTER TABLE notion_databases ENABLE ROW LEVEL SECURITY;
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_metadata ENABLE ROW LEVEL SECURITY;
+ALTER TABLE database_field_schemas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE multimedia_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document_multimedia ENABLE ROW LEVEL SECURITY;
@@ -868,6 +1053,7 @@ ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all operations" ON notion_databases FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON documents FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON document_metadata FOR ALL USING (true);
+CREATE POLICY "Allow all operations" ON database_field_schemas FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON document_chunks FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON multimedia_assets FOR ALL USING (true);
 CREATE POLICY "Allow all operations" ON document_multimedia FOR ALL USING (true);

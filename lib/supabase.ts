@@ -102,16 +102,38 @@ export type Database = {
       document_metadata: {
         Row: {
           document_id: string
-          field_name: string
-          field_type: string
-          raw_value?: any
-          text_value?: string
-          number_value?: number
-          date_value?: string
-          datetime_value?: string
-          boolean_value?: boolean
-          array_value?: any
+          notion_database_id: string
+          title?: string
+          created_date?: string
+          modified_date?: string
+          author?: string
+          status?: string
+          tags?: string[]
+          priority?: string
+          assignee?: string
+          due_date?: string
+          completion_date?: string
+          database_fields?: any
+          search_metadata?: any
+          field_mappings?: any
+          metadata_search?: string
           created_at: string
+          updated_at: string
+        }
+      }
+      database_field_schemas: {
+        Row: {
+          database_id: string
+          database_name: string
+          field_definitions: any
+          queryable_fields: any
+          field_mappings?: any
+          common_field_stats?: any
+          total_documents?: number
+          last_analyzed_at: string
+          analysis_version?: number
+          created_at: string
+          updated_at: string
         }
       }
       chat_sessions: {

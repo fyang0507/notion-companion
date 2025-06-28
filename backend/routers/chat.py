@@ -2,15 +2,56 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from database import get_db
 from services.openai_service import get_openai_service
+from services.contextual_search_engine import ContextualSearchEngine
 from config.model_config import get_model_config
 from models import ChatRequest
 from logging_config import get_logger, log_performance
 import json
 import time
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Dict, Any
 
 router = APIRouter()
+
+def _prepare_chat_filters(request: ChatRequest) -> Dict[str, Any]:
+    """Prepare filter parameters for enhanced metadata search in chat."""
+    filters = {}
+    
+    # Basic filters
+    if request.database_filters:
+        filters['database_filter'] = request.database_filters
+    if request.content_type_filters:
+        filters['content_type_filter'] = request.content_type_filters
+    if request.author_filters:
+        filters['author_filter'] = request.author_filters
+    if request.tag_filters:
+        filters['tag_filter'] = request.tag_filters
+    if request.status_filters:
+        filters['status_filter'] = request.status_filters
+    
+    # Date range filter
+    if request.date_range_filter:
+        date_range = {}
+        if request.date_range_filter.from_date:
+            date_range['from'] = request.date_range_filter.from_date.isoformat()
+        if request.date_range_filter.to_date:
+            date_range['to'] = request.date_range_filter.to_date.isoformat()
+        if date_range:
+            filters['date_range_filter'] = date_range
+    
+    # Custom metadata filters
+    if request.metadata_filters:
+        metadata_filters = {}
+        for filter_item in request.metadata_filters:
+            if filter_item.operator == 'equals':
+                metadata_filters[filter_item.field_name] = filter_item.values[0] if filter_item.values else None
+            elif filter_item.operator == 'in':
+                metadata_filters[filter_item.field_name] = filter_item.values
+            # Add more operators as needed
+        if metadata_filters:
+            filters['metadata_filters'] = metadata_filters
+    
+    return filters
 
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -56,30 +97,56 @@ async def chat_endpoint(request: ChatRequest):
         log_performance("embedding_generation", embedding_duration, 
                        message_length=len(latest_user_message))
         
-        # Find relevant documents and chunks using vector search with configured threshold
-        # Convert empty database filter list to None for proper SQL handling
-        database_filter = request.database_filters if request.database_filters else None
+        # Find relevant documents and chunks using enhanced metadata search when filters are provided
+        # Check if advanced metadata filters are provided
+        filters = _prepare_chat_filters(request)
+        has_advanced_filters = any(key in filters for key in [
+            'metadata_filters', 'author_filter', 'tag_filter', 'status_filter', 'date_range_filter'
+        ])
         
         search_start = time.time()
-        doc_results = db.vector_search_documents(
-            query_embedding=embedding_response.embedding,
-            database_filter=database_filter,
-            match_threshold=search_config.match_threshold,
-            match_count=search_config.match_count_default
-        )
         
-        chunk_results = db.vector_search_chunks(
-            query_embedding=embedding_response.embedding,
-            database_filter=database_filter,
-            match_threshold=search_config.match_threshold,
-            match_count=search_config.match_count_default
-        )
+        if has_advanced_filters:
+            # Use enhanced metadata search for advanced filtering
+            contextual_engine = ContextualSearchEngine(db, openai_service, search_config)
+            combined_results = await contextual_engine.enhanced_metadata_search(
+                query=latest_user_message,
+                filters=filters,
+                match_threshold=search_config.match_threshold,
+                match_count=search_config.match_count_default * 2  # Get more results to separate docs/chunks
+            )
+            
+            # Separate documents and chunks from combined results
+            doc_results = [r for r in combined_results if r.get('result_type') == 'document']
+            chunk_results = [r for r in combined_results if r.get('result_type') == 'chunk']
+            
+            search_method = "enhanced_metadata_search"
+        else:
+            # Use standard vector search for basic database filtering
+            database_filter = request.database_filters if request.database_filters else None
+            
+            doc_results = db.vector_search_documents(
+                query_embedding=embedding_response.embedding,
+                database_filter=database_filter,
+                match_threshold=search_config.match_threshold,
+                match_count=search_config.match_count_default
+            )
+            
+            chunk_results = db.vector_search_chunks(
+                query_embedding=embedding_response.embedding,
+                database_filter=database_filter,
+                match_threshold=search_config.match_threshold,
+                match_count=search_config.match_count_default
+            )
+            
+            search_method = "vector_search"
+        
         search_duration = (time.time() - search_start) * 1000
-        log_performance("vector_search", search_duration,
+        log_performance(search_method, search_duration,
                        doc_results_count=len(doc_results),
                        chunk_results_count=len(chunk_results))
         
-        logger.info("Vector search completed", extra={
+        logger.info(f"{search_method} completed", extra={
             'doc_results': len(doc_results),
             'chunk_results': len(chunk_results),
             'search_duration_ms': search_duration,

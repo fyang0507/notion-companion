@@ -278,12 +278,12 @@ class DocumentProcessor:
         
         # Extract metadata using schema manager
         try:
-            extracted_metadata_records = await self.schema_manager.extract_document_metadata(
+            extracted_metadata_record = await self.schema_manager.extract_document_metadata(
                 notion_page_id, page_data, database_id
             )
         except Exception as e:
             self.logger.warning(f"Failed to extract metadata for {notion_page_id}: {str(e)}")
-            extracted_metadata_records = []
+            extracted_metadata_record = {}
         
         # Check if document is small enough to store as single document
         content_tokens = self.count_tokens(content)
@@ -378,10 +378,10 @@ class DocumentProcessor:
             # Store document
             self._store_document(document_data)
             
-            # Store metadata records
-            for metadata_record in extracted_metadata_records:
-                metadata_record['document_id'] = document_id
-                self._store_document_metadata(metadata_record)
+            # Store metadata record
+            if extracted_metadata_record:
+                extracted_metadata_record['document_id'] = document_id
+                self._store_document_metadata(extracted_metadata_record)
             
             self.logger.info(f"Stored document {notion_page_id} as single document")
             return {'document_id': document_id, 'chunks_created': 0}
@@ -406,10 +406,10 @@ class DocumentProcessor:
             # Store main document
             self._store_document(document_data)
             
-            # Store metadata records
-            for metadata_record in extracted_metadata_records:
-                metadata_record['document_id'] = document_id
-                self._store_document_metadata(metadata_record)
+            # Store metadata record
+            if extracted_metadata_record:
+                extracted_metadata_record['document_id'] = document_id
+                self._store_document_metadata(extracted_metadata_record)
             
             # Generate embeddings and store enhanced chunks
             await self._store_contextual_chunks(document_id, contextual_chunks, title)

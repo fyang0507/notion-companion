@@ -372,19 +372,32 @@ class DatabaseSchemaManager:
     def _store_schema(self, schema_record: Dict[str, Any]) -> None:
         """
         Store the analyzed schema in the database.
-        Single database model - no workspace_id.
+        Uses the new database_field_schemas table for multi-database support.
         """
         try:
-            self.db.client.table('database_schemas').upsert(schema_record).execute()
-            self.logger.info(f"Stored schema for database {schema_record['database_id']}")
+            # Transform the record for the new schema
+            enhanced_record = {
+                'database_id': schema_record['database_id'],
+                'database_name': schema_record['database_name'],
+                'field_definitions': schema_record['field_definitions'],
+                'queryable_fields': schema_record['queryable_fields'],
+                'field_mappings': {},  # Will be populated later
+                'common_field_stats': {},  # Will be populated with usage stats
+                'total_documents': 0,  # Will be updated during document processing
+                'analysis_version': 1,
+                'updated_at': schema_record['last_analyzed_at']
+            }
+            
+            self.db.client.table('database_field_schemas').upsert(enhanced_record).execute()
+            self.logger.info(f"Stored enhanced schema for database {schema_record['database_id']}")
         except Exception as e:
-            self.logger.error(f"Failed to store schema: {str(e)}")
+            self.logger.error(f"Failed to store enhanced schema: {str(e)}")
             raise
     
     async def get_schema(self, database_id: str) -> Optional[Dict[str, Any]]:
-        """Get stored schema for a database."""
+        """Get stored schema for a database from the new table."""
         try:
-            response = self.db.client.table('database_schemas').select(
+            response = self.db.client.table('database_field_schemas').select(
                 '*'
             ).eq('database_id', database_id).execute()
             
@@ -394,21 +407,29 @@ class DatabaseSchemaManager:
             return None
     
     async def extract_document_metadata(self, document_id: str, page_data: Dict[str, Any], 
-                                      database_id: str) -> List[Dict[str, Any]]:
+                                      database_id: str) -> Dict[str, Any]:
         """
         Extract metadata from a document based on the database schema.
-        Single database model - no workspace concept.
+        Returns a single metadata record for the new hybrid schema.
         """
         schema = await self.get_schema(database_id)
         if not schema:
             self.logger.warning(f"No schema found for database {database_id}")
-            return []
+            return {}
         
         queryable_fields = schema.get('queryable_fields', {})
-        extracted_metadata = []
-        
         properties = page_data.get('properties', {})
         
+        # Initialize the metadata record
+        metadata_record = {
+            'document_id': document_id,
+            'notion_database_id': database_id,
+            'database_fields': {},
+            'search_metadata': {},
+            'field_mappings': {}
+        }
+        
+        # Extract common typed fields and database-specific fields
         for field_name, field_config in queryable_fields.items():
             if field_name not in properties:
                 continue
@@ -417,20 +438,83 @@ class DatabaseSchemaManager:
             raw_value = self._extract_field_value(field_data, field_config['field_type'])
             
             if raw_value is not None:
-                # Convert to appropriate typed values
-                typed_values = self._convert_to_typed_values(raw_value, field_config)
+                # Store raw value in database_fields
+                metadata_record['database_fields'][field_name] = raw_value
                 
-                metadata_record = {
-                    'document_id': document_id,
-                    'field_name': field_name,
-                    'field_type': field_config['field_type'],
-                    'raw_value': raw_value,
-                    **typed_values
+                # Map to common typed fields based on field type and name
+                common_field = self._map_to_common_field(field_name, field_config['field_type'], raw_value)
+                if common_field:
+                    field_key, field_value = common_field
+                    metadata_record[field_key] = field_value
+                    metadata_record['field_mappings'][field_name] = field_key
+                
+                # Add to search metadata for flexible querying
+                metadata_record['search_metadata'][field_name] = {
+                    'value': raw_value,
+                    'type': field_config['field_type']
                 }
-                
-                extracted_metadata.append(metadata_record)
         
-        return extracted_metadata
+        # Extract special fields from page metadata
+        self._extract_page_metadata(page_data, metadata_record)
+        
+        return metadata_record
+    
+    def _map_to_common_field(self, field_name: str, field_type: str, raw_value: Any) -> Optional[Tuple[str, Any]]:
+        """Map database-specific field to common typed field."""
+        field_name_lower = field_name.lower()
+        
+        # Map based on field name patterns
+        if 'title' in field_name_lower or field_type == 'title':
+            return ('title', str(raw_value) if raw_value else None)
+        elif 'author' in field_name_lower or 'creator' in field_name_lower:
+            if field_type == 'people' and isinstance(raw_value, list):
+                return ('author', ', '.join(raw_value) if raw_value else None)
+            return ('author', str(raw_value) if raw_value else None)
+        elif 'status' in field_name_lower or field_type == 'status':
+            return ('status', str(raw_value) if raw_value else None)
+        elif 'tag' in field_name_lower or field_type == 'multi_select':
+            if isinstance(raw_value, list):
+                return ('tags', raw_value)
+            return ('tags', [str(raw_value)] if raw_value else [])
+        elif 'priority' in field_name_lower:
+            return ('priority', str(raw_value) if raw_value else None)
+        elif 'assignee' in field_name_lower or 'assigned' in field_name_lower:
+            if field_type == 'people' and isinstance(raw_value, list):
+                return ('assignee', ', '.join(raw_value) if raw_value else None)
+            return ('assignee', str(raw_value) if raw_value else None)
+        elif 'due' in field_name_lower and field_type == 'date':
+            if isinstance(raw_value, dict) and 'start' in raw_value:
+                return ('due_date', raw_value['start'])
+            return ('due_date', raw_value)
+        elif 'complete' in field_name_lower and field_type == 'date':
+            if isinstance(raw_value, dict) and 'start' in raw_value:
+                return ('completion_date', raw_value['start'])
+            return ('completion_date', raw_value)
+        elif field_type in ['date', 'created_time'] and 'created' in field_name_lower:
+            if isinstance(raw_value, dict) and 'start' in raw_value:
+                return ('created_date', raw_value['start'])
+            return ('created_date', raw_value)
+        elif field_type in ['date', 'last_edited_time'] and ('modified' in field_name_lower or 'edited' in field_name_lower):
+            if isinstance(raw_value, dict) and 'start' in raw_value:
+                return ('modified_date', raw_value['start'])
+            return ('modified_date', raw_value)
+        
+        return None
+    
+    def _extract_page_metadata(self, page_data: Dict[str, Any], metadata_record: Dict[str, Any]) -> None:
+        """Extract metadata from page-level properties."""
+        # Extract creation and modification dates from page metadata
+        if 'created_time' in page_data and not metadata_record.get('created_date'):
+            metadata_record['created_date'] = page_data['created_time']
+            
+        if 'last_edited_time' in page_data and not metadata_record.get('modified_date'):
+            metadata_record['modified_date'] = page_data['last_edited_time']
+            
+        # Extract creator information
+        if 'created_by' in page_data and not metadata_record.get('author'):
+            creator = page_data['created_by']
+            if isinstance(creator, dict):
+                metadata_record['author'] = creator.get('name', creator.get('id', ''))
     
     def _convert_to_typed_values(self, raw_value: Any, field_config: Dict[str, Any]) -> Dict[str, Any]:
         """Convert raw value to appropriate typed columns."""

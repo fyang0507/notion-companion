@@ -1,20 +1,53 @@
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+from datetime import date
 
 class ChatMessage(BaseModel):
     role: str
     content: str
 
+# ============================================================================
+# ENHANCED METADATA FILTERING MODELS
+# ============================================================================
+
+class MetadataFilter(BaseModel):
+    field_name: str
+    operator: str  # 'equals', 'contains', 'in', 'range', 'exists'
+    values: List[Any]
+    field_type: Optional[str] = None  # For type-specific handling
+
+class DateRangeFilter(BaseModel):
+    from_date: Optional[date] = None
+    to_date: Optional[date] = None
+
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     database_filters: Optional[List[str]] = None
     session_id: str  # Required session ID for conversation history
+    
+    # Enhanced metadata filtering
+    metadata_filters: Optional[List[MetadataFilter]] = None
+    content_type_filters: Optional[List[str]] = None
+    date_range_filter: Optional[DateRangeFilter] = None
+    author_filters: Optional[List[str]] = None
+    tag_filters: Optional[List[str]] = None
+    status_filters: Optional[List[str]] = None
+    
     # Single-user, single-workspace app - no workspace ID needed
 
 class SearchRequest(BaseModel):
     query: str
     limit: int = 10
     database_filters: Optional[List[str]] = None
+    
+    # Enhanced metadata filtering
+    metadata_filters: Optional[List[MetadataFilter]] = None
+    content_type_filters: Optional[List[str]] = None
+    date_range_filter: Optional[DateRangeFilter] = None
+    author_filters: Optional[List[str]] = None
+    tag_filters: Optional[List[str]] = None
+    status_filters: Optional[List[str]] = None
+    
     # Single-user, single-workspace app - no workspace ID needed
 
 class SearchResult(BaseModel):
@@ -24,6 +57,20 @@ class SearchResult(BaseModel):
     similarity: float
     metadata: Dict[str, Any]
     notion_page_id: str
+    
+    # Enhanced metadata fields
+    result_type: Optional[str] = None  # 'document' or 'chunk'
+    chunk_context: Optional[str] = None
+    chunk_summary: Optional[str] = None
+    document_metadata: Optional[Dict[str, Any]] = None
+    page_url: Optional[str] = None
+    has_adjacent_context: Optional[bool] = None
+    database_id: Optional[str] = None
+    author: Optional[str] = None
+    tags: Optional[List[str]] = None
+    status: Optional[str] = None
+    created_date: Optional[date] = None
+    modified_date: Optional[date] = None
 
 class SearchResponse(BaseModel):
     results: List[SearchResult]

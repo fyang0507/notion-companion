@@ -156,20 +156,53 @@ CREATE TABLE IF NOT EXISTS document_chunks (
   created_at timestamptz DEFAULT now()
 );
 
--- Create document metadata table
+-- Enhanced metadata for multi-database filtering and search
 CREATE TABLE IF NOT EXISTS document_metadata (
-  document_id uuid REFERENCES documents(id) ON DELETE CASCADE,
-  field_name text NOT NULL,
-  field_type text NOT NULL,
-  raw_value jsonb,
-  text_value text,
-  number_value numeric,
-  date_value date,
-  datetime_value timestamptz,
-  boolean_value boolean,
-  array_value jsonb,
+  document_id uuid PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+  notion_database_id text NOT NULL REFERENCES notion_databases(database_id) ON DELETE CASCADE,
+  
+  -- Common typed fields for fast querying (mapped from database-specific fields)
+  title text,
+  created_date date,
+  modified_date date,
+  author text,
+  status text,
+  tags text[],
+  priority text,
+  assignee text,
+  due_date date,
+  completion_date date,
+  
+  -- Multi-database flexible storage
+  database_fields jsonb DEFAULT '{}',     -- Raw database-specific field values
+  search_metadata jsonb DEFAULT '{}',     -- Normalized metadata for search/filtering
+  field_mappings jsonb DEFAULT '{}',      -- Maps database fields to common fields
+  
+  -- Search optimization
+  metadata_search tsvector,
+  
   created_at timestamptz DEFAULT now(),
-  PRIMARY KEY (document_id, field_name)
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Database schema registry for multi-database metadata handling
+CREATE TABLE IF NOT EXISTS database_field_schemas (
+  database_id text PRIMARY KEY,
+  database_name text NOT NULL,
+  
+  -- Schema analysis results
+  field_definitions jsonb NOT NULL DEFAULT '{}',      -- Complete field schema from Notion
+  queryable_fields jsonb NOT NULL DEFAULT '{}',       -- Fields suitable for filtering
+  field_mappings jsonb DEFAULT '{}',                   -- Maps to common typed fields
+  common_field_stats jsonb DEFAULT '{}',              -- Usage stats for common fields
+  
+  -- Analysis metadata
+  total_documents integer DEFAULT 0,
+  last_analyzed_at timestamptz DEFAULT now(),
+  analysis_version integer DEFAULT 1,
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
 );
 
 -- Create chat sessions table (NO workspace_id)

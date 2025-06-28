@@ -10,6 +10,11 @@ This directory contains comprehensive documentation for the Notion Companion pro
 - **[RAG Improvement Roadmap](RAG_IMPROVEMENT_ROADMAP.md)** - Future enhancements and optimization plans
 - **[TODO](TODO.md)** - Current development tasks and planned improvements
 
+### Metadata Filtering System
+- **[Metadata Filtering Implementation](METADATA_FILTERING_IMPLEMENTATION.md)** - Complete implementation status and progress tracking for metadata-based filtering
+- **[Manual Metadata Definition](MANUAL_METADATA_DEFINITION.md)** - Architecture, analysis, and implementation plan for manual metadata configuration via `databases.toml`
+- **[Notion API Schema Analysis](NOTION_API_SCHEMA_ANALYSIS.md)** - Analysis of how Notion API returns database schema information
+
 ### Backend Documentation
 - **[Backend Setup](backend/BACKEND_SETUP.md)** - Backend installation, configuration, and development setup
 - **[Data Ingestion Pipeline](backend/DATA_INGESTION_PIPELINE.md)** - How data flows from Notion into the vector database
