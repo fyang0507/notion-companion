@@ -9,6 +9,12 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./test-setup.ts'],
     globals: true,
+    pool: 'threads',
+    poolOptions: {
+      threads: {
+        singleThread: true,
+      },
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
@@ -30,4 +36,7 @@ export default defineConfig({
       '@': path.resolve(__dirname, '.'),
     },
   },
+  esbuild: {
+    target: 'node14'
+  }
 })
