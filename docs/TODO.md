@@ -9,3 +9,8 @@ In BACKEND_SETUP.md, there are three endpoints already drafted for contextual RA
 ### Offline copy of Notion data before ingestion (avoid repeated data pull)
 
 ### FE tests
+
+### Cache response
+Need a toggle for response caching for the same question (when used in production)
+
+### Metadata filtering

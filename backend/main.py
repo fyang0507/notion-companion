@@ -19,21 +19,44 @@ async def lifespan(app: FastAPI):
     is_dev = os.getenv("NODE_ENV") == "development" or os.getenv("CLEAR_LOGS", "").lower() == "true"
     setup_logging(clear_logs=is_dev)
     logger = get_logger(__name__)
-    logger.warning("Starting Notion Companion API")  # Changed to warning for visibility
-    await init_db()
-    logger.warning("Database initialized successfully")  # Changed to warning for visibility
+    logger.warning("Starting Notion Companion API")
+    
+    # Initialize database with robust error handling
+    logger.warning("Initializing database connection...")
+    try:
+        await init_db()
+        
+        # Verify database connection is working
+        from database import get_db
+        db = get_db()
+        if db.client is None:
+            raise RuntimeError("Database client is None after initialization")
+        
+        # Test database connectivity
+        try:
+            databases = db.get_notion_databases()
+            logger.warning(f"✅ Database initialized successfully - {len(databases)} Notion databases found")
+        except Exception as db_test_error:
+            logger.error(f"Database connection test failed: {db_test_error}")
+            raise RuntimeError(f"Database connectivity test failed: {db_test_error}")
+            
+    except Exception as e:
+        logger.error(f"❌ CRITICAL: Database initialization failed: {e}")
+        logger.error("Application cannot start without database connection")
+        raise RuntimeError(f"Database initialization failed: {e}") from e
     
     # Start chat session idle monitoring
     chat_service = get_chat_session_service()
     await chat_service.start_idle_monitoring()
-    logger.warning("Chat session idle monitoring started")  # Changed to warning for visibility
+    logger.warning("Chat session idle monitoring started")
+    logger.warning("🚀 Notion Companion API started successfully - all systems ready")
     
     yield
     
     # Shutdown
     await chat_service.stop_idle_monitoring()
-    logger.warning("Chat session idle monitoring stopped")  # Changed to warning for visibility
-    logger.warning("Shutting down Notion Companion API")  # Changed to warning for visibility
+    logger.warning("Chat session idle monitoring stopped")
+    logger.warning("Shutting down Notion Companion API")
 
 app = FastAPI(
     title="Notion Companion API",

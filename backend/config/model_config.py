@@ -117,6 +117,15 @@ class PromptsConfig:
     document_processing: DocumentProcessingPromptsConfig
     search: SearchPromptsConfig
 
+@dataclass
+class ChatInterfaceConfig:
+    """Chat interface display and processing settings."""
+    top_sources_limit: int
+    context_content_length: int
+    citation_preview_length: int
+    message_preview_length: int
+    max_context_sources: int
+
 class ModelConfigManager:
     """Manages model configurations and prompts."""
     
@@ -244,6 +253,18 @@ class ModelConfigManager:
             context_boost_factor=search.get("context_boost_factor", 0.05),
             summary_boost_factor=search.get("summary_boost_factor", 0.03),
             section_boost_factor=search.get("section_boost_factor", 0.02)
+        )
+    
+    def get_chat_interface_config(self) -> ChatInterfaceConfig:
+        """Get chat interface configuration."""
+        interface = self._config.get("chat_interface", {})
+        
+        return ChatInterfaceConfig(
+            top_sources_limit=interface.get("top_sources_limit", 5),
+            context_content_length=interface.get("context_content_length", 500),
+            citation_preview_length=interface.get("citation_preview_length", 200),
+            message_preview_length=interface.get("message_preview_length", 100),
+            max_context_sources=interface.get("max_context_sources", 10)
         )
     
     def get_prompts_config(self) -> PromptsConfig:

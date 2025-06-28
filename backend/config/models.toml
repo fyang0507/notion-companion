@@ -85,6 +85,14 @@ context_boost_factor = 0.05        # Boost for results with context information
 summary_boost_factor = 0.03        # Boost for results with summaries
 section_boost_factor = 0.02        # Boost for results with section information
 
+[chat_interface]
+# Chat interface display and processing settings
+top_sources_limit = 5              # Maximum number of sources to include in context
+context_content_length = 500       # Characters of content to include in context per source
+citation_preview_length = 200      # Characters to show in citation previews
+message_preview_length = 100       # Characters to show in log message previews
+max_context_sources = 10           # Maximum sources to consider before filtering to top sources
+
 # ============================================================================
 # PROMPT TEMPLATES - Centralized prompt management for active LLM processes
 # ============================================================================
@@ -95,14 +103,18 @@ system_prompt = """You are a helpful AI assistant that answers questions based o
 {context_section}
 
 Guidelines:
+- Respond in the SAME LANGUAGE as the user's question
 - Be concise and helpful
 - Reference specific documents when possible
 - If you're not sure about something, say so
-- Format responses in markdown when appropriate"""
+- Format responses in markdown when appropriate
+- Maintain the user's preferred language throughout the conversation"""
 
 # Streaming chat system prompt (shorter for efficiency)
 streaming_system_prompt = """You are a helpful AI assistant that answers questions based on the user's Notion workspace content. 
-{context_section}"""
+{context_section}
+
+Respond in the SAME LANGUAGE as the user's question. Be concise and helpful."""
 
 # Context section template (inserted into system prompts)
 context_template = "Here is relevant context from their workspace: {context}"
