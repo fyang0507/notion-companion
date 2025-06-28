@@ -26,6 +26,9 @@ global.Response = class MockResponse {
   headers: Map<string, string>
   body: any
   ok: boolean
+  redirected: boolean = false
+  type: ResponseType = 'basic'
+  url: string = ''
 
   constructor(body: any, init: ResponseInit = {}) {
     this.status = init.status || 200
@@ -45,7 +48,37 @@ global.Response = class MockResponse {
   async text() {
     return typeof this.body === 'string' ? this.body : JSON.stringify(this.body)
   }
-}
+
+  async arrayBuffer() { return new ArrayBuffer(0) }
+  async blob() { return new Blob() }
+  async formData() { return new FormData() }
+
+  clone() {
+    return new MockResponse(this.body, { 
+      status: this.status, 
+      statusText: this.statusText,
+      headers: Object.fromEntries(this.headers) 
+    })
+  }
+
+  static error(): MockResponse {
+    return new MockResponse(null, { status: 0, statusText: 'Network Error' })
+  }
+
+  static json(data: any, init: ResponseInit = {}): MockResponse {
+    return new MockResponse(JSON.stringify(data), { 
+      ...init, 
+      headers: { 'Content-Type': 'application/json', ...init.headers } 
+    })
+  }
+
+  static redirect(url: string | URL, status: number = 302): MockResponse {
+    return new MockResponse(null, { 
+      status, 
+      headers: { Location: url.toString() } 
+    })
+  }
+} as any
 
 // Mock ReadableStream for chat streaming tests
 global.ReadableStream = class MockReadableStream {
@@ -58,4 +91,4 @@ global.ReadableStream = class MockReadableStream {
       setTimeout(() => options.start(controller), 0)
     }
   }
-}
+} as any
