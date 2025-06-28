@@ -38,39 +38,166 @@ Based on comprehensive analysis of Notion API schema structure, current automati
 
 ```toml
 # Research Papers Database
-[databases."a1b2c3d4-e5f6-7890-abcd-ef1234567890"]
+[[databases]]
 name = "Research Papers"
+database_id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 description = "Academic research document database"
 
-  [databases."a1b2c3d4-e5f6-7890-abcd-ef1234567890".metadata]
-  author = { notion_field = "Created By", type = "text", description = "Document author", filterable = true }
-  tags = { notion_field = "Categories", type = "array", description = "Document categories", filterable = true }
-  status = { notion_field = "Review Status", type = "text", description = "Review progress", filterable = true }
-  publication_date = { notion_field = "Published", type = "date", description = "Publication date", filterable = true }
-  priority = { notion_field = "Research Priority", type = "text", description = "Research importance", filterable = true }
+# Sync settings
+[databases.sync_settings]
+batch_size = 10
+rate_limit_delay = 1.0
+max_retries = 3
 
-# Chinese Database Example  
-[databases."中文数据库-id-here"]
+# Metadata field mappings
+[databases.metadata]
+
+  # Author field mapping
+  [databases.metadata.author]
+  notion_field = "Created By"
+  type = "text"
+  description = "Document author"
+  filterable = true
+
+  # Tags field mapping
+  [databases.metadata.tags]
+  notion_field = "Categories"
+  type = "array"
+  description = "Document categories"
+  filterable = true
+
+  # Status field mapping
+  [databases.metadata.status]
+  notion_field = "Review Status"
+  type = "text"
+  description = "Review progress"
+  filterable = true
+
+  # Publication date mapping
+  [databases.metadata.publication_date]
+  notion_field = "Published"
+  type = "date"
+  description = "Publication date"
+  filterable = true
+
+  # Priority mapping
+  [databases.metadata.priority]
+  notion_field = "Research Priority"
+  type = "text"
+  description = "Research importance"
+  filterable = true
+
+# Processing settings
+[databases.processing]
+chunk_size = 1000
+chunk_overlap = 100
+enable_chunking = true
+
+# Chinese Database Example
+[[databases]]
 name = "学术论文"
+database_id = "中文数据库-id-here"
 description = "学术研究文档数据库"
 
-  [databases."中文数据库-id-here".metadata]
-  author = { notion_field = "作者", type = "text", description = "文档作者", filterable = true }
-  tags = { notion_field = "分类", type = "array", description = "文档分类", filterable = true }
-  status = { notion_field = "状态", type = "text", description = "审核状态", filterable = true }
-  created_date = { notion_field = "创建时间", type = "date", description = "创建日期", filterable = true }
+[databases.sync_settings]
+batch_size = 10
+rate_limit_delay = 1.0
+max_retries = 3
+
+[databases.metadata]
+
+  # Author field (Chinese)
+  [databases.metadata.author]
+  notion_field = "作者"
+  type = "text"
+  description = "文档作者"
+  filterable = true
+
+  # Tags field (Chinese)
+  [databases.metadata.tags]
+  notion_field = "分类"
+  type = "array"
+  description = "文档分类"
+  filterable = true
+
+  # Status field (Chinese)
+  [databases.metadata.status]
+  notion_field = "状态"
+  type = "text"
+  description = "审核状态"
+  filterable = true
+
+  # Created date field (Chinese)
+  [databases.metadata.created_date]
+  notion_field = "创建时间"
+  type = "date"
+  description = "创建日期"
+  filterable = true
+
+[databases.processing]
+chunk_size = 1000
+chunk_overlap = 100
+enable_chunking = true
 
 # Meeting Notes Database
-[databases."meeting-notes-db-id"]
+[[databases]]
 name = "Meeting Notes"
+database_id = "meeting-notes-db-id"
 description = "Team meeting documentation"
 
-  [databases."meeting-notes-db-id".metadata]
-  author = { notion_field = "Meeting Lead", type = "text", description = "Meeting organizer", filterable = true }
-  tags = { notion_field = "Topics", type = "array", description = "Discussion topics", filterable = true }
-  meeting_date = { notion_field = "Date", type = "date", description = "Meeting date", filterable = true }
-  # Attendees stored but not filterable in UI
-  attendees = { notion_field = "Participants", type = "array", description = "Meeting attendees", filterable = false }
+[databases.sync_settings]
+batch_size = 15
+rate_limit_delay = 0.5
+max_retries = 2
+
+[databases.metadata]
+
+  # Meeting organizer
+  [databases.metadata.author]
+  notion_field = "Meeting Lead"
+  type = "text"
+  description = "Meeting organizer"
+  filterable = true
+
+  # Discussion topics
+  [databases.metadata.tags]
+  notion_field = "Topics"
+  type = "array"
+  description = "Discussion topics"
+  filterable = true
+
+  # Meeting date
+  [databases.metadata.meeting_date]
+  notion_field = "Date"
+  type = "date"
+  description = "Meeting date"
+  filterable = true
+
+  # Attendees (stored but not filterable in UI)
+  [databases.metadata.attendees]
+  notion_field = "Participants"
+  type = "array"
+  description = "Meeting attendees"
+  filterable = false
+
+[databases.processing]
+chunk_size = 1200
+chunk_overlap = 120
+enable_chunking = false  # Keep meeting notes as single documents
+
+# Global settings remain the same
+[global_settings]
+concurrent_databases = 3
+default_batch_size = 10
+default_rate_limit_delay = 1.0
+default_max_retries = 3
+
+embedding_model = "text-embedding-3-small"
+embedding_batch_size = 100
+
+log_level = "INFO"
+log_file = "database_sync.log"
+supabase_batch_size = 50
 ```
 
 ### Benefits of Manual Approach

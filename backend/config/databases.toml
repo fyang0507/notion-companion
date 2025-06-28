@@ -1,6 +1,7 @@
 # Notion Databases Configuration
 # This file defines multiple Notion databases to connect and sync
 
+# To check Notion database metadata types: https://www.notion.com/help/database-properties
 
 [[databases]]
 name = "他山之石"
@@ -12,10 +13,22 @@ batch_size = 10
 rate_limit_delay = 1.0  # seconds between batches
 max_retries = 3
 
-[databases.filters]
-archived = false
-# Uncomment to filter by status property:
-# Status = "Published"
+[databases.metadata]
+
+  # Author field
+  [databases.metadata.author]
+  notion_field = "Author"          # Use actual field name from your Notion database
+  type = "Text"
+  description = "文章作者"
+  filterable = true
+
+  # Date field  
+  [databases.metadata.tags]
+  notion_field = "Date"          # Use actual field name from your Notion database
+  type = "Date"
+  description = "文章创建日期"
+  filterable = true
+
 
 [databases.processing]
 chunk_size = 1000
