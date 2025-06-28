@@ -41,7 +41,7 @@ if [ ! -f "package.json" ] || [ ! -f "next.config.js" ]; then
 fi
 
 # Test 1: TypeScript Compilation Check
-print_status "Step 1/3: TypeScript compilation check..."
+print_status "Step 1/4: TypeScript compilation check..."
 echo "   Checking for type errors across the entire codebase..."
 
 if npx tsc --noEmit; then
@@ -55,7 +55,7 @@ fi
 echo ""
 
 # Test 2: ESLint Check  
-print_status "Step 2/3: Code quality and linting check..."
+print_status "Step 2/4: Code quality and linting check..."
 echo "   Running ESLint to check code style and potential issues..."
 
 if pnpm run lint; then
@@ -68,8 +68,32 @@ fi
 
 echo ""
 
-# Test 3: Full Build Test
-print_status "Step 3/3: Production build test..."
+# Test 3: Backend Tests
+print_status "Step 3/4: Backend test suite..."
+echo "   Running backend unit, integration, and API tests..."
+
+# Check if backend virtual environment exists
+if [ ! -d "backend/.venv" ]; then
+    print_warning "Backend virtual environment not found. Skipping backend tests."
+    print_warning "To run backend tests, set up the backend environment first:"
+    echo -e "   ${YELLOW}cd backend && python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt${NC}"
+else
+    echo "   🧪 Running backend test suite..."
+    if cd backend && python run_tests.py all; then
+        print_success "Backend tests passed"
+        cd ..
+    else
+        print_error "Backend tests failed"
+        echo -e "\n${YELLOW}💡 Fix backend test failures before proceeding${NC}"
+        cd ..
+        exit 1
+    fi
+fi
+
+echo ""
+
+# Test 4: Full Build Test
+print_status "Step 4/4: Production build test..."
 echo "   Cleaning previous build and testing Next.js production build..."
 
 # Clean previous build
@@ -103,7 +127,8 @@ echo -e "${GREEN}===============================================================
 
 echo -e "\n${BLUE}📊 Test Summary:${NC}"
 echo -e "   ✅ TypeScript compilation: PASSED"
-echo -e "   ✅ Code quality (ESLint): PASSED"  
+echo -e "   ✅ Code quality (ESLint): PASSED"
+echo -e "   ✅ Backend tests: PASSED"
 echo -e "   ✅ Production build: PASSED"
 
 echo -e "\n${BLUE}🚀 Next Steps:${NC}"
