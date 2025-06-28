@@ -10,7 +10,8 @@
     "lint": "next lint",
     "backend": "cd backend && CLEAR_LOGS=true .venv/bin/python start.py",
     "dev:full": "concurrently --kill-others-on-fail --kill-others \"pnpm run dev\" \"pnpm run backend\"",
-    "test": "pnpm run test:backend",
+    "test": "pnpm run test:frontend && pnpm run test:backend",
+    "test:frontend": "vitest",
     "test:backend": "cd backend && python run_tests.py all",
     "test:backend:unit": "cd backend && python run_tests.py unit",
     "test:backend:integration": "cd backend && python run_tests.py integration",
@@ -85,7 +86,12 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
     "@types/react-syntax-highlighter": "^15.5.11",
-    "concurrently": "^8.2.2"
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^8.2.2",
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
   }
 }
