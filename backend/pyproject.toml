@@ -26,6 +26,7 @@ dev-dependencies = [
     "pytest-asyncio",
     "respx",
     "coverage",
+    "trio",
 ]
 
 [tool.pytest.ini_options]
