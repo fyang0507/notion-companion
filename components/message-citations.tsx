@@ -37,8 +37,8 @@ export function MessageCitations({ citations }: MessageCitationsProps) {
       <p className="text-xs text-muted-foreground font-medium">Sources:</p>
       <div className="grid gap-2">
         {citations.map((citation) => {
-          const SourceIcon = getSourceIcon(citation.type);
-          const isNotionUrl = citation.url.startsWith('notion://');
+          const SourceIcon = getSourceIcon(citation.type || 'default');
+          const isNotionUrl = citation.url?.startsWith('notion://');
           
           return (
             <Card 
@@ -53,16 +53,20 @@ export function MessageCitations({ citations }: MessageCitationsProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <p className="font-medium text-sm truncate">{citation.title}</p>
-                        <Badge 
-                          variant="secondary" 
-                          className={cn("text-xs", getScoreColor(citation.score))}
-                        >
-                          {Math.round(citation.score * 100)}%
-                        </Badge>
-                        <Badge variant="outline" className="text-xs">
-                          {citation.type}
-                        </Badge>
-                        {citation.type === 'chunk' && citation.metadata.chunk_index !== undefined && (
+                        {citation.score && (
+                          <Badge 
+                            variant="secondary" 
+                            className={cn("text-xs", getScoreColor(citation.score))}
+                          >
+                            {Math.round(citation.score * 100)}%
+                          </Badge>
+                        )}
+                        {citation.type && (
+                          <Badge variant="outline" className="text-xs">
+                            {citation.type}
+                          </Badge>
+                        )}
+                        {citation.type === 'chunk' && citation.metadata?.chunk_index !== undefined && (
                           <Badge variant="outline" className="text-xs">
                             #{citation.metadata.chunk_index + 1}
                           </Badge>
@@ -70,7 +74,7 @@ export function MessageCitations({ citations }: MessageCitationsProps) {
                       </div>
                       
                       <p className="text-xs text-muted-foreground line-clamp-2">
-                        {citation.preview}
+                        {citation.preview || citation.snippet}
                       </p>
                     </div>
                   </div>
@@ -80,7 +84,7 @@ export function MessageCitations({ citations }: MessageCitationsProps) {
                       variant="ghost" 
                       size="icon"
                       className="h-6 w-6"
-                      onClick={() => handleCopyText(`${citation.title}\n${citation.preview}`)}
+                      onClick={() => handleCopyText(`${citation.title}\n${citation.preview || citation.snippet || ''}`)}
                       title="Copy text"
                     >
                       <Copy className="h-3 w-3" />
@@ -107,7 +111,7 @@ export function MessageCitations({ citations }: MessageCitationsProps) {
                         variant="ghost" 
                         size="icon"
                         className="h-6 w-6"
-                        onClick={() => handleCopyText(citation.url)}
+                        onClick={() => handleCopyText(citation.url || '')}
                         title="Copy Notion URL"
                       >
                         <ExternalLink className="h-3 w-3 opacity-50" />

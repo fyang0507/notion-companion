@@ -10,6 +10,9 @@ export interface ChatMessage {
 export interface ChatRequest {
   messages: ChatMessage[];
   database_filters?: string[];  // Filter by specific Notion databases
+  metadata_filters?: Record<string, string[]>;  // Dynamic metadata filters
+  date_range_filter?: { from?: Date; to?: Date };  // Date range filtering
+  search_query_filter?: string;  // Search query filtering
   session_id: string;  // Required session ID for conversation history
 }
 

@@ -117,7 +117,7 @@ export function useChatSessions(): ChatSessionHook {
         id: msg.id,
         role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content,
-        timestamp: new Date(msg.created_at),
+        timestamp: msg.created_at,
         citations: msg.citations || []
       }));
       

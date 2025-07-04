@@ -79,5 +79,5 @@ jobs:
 
     - name: Check build artifacts
       run: |
-        ls -la .next/
-        ls -la out/ || echo "Static export not found (expected for some configurations)"
+        ls -la out/
+        echo "Static export build artifacts found successfully"

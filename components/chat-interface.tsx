@@ -91,7 +91,7 @@ const DEFAULT_WELCOME_MESSAGE: ChatMessage = {
   id: '1',
   role: 'assistant',
   content: 'Hello! I\'m your Notion Companion. I can help you search through your workspace and answer questions about your content. Use the filters above to narrow down the scope of my search, or ask me anything about your knowledge base.',
-  timestamp: new Date(),
+  timestamp: new Date().toISOString(),
   citations: []
 };
 
@@ -193,7 +193,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       id: Date.now().toString(),
       role: 'user',
       content: input,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       citations: []
     };
 
@@ -223,7 +223,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       id: assistantMessageId,
       role: 'assistant',
       content: '',
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
       citations: [],
       isStreaming: true
     };
@@ -305,7 +305,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
         id: assistantMessageId,
         role: 'assistant',
         content: fullContent,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         citations: citations,
         isStreaming: false
       };

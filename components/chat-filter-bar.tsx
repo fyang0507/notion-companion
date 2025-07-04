@@ -21,7 +21,8 @@ import {
 import { cn } from '@/lib/utils';
 import { useDatabaseSchemas, useAggregatedFields } from '@/hooks/use-metadata';
 import { DynamicFilterSection } from '@/components/dynamic-filter-section';
-import { ChatFilter, DatabaseFieldDefinition } from '@/types/chat';
+import { ChatFilter, DatabaseFieldDefinition, FieldFilterOptions } from '@/types/chat';
+import { FieldDefinition } from '@/lib/metadata-api';
 
 interface ChatFilterBarProps {
   filters: ChatFilter;
@@ -98,7 +99,12 @@ export function ChatFilterBar({ filters, onFiltersChange, disabled = false }: Ch
     selectedDatabases.forEach(db => {
       db.field_definitions?.forEach(field => {
         if (field.is_filterable) {
-          fieldMap.set(field.field_name, field);
+          // Convert FieldDefinition to DatabaseFieldDefinition
+          const databaseFieldDef: DatabaseFieldDefinition = {
+            ...field,
+            description: field.description || field.notion_field || field.field_name
+          };
+          fieldMap.set(field.field_name, databaseFieldDef);
         }
       });
     });
@@ -191,13 +197,17 @@ export function ChatFilterBar({ filters, onFiltersChange, disabled = false }: Ch
   };
 
   // Create a function to get field options for a specific field
-  const getFieldOptions = (fieldName: string) => {
+  const getFieldOptions = (fieldName: string): FieldFilterOptions | undefined => {
     const fieldData = aggregatedFieldData?.find(f => f.field_name === fieldName);
-    if (!fieldData) return undefined;
+    const fieldDefinition = availableFilterFields.find(f => f.field_name === fieldName);
+    
+    if (!fieldData || !fieldDefinition) return undefined;
     
     return {
+      field_name: fieldName,
       unique_values: fieldData.unique_values || [],
-      value_counts: fieldData.value_counts || {}
+      value_counts: fieldData.value_counts || {},
+      field_definition: fieldDefinition
     };
   };
 

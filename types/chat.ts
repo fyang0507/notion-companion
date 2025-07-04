@@ -3,20 +3,26 @@ export interface Citation {
   title: string;
   url?: string;
   snippet?: string;
+  type?: string;
+  score?: number;
+  preview?: string;
   metadata?: {
     database_name?: string;
     author?: string;
     created_date?: string;
     page_type?: string;
+    chunk_index?: number;
   };
 }
 
 export interface ChatMessage {
   id: string;
-  session_id: string;
+  session_id?: string;
   content: string;
   role: 'user' | 'assistant';
   timestamp: string;
+  citations?: Citation[];
+  isStreaming?: boolean;
   metadata?: {
     model?: string;
     citations?: Citation[];
