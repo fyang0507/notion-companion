@@ -23,7 +23,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MessageCitations } from '@/components/message-citations';
-import { ChatFilterBar, ChatFilter } from '@/components/chat-filter-bar';
+import { ChatFilterBar } from '@/components/chat-filter-bar';
+import { ChatFilter } from '@/types/chat';
 import { ChatMessage } from '@/types/chat';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { apiClient } from '@/lib/api';
@@ -129,11 +130,9 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [filters, setFilters] = useState<ChatFilter>({
     workspaces: [], // Single workspace model - filters work within the connected workspace
-    documentTypes: [],
     dateRange: {},
-    authors: [],
-    tags: [],
-    searchQuery: ''
+    searchQuery: '',
+    metadataFilters: {} // Dynamic metadata filters based on database configuration
   });
   
   const [isMobile, setIsMobile] = useState(false);
@@ -207,9 +206,7 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
     if (activeChatSessions) {
       const sessionContext = {
         database_filters: filters.workspaces,
-        document_type_filters: filters.documentTypes,
-        author_filters: filters.authors,
-        tag_filters: filters.tags,
+        metadata_filters: filters.metadataFilters,
         date_range_filter: filters.dateRange,
         search_query_filter: filters.searchQuery
       };
@@ -245,6 +242,9 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
           { role: 'user', content: userMessage.content }
         ],
         database_filters: filters.workspaces,
+        metadata_filters: filters.metadataFilters,
+        date_range_filter: filters.dateRange,
+        search_query_filter: filters.searchQuery,
         session_id: sessionId || 'temp-session'
       };
 
@@ -354,17 +354,21 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       parts.push(`in ${workspaceNames.join(', ')}`);
     }
     
-    if (filters.documentTypes.length > 0) {
-      parts.push(`${filters.documentTypes.join(', ')} documents`);
-    }
-    
-    if (filters.authors.length > 0) {
-      parts.push(`by ${filters.authors.join(', ')}`);
-    }
-    
-    if (filters.tags.length > 0) {
-      parts.push(`tagged ${filters.tags.join(', ')}`);
-    }
+    // Process metadata filters
+    Object.entries(filters.metadataFilters).forEach(([fieldName, values]) => {
+      if (values.length > 0) {
+        // Format based on field name for better readability
+        if (fieldName === 'author') {
+          parts.push(`by ${values.join(', ')}`);
+        } else if (fieldName === 'tags') {
+          parts.push(`tagged ${values.join(', ')}`);
+        } else if (fieldName === 'status') {
+          parts.push(`status: ${values.join(', ')}`);
+        } else {
+          parts.push(`${fieldName}: ${values.join(', ')}`);
+        }
+      }
+    });
     
     return parts.length > 0 ? ` ${parts.join(' ')}` : '';
   };
@@ -536,11 +540,6 @@ export function ChatInterface({ onBackToHome, chatSessions, chatOperationLoading
       <ChatFilterBar
         filters={filters}
         onFiltersChange={setFilters}
-        availableWorkspaces={databases.map(db => ({
-          id: db.database_id,
-          name: db.database_name,
-          documentCount: db.document_count || 0
-        }))}
         disabled={isLoading || activeChatSessions?.isLoading}
       />
 

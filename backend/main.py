@@ -5,7 +5,7 @@ import os
 import time
 from dotenv import load_dotenv
 
-from routers import chat, search, notion_webhook, bootstrap, chat_sessions, logs
+from routers import chat, search, notion_webhook, bootstrap, chat_sessions, logs, metadata
 from database import init_db
 from logging_config import setup_logging, set_request_id, log_api_request, get_logger
 from services.chat_session_service import get_chat_session_service
@@ -126,6 +126,7 @@ app.include_router(notion_webhook.router, prefix="/api/notion", tags=["notion"])
 app.include_router(bootstrap.router, prefix="/api/bootstrap", tags=["bootstrap"])
 app.include_router(chat_sessions.router)
 app.include_router(logs.router, prefix="/api", tags=["logs"])
+app.include_router(metadata.router, tags=["metadata"])
 
 @app.get("/")
 async def root():

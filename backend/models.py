@@ -58,19 +58,14 @@ class SearchResult(BaseModel):
     metadata: Dict[str, Any]
     notion_page_id: str
     
-    # Enhanced metadata fields
+    # Enhanced metadata fields (simplified)
     result_type: Optional[str] = None  # 'document' or 'chunk'
     chunk_context: Optional[str] = None
     chunk_summary: Optional[str] = None
-    document_metadata: Optional[Dict[str, Any]] = None
+    document_metadata: Optional[Dict[str, Any]] = None  # Now contains extracted_fields from config
     page_url: Optional[str] = None
     has_adjacent_context: Optional[bool] = None
     database_id: Optional[str] = None
-    author: Optional[str] = None
-    tags: Optional[List[str]] = None
-    status: Optional[str] = None
-    created_date: Optional[date] = None
-    modified_date: Optional[date] = None
 
 class SearchResponse(BaseModel):
     results: List[SearchResult]
