@@ -35,6 +35,7 @@ from database import get_db, init_db
 from services.notion_service import NotionService
 from services.openai_service import get_openai_service
 from services.document_processor import get_document_processor
+from services.database_schema_manager import get_schema_manager
 
 # Configure logging
 logging.basicConfig(
@@ -91,6 +92,7 @@ class NotionDatabaseSyncer:
         self.notion_service = None
         self.openai_service = None
         self.document_processor = None
+        self.schema_manager = None
         
         # Stats
         self.stats = {
@@ -112,6 +114,9 @@ class NotionDatabaseSyncer:
             # Initialize database
             await init_db()
             self.db = get_db()
+            
+            # Initialize schema manager
+            self.schema_manager = get_schema_manager(self.db)
             
             # Initialize Notion service
             notion_token = os.getenv("NOTION_ACCESS_TOKEN")
@@ -310,7 +315,7 @@ class NotionDatabaseSyncer:
             'last_edited_by': page.get('last_edited_by', {}).get('id'),
             'page_url': page.get('url'),
             'notion_properties': page.get('properties', {}),
-            'extracted_metadata': self._extract_metadata(page),
+            'extracted_metadata': self._extract_basic_metadata(page),
             'indexed_at': datetime.utcnow().isoformat()
         }
         
@@ -335,14 +340,22 @@ class NotionDatabaseSyncer:
         if config.chunk_content and len(content) > 1000:  # Only chunk longer content
             await self._process_document_chunks(document_id, title, content, config)
         
-        # Save metadata
+        # Save metadata using schema manager
         if config.extract_metadata:
-            metadata = {
-                'document_id': document_id,
-                'notion_database_id': config.database_id,
-                'custom_fields': self._extract_custom_fields(page)
-            }
-            self.db.upsert_document_metadata(metadata)
+            try:
+                metadata = await self.schema_manager.extract_document_metadata(
+                    document_id, page, config.database_id
+                )
+                if metadata:
+                    # Convert to the expected format for the simplified schema
+                    metadata_record = {
+                        'document_id': document_id,
+                        'notion_database_id': config.database_id,
+                        'extracted_fields': metadata
+                    }
+                    self.db.upsert_document_metadata(metadata_record)
+            except Exception as e:
+                logger.warning(f"Failed to extract metadata for {document_id}: {e}")
         
         logger.debug(f"Saved document: {title} ({document_id})")
     
@@ -395,11 +408,13 @@ class NotionDatabaseSyncer:
         
         return 'Untitled'
     
-    def _extract_metadata(self, page: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract metadata from page properties."""
+    def _extract_basic_metadata(self, page: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract basic metadata for document storage (simplified)."""
         properties = page.get('properties', {})
         metadata = {}
         
+        # Extract only essential fields for document.extracted_metadata
+        # Complex metadata extraction is now handled by DatabaseSchemaManager
         for prop_name, prop_value in properties.items():
             prop_type = prop_value.get('type')
             
@@ -415,27 +430,6 @@ class NotionDatabaseSyncer:
                 metadata[prop_name] = prop_value.get('checkbox', False)
         
         return metadata
-    
-    def _extract_custom_fields(self, page: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract custom fields for document_metadata table."""
-        properties = page.get('properties', {})
-        custom_fields = {}
-        
-        # Extract common fields
-        status_fields = ['Status', 'status', 'State', 'state']
-        for field in status_fields:
-            if field in properties and properties[field].get('select'):
-                custom_fields['status'] = properties[field]['select']['name']
-                break
-        
-        # Extract tags
-        tag_fields = ['Tags', 'tags', 'Categories', 'categories']
-        for field in tag_fields:
-            if field in properties and properties[field].get('multi_select'):
-                custom_fields['tags'] = [item['name'] for item in properties[field]['multi_select']]
-                break
-        
-        return custom_fields
     
     async def run_sync(self, configs: List[DatabaseSyncConfig]) -> Dict[str, Any]:
         """Run sync for multiple databases."""

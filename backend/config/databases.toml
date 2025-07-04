@@ -1,7 +1,14 @@
 # Notion Databases Configuration
 # This file defines multiple Notion databases to connect and sync
 
-# To check Notion database metadata types: https://www.notion.com/help/database-properties
+# Supported field types in this app:
+# - text
+# - number
+# - select
+# - status
+# - multi_select
+# - date (including created time and last edited time)
+# - checkbox
 
 [[databases]]
 name = "他山之石"
@@ -15,18 +22,34 @@ max_retries = 3
 
 [databases.metadata]
 
-  # Author field
   [databases.metadata.author]
-  notion_field = "Author"          # Use actual field name from your Notion database
-  type = "Text"
+  notion_field = "Author" # Use actual field name from your Notion database
+  type = "text" 
   description = "文章作者"
   filterable = true
 
-  # Date field  
-  [databases.metadata.tags]
-  notion_field = "Date"          # Use actual field name from your Notion database
-  type = "Date"
+  [databases.metadata.published_date]
+  notion_field = "Date"
+  type = "date"
   description = "文章创建日期"
+  filterable = true
+  
+  [databases.metadata.status]
+  notion_field = "Status"
+  type = "status"
+  description = "文章阅读状态"
+  filterable = true
+
+  [databases.metadata.select]
+  notion_field = "Select"
+  type = "select"
+  description = "文章类型"
+  filterable = true
+
+  [databases.metadata.tags]
+  notion_field = "Multi-select"
+  type = "multi_select"
+  description = "文章标签"
   filterable = true
 
 

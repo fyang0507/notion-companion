@@ -165,7 +165,11 @@ class Database:
     # ============================================================================
     
     def upsert_document_metadata(self, metadata_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create or update document metadata."""
+        """Create or update document metadata using simplified schema."""
+        # Ensure the metadata follows the simplified schema structure
+        if 'extracted_fields' not in metadata_data:
+            metadata_data['extracted_fields'] = {}
+        
         response = self.client.table('document_metadata').upsert(metadata_data).execute()
         return response.data[0] if response.data else {}
     
