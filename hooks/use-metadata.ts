@@ -17,7 +17,8 @@ import {
   type DatabaseSchema,
   type FilterOptions,
   type AggregatedFieldInfo,
-  type MetadataStats
+  type MetadataStats,
+  type EnhancedFieldValuesResponse
 } from '@/lib/metadata-api';
 
 // ============================================================================
@@ -81,17 +82,16 @@ export function useMetadata(options: UseMetadataOptions = {}): UseMetadataReturn
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      const [databases, filterOptions, aggregatedFields, stats] = await Promise.all([
+      const [databases, filterOptions, stats] = await Promise.all([
         withErrorHandling(() => getDatabaseSchemas(includeSampleValues)),
         withErrorHandling(() => getFilterOptions()),
-        withErrorHandling(() => getAggregatedFields(['tags', 'status', 'select'])),
         withErrorHandling(() => getMetadataStats())
       ]);
 
       setState({
         databases: databases || [],
         filterOptions: filterOptions || null,
-        aggregatedFields: aggregatedFields || [],
+        aggregatedFields: [], // Will be loaded separately via useAggregatedFields
         stats: stats || null,
         loading: false,
         error: null,
@@ -150,7 +150,7 @@ export function useMetadata(options: UseMetadataOptions = {}): UseMetadataReturn
 /**
  * Hook specifically for filter options used by the chat filter bar
  */
-export function useFilterOptions() {
+export function useFilterOptions(search?: string) {
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +159,7 @@ export function useFilterOptions() {
     setLoading(true);
     setError(null);
 
-    const options = await withErrorHandling(() => getFilterOptions());
+    const options = await withErrorHandling(() => getFilterOptions(search));
     if (options) {
       setFilterOptions(options);
     } else {
@@ -167,7 +167,7 @@ export function useFilterOptions() {
     }
 
     setLoading(false);
-  }, []);
+  }, [search]);
 
   useEffect(() => {
     fetchFilterOptions();
@@ -238,46 +238,50 @@ export function useDatabaseSchemas(includeSampleValues = false) {
 }
 
 /**
- * Hook for aggregated field information
+ * Hook specifically for aggregated field data (used by chat filter bar)
  */
-export function useAggregatedFields(fieldNames?: string[]) {
+export function useAggregatedFields(
+  fieldNames: string[],
+  options: {
+    search?: string;
+    limitPerField?: number;
+  } = {}
+) {
+  const { search, limitPerField = 100 } = options;
+  
   const [fields, setFields] = useState<AggregatedFieldInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Memoize field names to prevent infinite loops
-  const memoizedFieldNames = useMemo(() => fieldNames, [fieldNames ? JSON.stringify(fieldNames) : fieldNames]);
-
   const fetchFields = useCallback(async () => {
+    if (fieldNames.length === 0) {
+      setFields([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    const aggregatedFields = await withErrorHandling(() => getAggregatedFields(memoizedFieldNames));
-    if (aggregatedFields) {
-      setFields(aggregatedFields);
+    const fieldsData = await withErrorHandling(() => 
+      getAggregatedFields(fieldNames, { search, limitPerField })
+    );
+    
+    if (fieldsData) {
+      setFields(fieldsData);
     } else {
       setError('Failed to fetch aggregated fields');
     }
 
     setLoading(false);
-  }, [memoizedFieldNames]);
+  }, [fieldNames, search, limitPerField]);
 
   useEffect(() => {
     fetchFields();
   }, [fetchFields]);
 
-  // Extract specific field data for easy access
-  const fieldData = useMemo(() => {
-    const data: Record<string, AggregatedFieldInfo> = {};
-    fields.forEach(field => {
-      data[field.field_name] = field;
-    });
-    return data;
-  }, [fields]);
-
   return {
     fields,
-    fieldData,
     loading,
     error,
     refresh: fetchFields

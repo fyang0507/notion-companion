@@ -110,13 +110,21 @@ def _get_field_sample_values(db, database_id: str, field_name: str, limit: int =
         logger.warning(f"Failed to get sample values for field {field_name}: {str(e)}")
         return []
 
-def _get_field_unique_values(db, database_id: str, field_name: str, limit: int = 100) -> List[Any]:
-    """Get unique values for a field, handling arrays (multi_select) properly."""
+def _get_field_unique_values(
+    db, 
+    database_id: str, 
+    field_name: str, 
+    limit: int = 100,
+    search: Optional[str] = None,
+    sort_by: str = 'count_desc',
+    offset: int = 0
+) -> Dict[str, Any]:
+    """Get unique values for a field with search, sorting, and pagination."""
     try:
         # Use table operations and handle arrays in Python
         response = db.client.table('document_metadata').select('extracted_fields').eq('notion_database_id', database_id).execute()
         
-        values = set()
+        values = {}  # value -> count
         for row in response.data:
             extracted_fields = row.get('extracted_fields', {})
             if field_name in extracted_fields:
@@ -124,24 +132,74 @@ def _get_field_unique_values(db, database_id: str, field_name: str, limit: int =
                 if value:
                     if isinstance(value, list):
                         # Handle multi_select fields (arrays)
-                        values.update(value)
+                        for v in value:
+                            if v:
+                                str_v = str(v)
+                                values[str_v] = values.get(str_v, 0) + 1
                     elif isinstance(value, dict):
                         # Handle date fields that contain start/end dates
                         if 'start' in value and value['start']:
-                            values.add(value['start'])
+                            str_v = str(value['start'])
+                            values[str_v] = values.get(str_v, 0) + 1
                         if 'end' in value and value['end']:
-                            values.add(value['end'])
+                            str_v = str(value['end'])
+                            values[str_v] = values.get(str_v, 0) + 1
                     else:
-                        values.add(value)
-                if len(values) >= limit:
-                    break
-        
-        return list(values)[:limit]
+                        str_v = str(value)
+                        values[str_v] = values.get(str_v, 0) + 1
+
+        # Filter by search term if provided
+        if search:
+            search_lower = search.lower()
+            values = {k: v for k, v in values.items() if search_lower in k.lower()}
+
+        # Sort values
+        if sort_by == 'alpha_asc':
+            sorted_items = sorted(values.items(), key=lambda x: x[0].lower())
+        elif sort_by == 'alpha_desc':
+            sorted_items = sorted(values.items(), key=lambda x: x[0].lower(), reverse=True)
+        elif sort_by == 'count_asc':
+            sorted_items = sorted(values.items(), key=lambda x: x[1])
+        elif sort_by == 'value_asc':
+            # Try to sort numerically for numbers, otherwise alphabetically
+            try:
+                sorted_items = sorted(values.items(), key=lambda x: float(x[0]))
+            except ValueError:
+                sorted_items = sorted(values.items(), key=lambda x: x[0])
+        elif sort_by == 'value_desc':
+            # Try to sort numerically for numbers, otherwise alphabetically
+            try:
+                sorted_items = sorted(values.items(), key=lambda x: float(x[0]), reverse=True)
+            except ValueError:
+                sorted_items = sorted(values.items(), key=lambda x: x[0], reverse=True)
+        else:  # count_desc (default)
+            sorted_items = sorted(values.items(), key=lambda x: x[1], reverse=True)
+
+        # Apply pagination
+        total_count = len(sorted_items)
+        paginated_items = sorted_items[offset:offset + limit]
+
+        # Extract unique values and counts
+        unique_values = [item[0] for item in paginated_items]
+        value_counts = dict(sorted_items)  # Keep all counts for reference
+
+        return {
+            'unique_values': unique_values,
+            'value_counts': value_counts,
+            'total_count': total_count,
+            'returned_count': len(unique_values)
+        }
+
     except Exception as e:
         logger.warning(f"Failed to get unique values for field {field_name}: {str(e)}")
-        return []
+        return {
+            'unique_values': [],
+            'value_counts': {},
+            'total_count': 0,
+            'returned_count': 0
+        }
 
-def _get_field_value_counts(db, database_id: str, field_name: str) -> Dict[str, int]:
+def _get_field_value_counts(db, database_id: str, field_name: str, limit: int = 50) -> Dict[str, int]:
     """Get value counts for a field."""
     try:
         # Use table operations and count in Python
@@ -167,8 +225,8 @@ def _get_field_value_counts(db, database_id: str, field_name: str) -> Dict[str, 
                     else:
                         value_counts[str(value)] = value_counts.get(str(value), 0) + 1
         
-        # Sort by count descending and limit to 50
-        sorted_counts = dict(sorted(value_counts.items(), key=lambda x: x[1], reverse=True)[:50])
+        # Sort by count descending and limit
+        sorted_counts = dict(sorted(value_counts.items(), key=lambda x: x[1], reverse=True)[:limit])
         return sorted_counts
     except Exception as e:
         logger.warning(f"Failed to get value counts for field {field_name}: {str(e)}")
@@ -293,23 +351,39 @@ async def get_field_values(
     field_name: str,
     include_counts: bool = Query(True, description="Include value counts"),
     limit: int = Query(100, description="Maximum number of values to return"),
+    search: Optional[str] = Query(None, description="Search within field values"),
+    sort_by: str = Query('count_desc', description="Sort order: alpha_asc, alpha_desc, count_asc, count_desc, value_asc, value_desc"),
+    offset: int = Query(0, description="Pagination offset"),
     db=Depends(get_db)
 ):
-    """Get unique values for a specific field in a database."""
+    """Get unique values for a specific field in a database with search and pagination."""
     try:
-        # Get unique values
-        unique_values = _get_field_unique_values(db, database_id, field_name, limit)
+        # Get unique values with enhanced filtering
+        result = _get_field_unique_values(
+            db=db, 
+            database_id=database_id, 
+            field_name=field_name,
+            limit=limit,
+            search=search,
+            sort_by=sort_by,
+            offset=offset
+        )
         
         response = {
             "field_name": field_name,
             "database_id": database_id,
-            "unique_values": unique_values,
-            "total_unique": len(unique_values)
+            "unique_values": result['unique_values'],
+            "total_unique": result['total_count'],
+            "returned_count": result['returned_count'],
+            "search_term": search,
+            "sort_by": sort_by,
+            "offset": offset,
+            "limit": limit
         }
         
         # Add counts if requested
         if include_counts:
-            response["value_counts"] = _get_field_value_counts(db, database_id, field_name)
+            response["value_counts"] = result['value_counts']
         
         return response
         
@@ -320,9 +394,11 @@ async def get_field_values(
 @router.get("/aggregated-fields", response_model=List[AggregatedFieldInfo])
 async def get_aggregated_fields(
     field_names: Optional[List[str]] = Query(None, description="Specific field names to aggregate"),
+    search: Optional[str] = Query(None, description="Search within field values"),
+    limit_per_field: int = Query(100, description="Maximum values per field"),
     db=Depends(get_db)
 ):
-    """Get aggregated metadata fields across all databases."""
+    """Get aggregated metadata fields across all databases with search support."""
     try:
         configurations = _load_database_configurations()
         
@@ -342,7 +418,7 @@ async def get_aggregated_fields(
                     all_fields[field_name] = {
                         'field_type': field_config.get('type', 'text'),
                         'databases': [],
-                        'all_values': set(),
+                        'all_values': {},
                         'all_counts': {}
                     }
                 
@@ -352,24 +428,39 @@ async def get_aggregated_fields(
         aggregated_info = []
         for field_name, field_info in all_fields.items():
             # Collect unique values across all databases that have this field
-            combined_values = set()
+            combined_values = {}
             combined_counts = {}
             
             for database_id in field_info['databases']:
-                values = _get_field_unique_values(db, database_id, field_name, 50)
-                combined_values.update(values)
+                # Get values with search support
+                result = _get_field_unique_values(
+                    db=db, 
+                    database_id=database_id, 
+                    field_name=field_name,
+                    limit=limit_per_field,
+                    search=search,
+                    sort_by='count_desc'
+                )
                 
-                counts = _get_field_value_counts(db, database_id, field_name)
-                for value, count in counts.items():
+                # Merge values and counts
+                for value in result['unique_values']:
+                    combined_values[value] = True
+                
+                for value, count in result['value_counts'].items():
                     combined_counts[value] = combined_counts.get(value, 0) + count
+            
+            # Sort by count and limit
+            sorted_values = sorted(combined_counts.items(), key=lambda x: x[1], reverse=True)[:limit_per_field]
+            final_unique_values = [item[0] for item in sorted_values]
+            final_counts = dict(sorted_values)
             
             aggregated_info.append(AggregatedFieldInfo(
                 field_name=field_name,
                 field_type=field_info['field_type'],
                 databases=field_info['databases'],
-                unique_values=list(combined_values),
-                value_counts=combined_counts,
-                total_values=len(combined_values)
+                unique_values=final_unique_values,
+                value_counts=final_counts,
+                total_values=len(final_unique_values)
             ))
         
         return aggregated_info
@@ -379,8 +470,11 @@ async def get_aggregated_fields(
         raise HTTPException(status_code=500, detail="Failed to retrieve aggregated fields")
 
 @router.get("/filter-options", response_model=FilterOptions)
-async def get_filter_options(db=Depends(get_db)):
-    """Get all available filter options for the UI."""
+async def get_filter_options(
+    search: Optional[str] = Query(None, description="Search within filter values"),
+    db=Depends(get_db)
+):
+    """Get all available filter options for the UI with search support."""
     try:
         # Get database list
         databases = []
@@ -391,9 +485,14 @@ async def get_filter_options(db=Depends(get_db)):
                 "name": config.get('name', f"Database {config.get('database_id')}")
             })
         
-        # Get aggregated field values for common filter fields
+        # Get aggregated field values for common filter fields with search
         common_fields = ['author', 'tags', 'status']
-        aggregated_fields = await get_aggregated_fields(field_names=common_fields, db=db)
+        aggregated_fields = await get_aggregated_fields(
+            field_names=common_fields, 
+            search=search,
+            limit_per_field=200,  # Increased limit for filter options
+            db=db
+        )
         
         authors = []
         tags = []
@@ -410,6 +509,11 @@ async def get_filter_options(db=Depends(get_db)):
         # Get content types
         content_types_result = db.client.table('documents').select('content_type').execute()
         content_types = list(set([doc['content_type'] for doc in content_types_result.data if doc.get('content_type')]))
+        
+        # Filter content types by search if provided
+        if search:
+            search_lower = search.lower()
+            content_types = [ct for ct in content_types if search_lower in ct.lower()]
         
         # Get date ranges using table operations
         documents_response = db.client.table('documents').select('created_time, last_edited_time').execute()

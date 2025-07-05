@@ -14,7 +14,7 @@ from typing import AsyncGenerator, Dict, Any
 router = APIRouter()
 
 def _prepare_chat_filters(request: ChatRequest) -> Dict[str, Any]:
-    """Prepare filter parameters for enhanced metadata search in chat."""
+    """Prepare filter parameters for chat with metadata filtering."""
     filters = {}
     
     # Basic filters
@@ -39,7 +39,7 @@ def _prepare_chat_filters(request: ChatRequest) -> Dict[str, Any]:
         if date_range:
             filters['date_range_filter'] = date_range
     
-    # Custom metadata filters
+    # Custom metadata filters with range processing
     if request.metadata_filters:
         metadata_filters = {}
         for filter_item in request.metadata_filters:
@@ -48,8 +48,22 @@ def _prepare_chat_filters(request: ChatRequest) -> Dict[str, Any]:
             elif filter_item.operator == 'in':
                 metadata_filters[filter_item.field_name] = filter_item.values
             # Add more operators as needed
+        
         if metadata_filters:
-            filters['metadata_filters'] = metadata_filters
+            # Import range processing functions from search router
+            from .search import _process_metadata_filters, _build_metadata_query_conditions
+            
+            # Process metadata filters to handle number and date ranges
+            processed_filters = _process_metadata_filters(metadata_filters)
+            
+            # Build SQL conditions for complex filters
+            query_conditions = _build_metadata_query_conditions(processed_filters)
+            
+            if query_conditions:
+                filters['metadata_query_conditions'] = query_conditions
+            
+            # Also keep the processed filters for the database function
+            filters['metadata_filters'] = processed_filters
     
     return filters
 

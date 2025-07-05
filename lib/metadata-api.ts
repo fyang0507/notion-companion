@@ -57,12 +57,25 @@ export interface MetadataStats {
   last_updated: string;
 }
 
+export interface EnhancedFieldValuesResponse {
+  field_name: string;
+  database_id: string;
+  unique_values: (string | number)[];
+  value_counts: Record<string, number>;
+  total_unique: number;
+  returned_count: number;
+  search_term?: string;
+  sort_by: string;
+  offset: number;
+  limit: number;
+}
+
 export interface FieldValuesResponse {
   field_name: string;
   database_id: string;
-  unique_values: any[];
+  unique_values: (string | number)[];
+  value_counts: Record<string, number>;
   total_unique: number;
-  value_counts?: Record<string, number>;
 }
 
 // ============================================================================
@@ -106,11 +119,35 @@ export async function getDatabaseFields(
 export async function getFieldValues(
   databaseId: string,
   fieldName: string,
-  includeCounts = true,
-  limit = 100
-): Promise<FieldValuesResponse> {
+  options: {
+    includeCounts?: boolean;
+    limit?: number;
+    search?: string;
+    sortBy?: 'alpha_asc' | 'alpha_desc' | 'count_asc' | 'count_desc' | 'value_asc' | 'value_desc';
+    offset?: number;
+  } = {}
+): Promise<EnhancedFieldValuesResponse> {
+  const {
+    includeCounts = true,
+    limit = 100,
+    search,
+    sortBy = 'count_desc',
+    offset = 0
+  } = options;
+
+  const params = new URLSearchParams({
+    include_counts: includeCounts.toString(),
+    limit: limit.toString(),
+    sort_by: sortBy,
+    offset: offset.toString()
+  });
+
+  if (search) {
+    params.append('search', search);
+  }
+
   const response = await fetch(
-    `${API_BASE}/api/metadata/databases/${databaseId}/field-values/${fieldName}?include_counts=${includeCounts}&limit=${limit}`
+    `${API_BASE}/api/metadata/databases/${databaseId}/field-values/${fieldName}?${params}`
   );
   
   if (!response.ok) {
@@ -121,19 +158,30 @@ export async function getFieldValues(
 }
 
 /**
- * Get aggregated metadata fields across all databases
+ * Get aggregated field information across databases
  */
-export async function getAggregatedFields(fieldNames?: string[]): Promise<AggregatedFieldInfo[]> {
-  let url = `${API_BASE}/api/metadata/aggregated-fields`;
-  
+export async function getAggregatedFields(
+  fieldNames?: string[],
+  options: {
+    search?: string;
+    limitPerField?: number;
+  } = {}
+): Promise<AggregatedFieldInfo[]> {
+  const { search, limitPerField = 100 } = options;
+
+  const params = new URLSearchParams({
+    limit_per_field: limitPerField.toString()
+  });
+
   if (fieldNames && fieldNames.length > 0) {
-    // FastAPI expects repeated parameter names for arrays: field_names=tags&field_names=status
-    const searchParams = new URLSearchParams();
-    fieldNames.forEach(name => searchParams.append('field_names', name));
-    url += `?${searchParams.toString()}`;
+    fieldNames.forEach(name => params.append('field_names', name));
   }
-  
-  const response = await fetch(url);
+
+  if (search) {
+    params.append('search', search);
+  }
+
+  const response = await fetch(`${API_BASE}/api/metadata/aggregated-fields?${params}`);
   
   if (!response.ok) {
     throw new Error(`Failed to fetch aggregated fields: ${response.statusText}`);
@@ -145,8 +193,14 @@ export async function getAggregatedFields(fieldNames?: string[]): Promise<Aggreg
 /**
  * Get all available filter options for the UI
  */
-export async function getFilterOptions(): Promise<FilterOptions> {
-  const response = await fetch(`${API_BASE}/api/metadata/filter-options`);
+export async function getFilterOptions(search?: string): Promise<FilterOptions> {
+  const params = new URLSearchParams();
+  
+  if (search) {
+    params.append('search', search);
+  }
+
+  const response = await fetch(`${API_BASE}/api/metadata/filter-options?${params}`);
   
   if (!response.ok) {
     throw new Error(`Failed to fetch filter options: ${response.statusText}`);
