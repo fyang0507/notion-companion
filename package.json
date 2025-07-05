@@ -11,7 +11,7 @@
     "backend": "cd backend && CLEAR_LOGS=true .venv/bin/python start.py",
     "dev:full": "concurrently --kill-others-on-fail --kill-others \"pnpm run dev\" \"pnpm run backend\"",
     "test": "pnpm run test:frontend && pnpm run test:backend",
-    "test:frontend": "vitest",
+    "test:frontend": "vitest run",
     "test:frontend:ci": "vitest run --reporter=basic --no-coverage --bail=1 --passWithNoTests",
     "test:backend": "cd backend && python run_tests.py all",
     "test:backend:unit": "cd backend && python run_tests.py unit",

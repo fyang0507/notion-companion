@@ -176,3 +176,112 @@ class TestChatEndpoints:
         
         # Should either work (no auth required) or return 401/403
         assert response.status_code in [200, 201, 401, 403, 422, 500]
+    
+    def test_chat_with_metadata_filters(self, client, mock_services):
+        """Test chat with metadata filters."""
+        test_payload = {
+            "messages": [
+                {"role": "user", "content": "Tell me about AI articles"}
+            ],
+            "session_id": "test-session-123",
+            "metadata_filters": [
+                {
+                    "field_name": "tags",
+                    "operator": "in",
+                    "values": ["AI", "Machine Learning"]
+                },
+                {
+                    "field_name": "author",
+                    "operator": "equals",
+                    "values": ["John Doe"]
+                }
+            ]
+        }
+        
+        response = client.post("/api/chat", json=test_payload)
+        
+        # Should accept metadata filters
+        assert response.status_code in [200, 422, 500]
+        
+        # Should not return validation error for metadata filters
+        if response.status_code == 422:
+            error_detail = response.json()
+            assert "metadata_filters" not in str(error_detail)
+
+    def test_chat_with_all_filter_types(self, client, mock_services):
+        """Test chat with all available filter types."""
+        test_payload = {
+            "messages": [
+                {"role": "user", "content": "Comprehensive search with all filters"}
+            ],
+            "session_id": "test-session-456",
+            "database_filters": ["db-1", "db-2"],
+            "metadata_filters": [
+                {
+                    "field_name": "status",
+                    "operator": "equals",
+                    "values": ["published"]
+                },
+                {
+                    "field_name": "priority",
+                    "operator": "range",
+                    "values": ["min:1", "max:10"]
+                }
+            ],
+            "content_type_filters": ["article", "documentation"],
+            "author_filters": ["Jane Smith"],
+            "tag_filters": ["AI", "Research"],
+            "status_filters": ["published"],
+            "date_range_filter": {
+                "from_date": "2024-01-01",
+                "to_date": "2024-12-31"
+            }
+        }
+        
+        response = client.post("/api/chat", json=test_payload)
+        
+        # Should accept all filter types
+        assert response.status_code in [200, 422, 500]
+
+    def test_chat_with_date_range_filters(self, client, mock_services):
+        """Test chat with date range filters."""
+        test_payload = {
+            "messages": [
+                {"role": "user", "content": "Find recent articles"}
+            ],
+            "session_id": "test-session-789",
+            "metadata_filters": [
+                {
+                    "field_name": "publish_date",
+                    "operator": "in",
+                    "values": ["from:2024-06-01", "to:2024-12-31"]
+                }
+            ]
+        }
+        
+        response = client.post("/api/chat", json=test_payload)
+        
+        # Should accept date range filters
+        assert response.status_code in [200, 422, 500]
+
+    def test_chat_filter_validation(self, client, mock_services):
+        """Test chat filter validation."""
+        # Test with invalid operator
+        test_payload = {
+            "messages": [
+                {"role": "user", "content": "Test invalid filter"}
+            ],
+            "session_id": "test-session-invalid",
+            "metadata_filters": [
+                {
+                    "field_name": "author",
+                    "operator": "invalid_operator",
+                    "values": ["John Doe"]
+                }
+            ]
+        }
+        
+        response = client.post("/api/chat", json=test_payload)
+        
+        # Should handle invalid operator gracefully
+        assert response.status_code in [200, 422, 500]

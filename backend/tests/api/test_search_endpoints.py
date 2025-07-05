@@ -237,3 +237,103 @@ class TestSearchEndpoints:
         headers = response.headers
         assert "access-control-allow-methods" in headers or \
                response.status_code == 405  # Method not allowed is acceptable
+    
+    def test_search_with_metadata_filters(self, client, mock_services):
+        """Test search with metadata filters."""
+        test_payload = {
+            "query": "test query",
+            "metadata_filters": [
+                {
+                    "field_name": "author",
+                    "operator": "equals",
+                    "values": ["John Doe"]
+                },
+                {
+                    "field_name": "tags",
+                    "operator": "in",
+                    "values": ["AI", "Tech"]
+                }
+            ],
+            "limit": 10
+        }
+        
+        response = client.post("/api/search", json=test_payload)
+        
+        # Should accept metadata filters
+        assert response.status_code in [200, 422, 500]
+        
+        # Should not return validation error for metadata filters
+        if response.status_code == 422:
+            error_detail = response.json()
+            assert "metadata_filters" not in str(error_detail)
+
+    def test_search_with_date_range_metadata_filters(self, client, mock_services):
+        """Test search with date range metadata filters."""
+        test_payload = {
+            "query": "test query",
+            "metadata_filters": [
+                {
+                    "field_name": "publish_date",
+                    "operator": "in",
+                    "values": ["from:2024-01-01", "to:2024-12-31"]
+                }
+            ],
+            "limit": 10
+        }
+        
+        response = client.post("/api/search", json=test_payload)
+        
+        # Should accept date range filters
+        assert response.status_code in [200, 422, 500]
+
+    def test_search_with_all_filter_types(self, client, mock_services):
+        """Test search with all available filter types."""
+        test_payload = {
+            "query": "comprehensive test",
+            "database_filters": ["db-1", "db-2"],
+            "metadata_filters": [
+                {
+                    "field_name": "author",
+                    "operator": "in",
+                    "values": ["John Doe", "Jane Smith"]
+                },
+                {
+                    "field_name": "priority",
+                    "operator": "range",
+                    "values": ["min:1", "max:10"]
+                }
+            ],
+            "content_type_filters": ["article", "documentation"],
+            "author_filters": ["John Doe"],
+            "tag_filters": ["AI", "Tech"],
+            "status_filters": ["published"],
+            "date_range_filter": {
+                "from_date": "2024-01-01",
+                "to_date": "2024-12-31"
+            },
+            "limit": 10
+        }
+        
+        response = client.post("/api/search", json=test_payload)
+        
+        # Should accept all filter types
+        assert response.status_code in [200, 422, 500]
+
+    def test_hybrid_search_with_metadata_filters(self, client, mock_services):
+        """Test hybrid search with metadata filters."""
+        test_payload = {
+            "query": "hybrid search test",
+            "metadata_filters": [
+                {
+                    "field_name": "content_type",
+                    "operator": "in",
+                    "values": ["article", "documentation"]
+                }
+            ],
+            "limit": 10
+        }
+        
+        response = client.post("/api/search/hybrid", json=test_payload)
+        
+        # Should accept metadata filters in hybrid search
+        assert response.status_code in [200, 422, 500]

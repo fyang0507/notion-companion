@@ -63,6 +63,8 @@ describe('useMetadata', () => {
     mockMetadataApi.getMetadataStats.mockResolvedValue({
       total_documents: 100,
       total_databases: 2,
+      total_fields: 15,
+      field_coverage: { 'author': 10, 'tags': 8 },
       last_updated: '2024-01-01T00:00:00Z'
     })
   })
@@ -134,7 +136,7 @@ describe('useMetadata', () => {
   })
 
   it('refreshes cache when refreshCache is called', async () => {
-    mockMetadataApi.refreshMetadataCache.mockResolvedValue({ success: true })
+    mockMetadataApi.refreshMetadataCache.mockResolvedValue({ message: 'Cache refreshed successfully', success: true })
 
     const { result } = renderHook(() => useMetadata())
 
