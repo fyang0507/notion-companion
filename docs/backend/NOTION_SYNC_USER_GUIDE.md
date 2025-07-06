@@ -1,6 +1,6 @@
 # Notion Sync User Guide
 
-This guide helps you set up and use the Notion database synchronization feature. For technical implementation details, see [DATA_INGESTION_PIPELINE.md](DATA_INGESTION_PIPELINE.md).
+This guide helps you set up and use Notion database synchronization. For technical implementation details, see [DATA_INGESTION_PIPELINE.md](DATA_INGESTION_PIPELINE.md).
 
 ## Quick Start
 
@@ -26,19 +26,9 @@ cd backend
 ./sync_notion_databases.sh
 ```
 
-## Available Scripts
-
-- **`sync_databases.py`** - Main Python script for database synchronization
-- **`check_active_databases.py`** - Check what databases are currently in Supabase
-- **`sync_notion_databases.sh`** - Convenient wrapper shell script
-- **`config/databases.toml`** - Your database configuration file
-- **`config/databases.example.toml`** - Example configuration template
-
 ## Basic Configuration
 
-### Database Setup
-
-Each database in your `config/databases.toml` needs these essential settings:
+### Essential Database Settings
 
 ```toml
 [[databases]]
@@ -51,8 +41,6 @@ batch_size = 10                       # Pages per batch (start with 10)
 rate_limit_delay = 1.0                # Seconds between batches (start with 1.0)
 max_retries = 3                       # Retry failed pages
 ```
-
-> 💡 **For advanced configuration options**, see the [Configuration section](DATA_INGESTION_PIPELINE.md#️-configuration) in the technical documentation.
 
 ### Global Settings
 
@@ -133,41 +121,11 @@ Create a Notion integration with minimal permissions:
 - **Database ID not found**: Check ID format has dashes and integration has access
 - **Out of memory**: Reduce `batch_size` and `concurrent_databases` values
 
-> 🔧 **For advanced troubleshooting**, see [Troubleshooting](DATA_INGESTION_PIPELINE.md#-troubleshooting) in the technical documentation.
-
 ## Performance Tips
 
 **Small databases (< 100 pages)**: Use `batch_size = 20` and `rate_limit_delay = 0.5`  
 **Large databases (> 500 pages)**: Use `batch_size = 10` and `rate_limit_delay = 2.0`  
 **Rate limit issues**: Increase `rate_limit_delay` to 3.0 and reduce `batch_size` to 5
-
-## Monitoring Your Sync
-
-The script shows real-time progress and saves detailed logs to `database_sync.log`.
-
-> 📊 **For detailed monitoring**, see [Performance & Monitoring](DATA_INGESTION_PIPELINE.md#-performance--monitoring) in the technical documentation.
-
-## Setting Up Automation
-
-**Daily Cron Job**: Add to crontab: `0 2 * * * /path/to/sync_notion_databases.sh >> /var/log/sync.log 2>&1`  
-**Test First**: Always run `./sync_notion_databases.sh --dry-run` before automating
-
-> 🚀 **For CI/CD integration**, see [Automation Options](DATA_INGESTION_PIPELINE.md#-automation-options) in the technical documentation.
-
-## Integration with Notion Companion
-
-After running the sync, your content is immediately available in the main application:
-
-1. **Search Results** - Documents appear in vector search
-2. **AI Chat** - Assistant can reference your synced content
-3. **Real-time Updates** - Frontend automatically shows new content
-4. **Database Filtering** - Filter results by specific Notion databases
-
-## Getting Help
-
-**Configuration**: [Configuration Guide](CONFIG_GUIDE.md) | **Technical Details**: [Data Ingestion Pipeline](DATA_INGESTION_PIPELINE.md) | **Backend Setup**: [Backend Setup Guide](BACKEND_SETUP.md)
-
-**Debug Mode**: Add `log_level = "DEBUG"` to your config for verbose output
 
 ## Next Steps
 
@@ -177,3 +135,9 @@ After running the sync, your content is immediately available in the main applic
 4. Gradually scale up batch sizes and add more databases
 
 > 💡 **Pro Tip**: Always use `--dry-run` to test configuration changes safely.
+
+## Getting Help
+
+- **Advanced Configuration**: [Technical Implementation Guide](DATA_INGESTION_PIPELINE.md)
+- **Backend Setup**: [Backend Setup Guide](BACKEND_SETUP.md)
+- **Debug Mode**: Add `log_level = "DEBUG"` to your config for verbose output

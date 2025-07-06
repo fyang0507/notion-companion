@@ -11,9 +11,9 @@ This directory contains comprehensive documentation for the Notion Companion pro
 - **[TODO](TODO.md)** - Current development tasks and planned improvements
 
 ### Metadata Filtering System
-- **[Metadata Filtering Implementation](METADATA_FILTERING_IMPLEMENTATION.md)** - Complete implementation status and progress tracking for metadata-based filtering
-- **[Manual Metadata Definition](MANUAL_METADATA_DEFINITION.md)** - Architecture, analysis, and implementation plan for manual metadata configuration via `databases.toml`
-- **[Notion API Schema Analysis](NOTION_API_SCHEMA_ANALYSIS.md)** - Analysis of how Notion API returns database schema information
+- **[Metadata Filtering System](METADATA_FILTERING_SYSTEM.md)** - Complete documentation for the production-ready metadata filtering system
+- **[Metadata Filtering Implementation](METADATA_FILTERING_IMPLEMENTATION.md)** - Implementation status and progress tracking
+- **[Notion API Schema Analysis](NOTION_API_SCHEMA_ANALYSIS.md)** - Analysis of Notion API database schema structure
 
 ### Backend Documentation
 - **[Backend Setup](backend/BACKEND_SETUP.md)** - Backend installation, configuration, and development setup

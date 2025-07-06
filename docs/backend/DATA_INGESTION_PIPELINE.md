@@ -1,6 +1,6 @@
 # Data Ingestion Pipeline - Technical Implementation
 
-This document explains the technical architecture and implementation details of the Notion Companion data ingestion pipeline. For user-facing instructions and basic setup, see [NOTION_SYNC_USER_GUIDE.md](NOTION_SYNC_USER_GUIDE.md).
+This document explains the technical architecture and implementation details of the Notion Companion data ingestion pipeline. For basic setup and usage, see [NOTION_SYNC_USER_GUIDE.md](NOTION_SYNC_USER_GUIDE.md).
 
 ## 🏗️ Architecture Overview
 
@@ -30,8 +30,6 @@ graph TD
 
 ## 🔄 Sync Methods
 
-> **Getting Started**: For basic usage, see [Quick Start](NOTION_SYNC_USER_GUIDE.md#quick-start) in the user guide.
-
 ### 1. Script-Based Sync (Primary)
 - **Implementation**: Asyncio-based with configurable concurrency
 - **Entry Point**: [`scripts/sync_databases.py`](../../backend/scripts/sync_databases.py)
@@ -47,129 +45,254 @@ graph TD
 - **Event Types**: `page.updated`, `page.created`, `page.deleted`
 - **Implementation**: [`routers/notion_webhook.py`](../../backend/routers/notion_webhook.py)
 
-## ⚙️ Configuration Architecture
+## ⚙️ Advanced Configuration
 
-> **Basic Setup**: For essential settings, see [Basic Configuration](NOTION_SYNC_USER_GUIDE.md#basic-configuration) in the user guide.
-
-### Configuration System
+### Configuration System Architecture
 - **Main Config**: [`config/databases.toml`](../../backend/config/databases.toml) - Database definitions and sync settings
 - **Model Config**: [`config/models.toml`](../../backend/config/models.toml) - AI model and embedding settings
-- **Schema**: Advanced options include filtering, chunking strategies, performance tuning
 - **Environment**: Secrets and deployment-specific settings via environment variables
 
-Key configuration categories:
-- **Sync Behavior**: Batch sizes, rate limiting, incremental vs full sync
-- **Content Processing**: Chunking parameters, metadata extraction, filtering rules
-- **Performance**: Concurrency limits, memory constraints, adaptive rate limiting
-- **Embeddings**: Model selection, batch processing, token limits
+### Advanced Database Configuration
 
-## 📊 Sync Process Implementation
+```toml
+[[databases]]
+name = "Advanced Database"
+database_id = "uuid-of-notion-database"
+description = "Advanced configuration example"
 
-### Four-Phase Pipeline
+[databases.sync_settings]
+batch_size = 50                        # Pages per batch (1-100)
+rate_limit_delay = 0.5                 # Seconds between batches (0.1-10.0)
+max_retries = 5                        # Retry failed pages (1-10)
+concurrent_pages = 3                   # Parallel page processing (1-10)
+enable_incremental_sync = true         # Only sync changed pages
+last_sync_timestamp = "2024-01-01T00:00:00Z"
 
-**Phase 1: Database Registration**
-- Schema discovery and field mapping
-- Queryable field extraction for filtering
-- Implementation: [`services/database_schema_manager.py`](../../backend/services/database_schema_manager.py)
+[databases.content_processing]
+chunk_size = 1000                      # Characters per chunk (500-2000)
+chunk_overlap = 200                    # Character overlap (100-500)
+enable_multilingual_processing = true  # Chinese/English optimization
+content_type_detection = true          # Auto-detect article vs note type
 
-**Phase 2: Intelligent Page Discovery**
-- Incremental sync with timestamp comparison
-- Advanced filtering and pagination handling
-- Batch processing with adaptive rate limiting
+[databases.filtering]
+exclude_archived = true                # Skip archived pages
+exclude_deleted = true                 # Skip deleted pages
+include_properties = ["title", "tags", "author"]  # Metadata to extract
+exclude_properties = ["internal_id"]   # Properties to skip
 
-**Phase 3: Content Processing Pipeline**
-- Multi-step content extraction and validation
-- Metadata extraction and property mapping
-- Hash-based change detection for efficiency
+[databases.performance]
+memory_limit_mb = 1024                 # Memory limit per database (256-4096)
+embedding_batch_size = 100             # Embeddings per batch (50-500)
+enable_caching = true                  # Cache embeddings and content
+cache_ttl_hours = 24                   # Cache expiration (1-168)
+```
 
-**Phase 4: Vector Storage**
-- Intelligent document chunking using [`services/contextual_chunker.py`](../../backend/services/contextual_chunker.py)
-- Batch embedding generation with OpenAI API
-- Optimized database storage with vector indexing
+### Global Performance Settings
 
-## 📈 Performance & Monitoring
+```toml
+[global_settings]
+concurrent_databases = 5               # Max databases to sync simultaneously (1-10)
+log_level = "DEBUG"                    # DEBUG, INFO, WARNING, ERROR
+performance_monitoring = true          # Enable detailed performance tracking
+error_reporting = true                 # Enable error aggregation
+health_check_interval = 300           # Seconds between health checks (60-3600)
 
-### Real-time Metrics
-- **API Performance**: Call frequency, response times, error rates
-- **Embedding Efficiency**: Tokens per second, batch processing stats
-- **Resource Usage**: Memory consumption, database connection pooling
-- **Implementation**: Performance monitoring integrated throughout sync process
+[global_settings.rate_limiting]
+adaptive_rate_limiting = true          # Auto-adjust based on API responses
+base_delay = 0.5                       # Base delay in seconds (0.1-2.0)
+max_delay = 10.0                       # Maximum delay in seconds (1.0-60.0)
+backoff_multiplier = 2.0              # Exponential backoff factor (1.5-3.0)
 
-### Adaptive Optimization
-- **Rate Limiting**: Automatic adjustment based on API response patterns
-- **Batch Sizing**: Dynamic optimization based on content characteristics
-- **Memory Management**: Streaming processing for large datasets
-- **Error Recovery**: Intelligent retry with exponential backoff
+[global_settings.resource_limits]
+max_memory_usage_mb = 4096             # Total memory limit (1024-16384)
+max_disk_usage_gb = 10                 # Temporary disk usage limit (1-100)
+worker_timeout_seconds = 1800          # Worker process timeout (300-3600)
+```
 
-## 🔧 Error Handling Strategy
+## 📊 Four-Phase Pipeline Implementation
 
-### Multi-Level Recovery
-- **API Errors**: Notion-specific error codes with targeted recovery strategies
-- **Embedding Failures**: Graceful degradation with content preservation
-- **Database Issues**: Transaction rollback and consistency maintenance
-- **Implementation**: Comprehensive error handling in [`services/`](../../backend/services/) modules
+### Phase 1: Database Registration
+- **Schema Discovery**: Automatic field mapping and type detection
+- **Queryable Fields**: Extract filterable properties for search
+- **Validation**: Ensure database accessibility and permissions
+- **Implementation**: [`services/database_schema_manager.py`](../../backend/services/database_schema_manager.py)
 
-### Health Monitoring
-- **Automated Diagnostics**: Orphaned chunk detection, embedding quality checks
-- **Self-Healing**: Automatic cleanup and repair operations
-- **Alerting**: Performance degradation and failure notifications
+### Phase 2: Intelligent Page Discovery
+- **Incremental Sync**: Timestamp-based change detection
+- **Filtering**: Apply content and property filters
+- **Pagination**: Handle large databases efficiently
+- **Rate Limiting**: Adaptive delay based on API response patterns
 
-## 🌍 Multilingual Processing
+### Phase 3: Content Processing Pipeline
+- **Content Extraction**: Multi-format content handling (text, images, files)
+- **Metadata Extraction**: Property mapping and normalization
+- **Change Detection**: Content hash comparison for efficiency
+- **Validation**: Content quality and completeness checks
 
-### Bilingual Content Support
-- **Language Detection**: Chinese/English content composition analysis
-- **Contextual Chunking**: Language-aware text segmentation
+### Phase 4: Vector Storage
+- **Contextual Chunking**: Using [`services/contextual_chunker.py`](../../backend/services/contextual_chunker.py)
+- **Embedding Generation**: Batch processing with OpenAI API
+- **Database Storage**: Optimized PostgreSQL with pgvector indexing
+- **Quality Assurance**: Embedding validation and error handling
+
+## 📈 Performance Monitoring & Optimization
+
+### Real-time Metrics Collection
+- **API Performance**: Request latency, success rates, error patterns
+- **Embedding Efficiency**: Token consumption, processing speed, batch optimization
+- **Resource Usage**: Memory consumption, CPU utilization, disk I/O
+- **Database Performance**: Query times, connection pooling, index usage
+
+### Adaptive Optimization Systems
+- **Rate Limiting**: Dynamic adjustment based on API response patterns
+- **Batch Sizing**: Content-aware optimization for different document types
+- **Memory Management**: Streaming processing with garbage collection
+- **Connection Pooling**: Optimized database connections with health checks
+
+### Performance Profiling Tools
+```bash
+# Enable detailed profiling
+cd backend
+uv run python -m cProfile -s cumulative scripts/sync_databases.py --profile
+
+# Memory analysis
+uv run python -m tracemalloc scripts/sync_databases.py --memory-profile
+
+# Performance benchmarking
+uv run python scripts/performance_benchmark.py
+```
+
+## 🔧 Advanced Error Handling & Recovery
+
+### Multi-Level Error Recovery
+- **API Errors**: Notion-specific error codes with targeted retry strategies
+- **Rate Limiting**: Exponential backoff with jitter for distributed systems
+- **Content Errors**: Graceful degradation with partial content preservation
+- **Database Errors**: Transaction rollback and consistency maintenance
+
+### Automated Health Monitoring
+- **Orphaned Data Detection**: Identify and cleanup incomplete syncs
+- **Embedding Quality**: Validate embedding generation and storage
+- **Data Consistency**: Cross-reference Notion and local database states
+- **Performance Degradation**: Alert on unusual processing times or failure rates
+
+### Advanced Troubleshooting
+
+#### Database Connection Issues
+```bash
+# Test database connectivity
+cd backend
+uv run python -c "from database import test_connection; test_connection()"
+
+# Check active connections
+uv run python scripts/check_database_health.py
+```
+
+#### Notion API Debugging
+```bash
+# Test Notion API access
+uv run python scripts/test_notion_api.py --database-id your-id
+
+# Validate permissions
+uv run python scripts/validate_notion_permissions.py
+```
+
+#### Performance Analysis
+```bash
+# Analyze sync performance
+uv run python scripts/analyze_sync_performance.py --database-id your-id
+
+# Memory usage profiling
+uv run python scripts/memory_profiler.py
+```
+
+## 🌍 Multilingual Processing Implementation
+
+### Bilingual Content Optimization
+- **Language Detection**: Statistical analysis of Chinese/English content ratios
+- **Contextual Chunking**: Language-aware text segmentation preserving meaning
 - **Search Optimization**: PostgreSQL full-text search with 'simple' configuration
-- **Implementation**: [`services/content_type_detector.py`](../../backend/services/content_type_detector.py)
+- **Embedding Strategy**: Multilingual embeddings with language-specific context
 
-### Database Schema
+### Database Schema for Multilingual Support
 ```sql
 -- Optimized for Chinese/English mixed content
 CREATE INDEX documents_content_multilingual_idx ON documents 
 USING gin(to_tsvector('simple', coalesce(title, '') || ' ' || coalesce(content, '')));
+
+-- Language-specific metadata
+ALTER TABLE documents ADD COLUMN detected_languages JSONB;
+ALTER TABLE documents ADD COLUMN primary_language VARCHAR(10);
 ```
 
-## 🚀 Production Considerations
+## 🚀 Production Deployment & Automation
 
-### Deployment Architecture
-- **Containerization**: Multi-stage Docker builds for optimal performance
-- **CI/CD Integration**: Automated sync with GitHub Actions
-- **Monitoring**: Comprehensive logging and performance tracking
-- **Scaling**: Horizontal scaling with worker process management
+### CI/CD Integration
+```yaml
+# GitHub Actions example
+name: Notion Sync
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:
 
-### Security & Performance
-- **Secret Management**: Environment-based configuration for sensitive data
-- **Connection Pooling**: Optimized database connections with Supabase
-- **Rate Limiting**: Respect for API limits with intelligent backoff
-- **Memory Optimization**: Streaming processing and garbage collection
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install uv
+        run: pip install uv
+      - name: Sync databases
+        run: |
+          cd backend
+          uv sync
+          uv run python scripts/sync_databases.py
+        env:
+          NOTION_ACCESS_TOKEN: ${{ secrets.NOTION_ACCESS_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+```
 
-## 🔍 Debugging & Analysis
+### Docker Deployment
+```dockerfile
+FROM python:3.11-slim
 
-> **Common Issues**: For basic troubleshooting, see [Common Issues](NOTION_SYNC_USER_GUIDE.md#common-issues--solutions) in the user guide.
+WORKDIR /app
+COPY backend/ .
+RUN pip install uv && uv sync
 
-### Advanced Diagnostics
-- **Performance Profiling**: cProfile integration for bottleneck identification
-- **Memory Analysis**: tracemalloc for memory usage tracking
-- **Database Health**: Automated consistency checks and repair operations
-- **Custom Analytics**: Sync performance and data quality metrics
+CMD ["uv", "run", "python", "scripts/sync_databases.py"]
+```
 
-### Development Tools
-- **Debug Scripts**: [`scripts/`](../../backend/scripts/) directory contains diagnostic utilities
-- **Test Suites**: Comprehensive testing in [`tests/`](../../backend/tests/) directory
-- **Manual Testing**: Individual component testing utilities
+### Monitoring & Alerting
+- **Health Checks**: Automated sync status monitoring
+- **Performance Alerts**: Threshold-based notifications for degradation
+- **Error Aggregation**: Centralized error tracking and analysis
+- **Success Metrics**: Sync completion rates and processing times
 
 ## 🔗 Integration Points
 
 ### Main Application Interface
 After sync completion, content is immediately available through:
-- **Vector Search**: Semantic search across all ingested content
+- **Vector Search**: Semantic search with contextual embeddings
 - **RAG Chat**: AI-powered conversations with knowledge base context
 - **Database Filtering**: Content filtering by source Notion database
-- **Real-time Updates**: Frontend automatically reflects new content
+- **Real-time Updates**: WebSocket-based frontend notifications
 
 ### API Endpoints
 - **Search**: [`routers/search.py`](../../backend/routers/search.py) - Vector and hybrid search
 - **Chat**: [`routers/chat.py`](../../backend/routers/chat.py) - RAG-powered conversations
 - **Sessions**: [`routers/chat_sessions.py`](../../backend/routers/chat_sessions.py) - Persistent chat management
+- **Webhooks**: [`routers/notion_webhook.py`](../../backend/routers/notion_webhook.py) - Real-time updates
+
+### Event System
+- **Sync Events**: Progress notifications and completion status
+- **Error Events**: Detailed error information with context
+- **Performance Events**: Metrics and optimization recommendations
 
 This architecture creates a production-ready, scalable knowledge base with comprehensive multilingual support and intelligent content processing.

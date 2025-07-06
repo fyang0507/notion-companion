@@ -1,10 +1,10 @@
-# Notion API Database Schema Analysis
+# Notion API Schema Analysis
 
 ## Overview
 
-This document analyzes how the Notion API returns database schema information to inform the decision between **automatic metadata inference** vs **manual metadata definition**.
+This document analyzes the Notion API database schema structure to understand how metadata is extracted and processed by the Notion Companion system.
 
-## How Notion API Returns Database Schema
+## Notion API Database Schema Structure
 
 ### 1. Database Schema Endpoint
 
@@ -117,204 +117,153 @@ This document analyzes how the Notion API returns database schema information to
 }
 ```
 
-## Current Automatic Inference Approach
+## Notion Field Types Reference
 
-### How It Works Now
+### Supported Field Types
 
-1. **Schema Discovery** (`database_schema_manager.py`):
-   ```python
-   # Gets database schema
-   database_info = notion_service.client.databases.retrieve(database_id)
-   properties = database_info.get('properties', {})
-   
-   # Analyzes each field
-   for field_name, field_config in properties.items():
-       field_type = field_config.get('type')
-       # Assigns priority scores based on type
-       # Determines if field is "queryable" for filtering
-   ```
+| Notion Type | Description | Value Structure | Example |
+|-------------|-------------|----------------|---------|
+| `title` | Page title | `[{"type": "text", "text": {"content": "..."}}]` | Document titles |
+| `rich_text` | Formatted text | `[{"type": "text", "text": {"content": "..."}}]` | Descriptions, notes |
+| `number` | Numeric values | `42` | Priority scores, ratings |
+| `select` | Single choice | `{"name": "High", "color": "red"}` | Categories, priorities |
+| `status` | Status field | `{"name": "In Progress", "color": "blue"}` | Workflow states |
+| `multi_select` | Multiple choices | `[{"name": "Tech", "color": "blue"}]` | Tags, categories |
+| `date` | Date/time | `{"start": "2024-01-01", "end": null}` | Deadlines, created dates |
+| `checkbox` | Boolean | `true` or `false` | Completion flags |
+| `people` | User references | `[{"name": "John", "avatar_url": "..."}]` | Authors, assignees |
+| `created_time` | Auto-generated | `"2024-01-15T10:30:00.000Z"` | Creation timestamp |
+| `last_edited_time` | Auto-generated | `"2024-01-15T10:30:00.000Z"` | Last edit timestamp |
 
-2. **Field Prioritization** (Current Logic):
-   ```python
-   priority_field_types = {
-       'date': 10,           # High priority for filtering
-       'created_time': 10,
-       'status': 9,         # Great for filtering  
-       'select': 8,         # Good categorical data
-       'multi_select': 8,
-       'number': 7,
-       'people': 7,         # Author information
-       'title': 10,         # Always important
-       'rich_text': 5,      # Lower priority
-   }
-   ```
+### Chinese Language Support
 
-3. **Automatic Mapping** (Current Implementation):
-   ```python
-   def _map_to_common_field(self, field_name: str, field_type: str, raw_value: Any):
-       field_name_lower = field_name.lower()
-       
-       if 'author' in field_name_lower or 'creator' in field_name_lower:
-           return ('author', processed_value)
-       elif 'tag' in field_name_lower or field_type == 'multi_select':
-           return ('tags', processed_value)
-       elif 'status' in field_name_lower or field_type == 'status':
-           return ('status', processed_value)
-       # ... more mappings
-   ```
+Notion API natively supports Chinese field names and values:
 
-### Issues with Current Approach
+```json
+{
+  "properties": {
+    "作者": {
+      "type": "people",
+      "people": [{"name": "张三"}]
+    },
+    "标签": {
+      "type": "multi_select",
+      "multi_select": [
+        {"name": "技术", "color": "blue"},
+        {"name": "博客", "color": "red"}
+      ]
+    },
+    "状态": {
+      "type": "status",
+      "status": {"name": "已发布", "color": "green"}
+    }
+  }
+}
+```
 
-1. **Name-Based Mapping is Fragile**:
-   - Field named "Project Status" vs "Status" vs "Current State"
-   - Non-English field names (Chinese databases)
-   - Ambiguous field purposes
+## Value Extraction Patterns
 
-2. **Type-Based Assumptions**:
-   - Not all `multi_select` fields are "tags"
-   - `people` fields might be "reviewers" not "authors"
-   - `select` fields could be anything
+### Simple Values
+```json
+// Text/Rich Text
+"rich_text": [{"type": "text", "text": {"content": "Extracted Value"}}]
+→ "Extracted Value"
 
-3. **No User Control**:
-   - Can't exclude irrelevant fields
-   - Can't customize field importance  
-   - Can't handle business-specific semantics
+// Number
+"number": 42
+→ 42
 
-## Manual Metadata Definition Approach
+// Checkbox
+"checkbox": true
+→ true
+```
 
-### Proposed `databases.toml` Configuration
+### Complex Values
+```json
+// Select/Status
+"select": {"name": "High Priority", "color": "red"}
+→ "High Priority"
+
+// Multi-select (Tags)
+"multi_select": [
+  {"name": "Tech", "color": "blue"},
+  {"name": "AI", "color": "green"}
+]
+→ ["Tech", "AI"]
+
+// Date
+"date": {"start": "2024-01-01", "end": "2024-01-31"}
+→ "2024-01-01" (start date extracted)
+
+// People
+"people": [{"name": "John Doe", "avatar_url": "..."}]
+→ "John Doe"
+```
+
+## Configuration Mapping
+
+The Notion Companion system maps Notion field types to internal field types:
 
 ```toml
-# Database-specific metadata configuration
-[databases."database-id-1"]
-name = "Research Papers"
-description = "Academic research document database"
-
-  [databases."database-id-1".metadata]
-  # Define which fields to expose for filtering
-  author = { notion_field = "Created By", type = "text", description = "Document author", filterable = true }
-  tags = { notion_field = "Categories", type = "array", description = "Document categories", filterable = true }
-  status = { notion_field = "Review Status", type = "text", description = "Review progress", filterable = true }
-  publication_date = { notion_field = "Published", type = "date", description = "Publication date", filterable = true }
-  priority = { notion_field = "Research Priority", type = "text", description = "Research importance", filterable = true }
-  
-  # Fields to ignore (not expose for filtering)
-  # notion_field_name = { ignore = true }
-
-[databases."database-id-2"] 
-name = "Meeting Notes"
-description = "Team meeting documentation"
-
-  [databases."database-id-2".metadata]
-  author = { notion_field = "Meeting Lead", type = "text", description = "Meeting organizer", filterable = true }
-  tags = { notion_field = "Topics", type = "array", description = "Discussion topics", filterable = true }
-  meeting_date = { notion_field = "Date", type = "date", description = "Meeting date", filterable = true }
-  attendees = { notion_field = "Participants", type = "array", description = "Meeting attendees", filterable = false }
+# databases.toml configuration
+[databases.metadata.author]
+notion_field = "Created By"    # Notion field name (can be Chinese)
+type = "rich_text"            # Internal field type
+description = "文档作者"       # Description (can be Chinese)
+filterable = true             # Enable filtering
 ```
 
-### Benefits of Manual Definition
+### Field Type Mapping
 
-1. **Precise Control**:
-   - Exact field mapping regardless of names
-   - Choose which fields to expose
-   - Custom descriptions for UI
+| Notion Type | Internal Type | Filtering Strategy |
+|-------------|---------------|-------------------|
+| `title`, `rich_text` | `text`, `rich_text` | Text matching |
+| `number` | `number` | Range filtering |
+| `select`, `status` | `select`, `status` | Exact matching |
+| `multi_select` | `multi_select` | Array/tag filtering |
+| `date`, `created_time` | `date` | Date range filtering |
+| `checkbox` | `checkbox` | Boolean filtering |
+| `people` | `rich_text` | Text matching (name extraction) |
 
-2. **Multi-Language Support**:
-   - Works with Chinese, Japanese, etc. field names
-   - Consistent English metadata field names
+## Multi-Language Considerations
 
-3. **Business Logic Alignment**:
-   - Map fields according to actual business meaning
-   - Handle different database purposes appropriately
+### Field Name Handling
+- **English**: `"Author"`, `"Tags"`, `"Status"`
+- **Chinese**: `"作者"`, `"标签"`, `"状态"`
+- **Mixed**: `"Author (作者)"`, `"Tags/标签"`
 
-4. **Maintainable**:
-   - Clear documentation of field purposes
-   - Version controlled configuration
-   - Easy to adjust without code changes
+### Value Processing
+- **Consistent Internal Storage**: All values stored in consistent format
+- **Unicode Support**: Full UTF-8 support for Chinese characters
+- **Search Optimization**: Both Chinese and English searchable
 
-### Implementation Changes Needed
+## Schema Evolution
 
-#### 1. **Configuration Loading**
-```python
-# New: config/database_config.py
-class DatabaseMetadataConfig:
-    def __init__(self, config_path: str):
-        self.config = load_toml(config_path)
-    
-    def get_database_metadata_config(self, database_id: str) -> Dict[str, Any]:
-        return self.config.get('databases', {}).get(database_id, {}).get('metadata', {})
-```
+### Version Compatibility
+- **Notion Schema Changes**: Field types and names can change
+- **Configuration Flexibility**: `databases.toml` allows adaptation
+- **Backward Compatibility**: Existing configurations continue working
 
-#### 2. **Schema Manager Changes**
-```python
-# Modified: services/database_schema_manager.py
-async def extract_document_metadata(self, document_id: str, page_data: Dict[str, Any], database_id: str):
-    # Get manual configuration instead of automatic inference
-    metadata_config = self.database_config.get_database_metadata_config(database_id)
-    
-    if not metadata_config:
-        self.logger.warning(f"No metadata configuration found for database {database_id}")
-        return {}
-    
-    # Extract only configured fields
-    for common_field, field_config in metadata_config.items():
-        if field_config.get('ignore'):
-            continue
-            
-        notion_field = field_config['notion_field']
-        if notion_field in page_properties:
-            # Extract and map according to configuration
-            raw_value = self._extract_field_value(page_properties[notion_field], field_config['type'])
-            metadata_record[common_field] = raw_value
-```
+### Best Practices
+1. **Stable Field Names**: Use consistent internal field names
+2. **Type Consistency**: Map similar Notion types to same internal types
+3. **Documentation**: Document field mappings for team understanding
+4. **Testing**: Test with real Notion data including Chinese content
 
-#### 3. **Database Schema Storage** (Minor Changes)
-The current `database_field_schemas` table could still be used but simplified:
+## API Rate Limits
 
-```sql
--- Store manual configuration instead of inferred schema  
-CREATE TABLE database_metadata_configs (
-    database_id TEXT PRIMARY KEY,
-    database_name TEXT NOT NULL,
-    manual_config JSONB NOT NULL,  -- From databases.toml
-    last_updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-```
+### Notion API Constraints
+- **Rate Limit**: 3 requests per second per integration
+- **Batch Processing**: Use appropriate delays between requests
+- **Error Handling**: Implement retry logic for rate limit errors
 
-## Comparison: Automatic vs Manual
+### Optimization Strategies
+- **Caching**: Cache database schemas to reduce API calls
+- **Incremental Updates**: Only fetch changed pages
+- **Batch Operations**: Group multiple operations where possible
 
-| Aspect | Automatic Inference | Manual Definition |
-|--------|-------------------|------------------|
-| **Setup Effort** | ✅ Zero configuration | ❌ Requires setup per database |
-| **Accuracy** | ❌ Hit-or-miss field mapping | ✅ Precise field control |
-| **Multi-Language** | ❌ Struggles with non-English | ✅ Works with any language |
-| **Maintainability** | ❌ Code changes for adjustments | ✅ Config file changes only |
-| **Business Logic** | ❌ Generic field assumptions | ✅ Business-specific mapping |
-| **User Control** | ❌ No customization | ✅ Full control over exposure |
-| **Debugging** | ❌ Hard to understand failures | ✅ Clear configuration |
-| **Scalability** | ❌ Breaks with diverse databases | ✅ Handles different database types |
+---
 
-## Recommendation
+**For Implementation Details**: See `docs/METADATA_FILTERING_SYSTEM.md`
 
-**For MVP: Manual Definition Approach**
-
-### Reasons:
-1. **Reliability**: Won't break with different database naming conventions
-2. **International Support**: Essential for Chinese/multi-language databases  
-3. **User Expectations**: Users can control what metadata is exposed
-4. **Debugging**: Clear configuration makes troubleshooting easier
-5. **Future-Proof**: Can handle diverse database types as system grows
-
-### Implementation Plan:
-1. Create `databases.toml` configuration file
-2. Build configuration loader
-3. Modify `database_schema_manager.py` to use manual config
-4. Simplify database schema storage  
-5. Document configuration format for users
-
-### Migration Path:
-- Keep automatic inference as fallback for unconfigured databases
-- Provide tools to generate initial `databases.toml` from existing databases
-- Allow gradual migration database by database
-
-This approach gives you the reliability and control needed for production while maintaining the flexibility to add automatic inference later if needed.
+**For Current Status**: See `docs/METADATA_FILTERING_IMPLEMENTATION.md`
