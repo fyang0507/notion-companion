@@ -57,7 +57,7 @@ class TestDatabaseSchemaManager:
         
         # Verify specific field mappings
         assert metadata['author']['notion_field'] == "Author"
-        assert metadata['author']['type'] == "text"
+        assert metadata['author']['type'] == "rich_text"
         assert metadata['published_date']['notion_field'] == "Date"
         assert metadata['published_date']['type'] == "date"
         assert metadata['status']['notion_field'] == "Status"
@@ -144,7 +144,7 @@ class TestDatabaseSchemaManager:
         # Mock page data with real field values
         page_data = {
             'properties': {
-                'Author': {'text': [{'plain_text': '张三'}]},
+                'Author': {'rich_text': [{'plain_text': '张三'}]},
                 'Date': {'date': {'start': '2023-01-15'}},
                 'Status': {'status': {'name': '已读'}},
                 'Select': {'select': {'name': '技术'}},
@@ -193,7 +193,7 @@ class TestDatabaseSchemaManager:
         # Page data missing some configured fields
         page_data = {
             'properties': {
-                'Author': {'text': [{'plain_text': '张三'}]},
+                'Author': {'rich_text': [{'plain_text': '张三'}]},
                 # Missing Date, Status, etc.
             },
             'created_time': '2023-01-15T10:00:00.000Z'
@@ -218,5 +218,5 @@ class TestDatabaseSchemaManager:
 
     def test_supported_field_types(self, schema_manager):
         """Test supported field types configuration."""
-        expected_types = {'text', 'number', 'select', 'status', 'multi_select', 'date', 'checkbox'}
+        expected_types = {'text', 'rich_text', 'number', 'select', 'status', 'multi_select', 'date', 'checkbox', 'people', 'url'}
         assert schema_manager.supported_field_types == expected_types
