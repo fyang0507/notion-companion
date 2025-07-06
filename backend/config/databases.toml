@@ -2,7 +2,8 @@
 # This file defines multiple Notion databases to connect and sync
 
 # Supported field types in this app:
-# - text
+# - text (simple text fields)
+# - rich_text (formatted text fields)
 # - number
 # - select
 # - status
@@ -24,7 +25,7 @@ max_retries = 3
 
   [databases.metadata.author]
   notion_field = "Author" # Use actual field name from your Notion database
-  type = "text" 
+  type = "rich_text" 
   description = "文章作者"
   filterable = true
 

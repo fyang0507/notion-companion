@@ -22,7 +22,7 @@ class DatabaseSchemaManager:
         
         # Supported Notion field types
         self.supported_field_types = {
-            'text', 'number', 'select', 'status', 'multi_select', 'date', 'checkbox'
+            'text', 'rich_text', 'number', 'select', 'status', 'multi_select', 'date', 'checkbox', 'people', 'url'
         }
     
     def _load_database_config(self, database_id: str) -> Dict[str, Any]:
@@ -50,9 +50,21 @@ class DatabaseSchemaManager:
             return None
             
         try:
+            # Get the actual field type from Notion data for auto-detection
+            notion_field_type = field_data.get('type')
+            
             if field_type == 'text':
-                text_data = field_data.get('text', [])
-                return ''.join([t.get('plain_text', '') for t in text_data]) if text_data else None
+                # Handle both text and rich_text fields for backwards compatibility
+                if notion_field_type == 'rich_text':
+                    rich_text_data = field_data.get('rich_text', [])
+                    return ''.join([t.get('plain_text', '') for t in rich_text_data]) if rich_text_data else None
+                else:
+                    # Original text field logic
+                    text_data = field_data.get('text', [])
+                    return ''.join([t.get('plain_text', '') for t in text_data]) if text_data else None
+            elif field_type == 'rich_text':
+                rich_text_data = field_data.get('rich_text', [])
+                return ''.join([t.get('plain_text', '') for t in rich_text_data]) if rich_text_data else None
             elif field_type == 'number':
                 return field_data.get('number')
             elif field_type == 'select':
@@ -73,7 +85,21 @@ class DatabaseSchemaManager:
                     }
             elif field_type == 'checkbox':
                 return field_data.get('checkbox')
+            elif field_type == 'people':
+                people_data = field_data.get('people', [])
+                return [person.get('name', '') for person in people_data] if people_data else None
+            elif field_type == 'url':
+                return field_data.get('url')
             else:
+                # Auto-detect based on Notion field type if configured type doesn't match
+                if notion_field_type == 'rich_text':
+                    rich_text_data = field_data.get('rich_text', [])
+                    return ''.join([t.get('plain_text', '') for t in rich_text_data]) if rich_text_data else None
+                elif notion_field_type == 'people':
+                    people_data = field_data.get('people', [])
+                    return [person.get('name', '') for person in people_data] if people_data else None
+                
+                self.logger.warning(f"Unsupported field type: {field_type}, notion type: {notion_field_type}")
                 return None
                 
         except Exception as e:
