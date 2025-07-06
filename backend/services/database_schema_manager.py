@@ -84,21 +84,8 @@ class DatabaseSchemaManager:
                         'end': date_data.get('end')
                     }
             elif field_type == 'checkbox':
-                return field_data.get('checkbox')
-            elif field_type == 'people':
-                people_data = field_data.get('people', [])
-                return [person.get('name', '') for person in people_data] if people_data else None
-            elif field_type == 'url':
-                return field_data.get('url')
-            else:
-                # Auto-detect based on Notion field type if configured type doesn't match
-                if notion_field_type == 'rich_text':
-                    rich_text_data = field_data.get('rich_text', [])
-                    return ''.join([t.get('plain_text', '') for t in rich_text_data]) if rich_text_data else None
-                elif notion_field_type == 'people':
-                    people_data = field_data.get('people', [])
-                    return [person.get('name', '') for person in people_data] if people_data else None
-                
+                return field_data.get('checkbox')         
+            else:               
                 self.logger.warning(f"Unsupported field type: {field_type}, notion type: {notion_field_type}")
                 return None
                 
