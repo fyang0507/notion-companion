@@ -1,20 +1,59 @@
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
-from database import get_db
-from services.openai_service import get_openai_service
-from services.contextual_search_engine import ContextualSearchEngine
-from config.model_config import get_model_config
-from models import ChatRequest
-from logging_config import get_logger, log_performance
+"""
+Chat endpoint with streaming responses and enhanced metadata filtering.
+"""
+
+import asyncio
 import json
+import logging
 import time
 import uuid
-from typing import AsyncGenerator, Dict, Any
+from typing import AsyncGenerator, Dict, Any, List, Optional
+from datetime import datetime
+from pathlib import Path
+import tomllib
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+from database import get_db
+from models import *
+from services.openai_service import get_openai_service
+from services.chat_session_service import get_chat_session_service
+from services.contextual_search_engine import ContextualSearchEngine
+from config.model_config import get_model_config
+from logging_config import get_logger, log_performance
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+def _load_database_configurations() -> List[Dict[str, Any]]:
+    """Load all database configurations from databases.toml."""
+    config_path = Path(__file__).parent.parent / 'config' / 'databases.toml'
+    
+    try:
+        with open(config_path, 'rb') as f:
+            config_data = tomllib.load(f)
+        return config_data.get('databases', [])
+    except Exception as e:
+        logger.error(f"Failed to load database configurations: {str(e)}")
+        return []
+
+def _get_field_type_mapping() -> Dict[str, str]:
+    """Create a mapping of field names to their configured types."""
+    field_type_mapping = {}
+    
+    configurations = _load_database_configurations()
+    for config in configurations:
+        metadata_config = config.get('metadata', {})
+        for field_name, field_config in metadata_config.items():
+            field_type = field_config.get('type', 'text')
+            field_type_mapping[field_name] = field_type
+    
+    return field_type_mapping
 
 def _prepare_chat_filters(request: ChatRequest) -> Dict[str, Any]:
-    """Prepare filter parameters for chat with metadata filtering."""
+    """Prepare filter parameters for chat with configuration-based field types."""
     filters = {}
     
     # Basic filters
@@ -39,31 +78,102 @@ def _prepare_chat_filters(request: ChatRequest) -> Dict[str, Any]:
         if date_range:
             filters['date_range_filter'] = date_range
     
-    # Custom metadata filters with range processing
+    # Metadata filters based on configuration
     if request.metadata_filters:
-        metadata_filters = {}
-        for filter_item in request.metadata_filters:
-            if filter_item.operator == 'equals':
-                metadata_filters[filter_item.field_name] = filter_item.values[0] if filter_item.values else None
-            elif filter_item.operator == 'in':
-                metadata_filters[filter_item.field_name] = filter_item.values
-            # Add more operators as needed
+        # Get field type mappings from configuration
+        field_type_mapping = _get_field_type_mapping()
         
-        if metadata_filters:
-            # Import range processing functions from search router
-            from .search import _process_metadata_filters, _build_metadata_query_conditions
+        # Separate filters by configured field type
+        text_filters = {}
+        number_filters = {}
+        select_filters = {}
+        checkbox_filters = {}
+        
+        for filter_item in request.metadata_filters:
+            field_name = filter_item.field_name
+            operator = filter_item.operator
+            values = filter_item.values
             
-            # Process metadata filters to handle number and date ranges
-            processed_filters = _process_metadata_filters(metadata_filters)
+            # Get field type from configuration
+            field_type = field_type_mapping.get(field_name)
             
-            # Build SQL conditions for complex filters
-            query_conditions = _build_metadata_query_conditions(processed_filters)
+            if not field_type:
+                logger.warning(f"Field '{field_name}' not found in configuration, skipping filter")
+                continue
             
-            if query_conditions:
-                filters['metadata_query_conditions'] = query_conditions
-            
-            # Also keep the processed filters for the database function
-            filters['metadata_filters'] = processed_filters
+            # Route to appropriate filter type based on configuration
+            if field_type in ['text', 'rich_text']:
+                if operator == 'equals':
+                    text_filters[field_name] = values[0] if values else ""
+                elif operator == 'in':
+                    text_filters[field_name] = values
+                elif operator == 'contains':
+                    text_filters[field_name] = values
+                    
+            elif field_type in ['select', 'status']:
+                if operator == 'equals':
+                    select_filters[field_name] = values[0] if values else ""
+                elif operator == 'in':
+                    select_filters[field_name] = values
+                    
+            elif field_type == 'multi_select':
+                # Multi-select maps to tag_filter
+                if operator == 'equals':
+                    if field_name not in filters:
+                        filters['tag_filter'] = {field_name: [values[0]] if values else []}
+                    else:
+                        filters['tag_filter'][field_name] = [values[0]] if values else []
+                elif operator == 'in':
+                    if field_name not in filters:
+                        filters['tag_filter'] = {field_name: values}
+                    else:
+                        filters['tag_filter'][field_name] = values
+                        
+            elif field_type == 'number':
+                if operator == 'range' and values:
+                    range_filter = {}
+                    for value in values:
+                        str_value = str(value)
+                        if str_value.startswith('min:'):
+                            range_filter['min'] = float(str_value[4:])
+                        elif str_value.startswith('max:'):
+                            range_filter['max'] = float(str_value[4:])
+                    
+                    if range_filter:
+                        number_filters[field_name] = range_filter
+                elif operator == 'equals':
+                    number_filters[field_name] = {'equals': float(values[0]) if values else 0}
+                    
+            elif field_type == 'checkbox':
+                if operator == 'equals' and values:
+                    bool_value = str(values[0]).lower() in ['true', '1', 'yes']
+                    checkbox_filters[field_name] = bool_value
+                    
+            elif field_type == 'date':
+                # Date fields map to date_range_filter
+                if operator == 'range' and values:
+                    date_range = {}
+                    for value in values:
+                        str_value = str(value)
+                        if str_value.startswith('from:'):
+                            date_range['from'] = str_value[5:]
+                        elif str_value.startswith('to:'):
+                            date_range['to'] = str_value[3:]
+                    
+                    if date_range:
+                        if 'date_range_filter' not in filters:
+                            filters['date_range_filter'] = {}
+                        filters['date_range_filter'].update(date_range)
+        
+        # Add type-specific filters to the main filters dict
+        if text_filters:
+            filters['text_filter'] = text_filters
+        if number_filters:
+            filters['number_filter'] = number_filters
+        if select_filters:
+            filters['select_filter'] = select_filters
+        if checkbox_filters:
+            filters['checkbox_filter'] = checkbox_filters
     
     return filters
 
@@ -115,7 +225,8 @@ async def chat_endpoint(request: ChatRequest):
         # Check if advanced metadata filters are provided
         filters = _prepare_chat_filters(request)
         has_advanced_filters = any(key in filters for key in [
-            'metadata_filters', 'author_filter', 'tag_filter', 'status_filter', 'date_range_filter'
+            'metadata_filters', 'author_filter', 'tag_filter', 'status_filter', 'date_range_filter',
+            'text_filter', 'number_filter', 'select_filter', 'checkbox_filter'
         ])
         
         search_start = time.time()

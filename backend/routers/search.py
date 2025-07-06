@@ -4,12 +4,42 @@ from services.openai_service import get_openai_service
 from services.contextual_search_engine import ContextualSearchEngine
 from models import SearchRequest, SearchResponse, SearchResult
 from config.model_config import get_model_config
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+import asyncio
+import logging
+from pathlib import Path
+import tomllib
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+def _load_database_configurations() -> List[Dict[str, Any]]:
+    """Load all database configurations from databases.toml."""
+    config_path = Path(__file__).parent.parent / 'config' / 'databases.toml'
+    
+    try:
+        with open(config_path, 'rb') as f:
+            config_data = tomllib.load(f)
+        return config_data.get('databases', [])
+    except Exception as e:
+        logger.error(f"Failed to load database configurations: {str(e)}")
+        return []
+
+def _get_field_type_mapping() -> Dict[str, str]:
+    """Create a mapping of field names to their configured types."""
+    field_type_mapping = {}
+    
+    configurations = _load_database_configurations()
+    for config in configurations:
+        metadata_config = config.get('metadata', {})
+        for field_name, field_config in metadata_config.items():
+            field_type = field_config.get('type', 'text')
+            field_type_mapping[field_name] = field_type
+    
+    return field_type_mapping
 
 def _prepare_enhanced_search_filters(request: SearchRequest) -> Dict[str, Any]:
-    """Prepare filter parameters for enhanced metadata search."""
+    """Prepare filter parameters for enhanced search with configuration-based field types."""
     filters = {}
     
     # Basic filters
@@ -34,109 +64,104 @@ def _prepare_enhanced_search_filters(request: SearchRequest) -> Dict[str, Any]:
         if date_range:
             filters['date_range_filter'] = date_range
     
-    # Custom metadata filters with range processing
+    # Metadata filters based on configuration
     if request.metadata_filters:
-        metadata_filters = {}
-        for filter_item in request.metadata_filters:
-            if filter_item.operator == 'equals':
-                metadata_filters[filter_item.field_name] = filter_item.values[0] if filter_item.values else None
-            elif filter_item.operator == 'in':
-                metadata_filters[filter_item.field_name] = filter_item.values
-            # Add more operators as needed
+        # Get field type mappings from configuration
+        field_type_mapping = _get_field_type_mapping()
         
-        if metadata_filters:
-            # Process metadata filters to handle number and date ranges
-            processed_filters = _process_metadata_filters(metadata_filters)
+        # Separate filters by configured field type
+        text_filters = {}
+        number_filters = {}
+        select_filters = {}
+        checkbox_filters = {}
+        
+        for filter_item in request.metadata_filters:
+            field_name = filter_item.field_name
+            operator = filter_item.operator
+            values = filter_item.values
             
-            # Build SQL conditions for complex filters
-            query_conditions = _build_metadata_query_conditions(processed_filters)
+            # Get field type from configuration
+            field_type = field_type_mapping.get(field_name)
             
-            if query_conditions:
-                filters['metadata_query_conditions'] = query_conditions
+            if not field_type:
+                logger.warning(f"Field '{field_name}' not found in configuration, skipping filter")
+                continue
             
-            # Also keep the processed filters for the database function
-            filters['metadata_filters'] = processed_filters
+            # Route to appropriate filter type based on configuration
+            if field_type in ['text', 'rich_text']:
+                if operator == 'equals':
+                    text_filters[field_name] = values[0] if values else ""
+                elif operator == 'in':
+                    text_filters[field_name] = values
+                elif operator == 'contains':
+                    text_filters[field_name] = values
+                    
+            elif field_type in ['select', 'status']:
+                if operator == 'equals':
+                    select_filters[field_name] = values[0] if values else ""
+                elif operator == 'in':
+                    select_filters[field_name] = values
+                    
+            elif field_type == 'multi_select':
+                # Multi-select maps to tag_filter
+                if operator == 'equals':
+                    if field_name not in filters:
+                        filters['tag_filter'] = {field_name: [values[0]] if values else []}
+                    else:
+                        filters['tag_filter'][field_name] = [values[0]] if values else []
+                elif operator == 'in':
+                    if field_name not in filters:
+                        filters['tag_filter'] = {field_name: values}
+                    else:
+                        filters['tag_filter'][field_name] = values
+                        
+            elif field_type == 'number':
+                if operator == 'range' and values:
+                    range_filter = {}
+                    for value in values:
+                        str_value = str(value)
+                        if str_value.startswith('min:'):
+                            range_filter['min'] = float(str_value[4:])
+                        elif str_value.startswith('max:'):
+                            range_filter['max'] = float(str_value[4:])
+                    
+                    if range_filter:
+                        number_filters[field_name] = range_filter
+                elif operator == 'equals':
+                    number_filters[field_name] = {'equals': float(values[0]) if values else 0}
+                    
+            elif field_type == 'checkbox':
+                if operator == 'equals' and values:
+                    bool_value = str(values[0]).lower() in ['true', '1', 'yes']
+                    checkbox_filters[field_name] = bool_value
+                    
+            elif field_type == 'date':
+                # Date fields map to date_range_filter
+                if operator == 'range' and values:
+                    date_range = {}
+                    for value in values:
+                        str_value = str(value)
+                        if str_value.startswith('from:'):
+                            date_range['from'] = str_value[5:]
+                        elif str_value.startswith('to:'):
+                            date_range['to'] = str_value[3:]
+                    
+                    if date_range:
+                        if 'date_range_filter' not in filters:
+                            filters['date_range_filter'] = {}
+                        filters['date_range_filter'].update(date_range)
+        
+        # Add type-specific filters to the main filters dict
+        if text_filters:
+            filters['text_filter'] = text_filters
+        if number_filters:
+            filters['number_filter'] = number_filters
+        if select_filters:
+            filters['select_filter'] = select_filters
+        if checkbox_filters:
+            filters['checkbox_filter'] = checkbox_filters
     
     return filters
-
-def _process_metadata_filters(metadata_filters: Dict[str, Any]) -> Dict[str, Any]:
-    """Process metadata filters to handle special cases like date and number ranges."""
-    processed_filters = {}
-    
-    for field_name, values in metadata_filters.items():
-        if not values:
-            continue
-            
-        # Handle single value (backward compatibility)
-        if isinstance(values, str):
-            values = [values]
-        elif not isinstance(values, list):
-            values = [str(values)]
-        
-        # Process each value to handle special formats
-        processed_values = []
-        range_conditions = {}
-        
-        for value in values:
-            str_value = str(value)
-            
-            # Handle date ranges
-            if str_value.startswith('from:'):
-                range_conditions['date_from'] = str_value[5:]
-            elif str_value.startswith('to:'):
-                range_conditions['date_to'] = str_value[3:]
-            # Handle number ranges
-            elif str_value.startswith('min:'):
-                range_conditions['number_min'] = float(str_value[4:])
-            elif str_value.startswith('max:'):
-                range_conditions['number_max'] = float(str_value[4:])
-            else:
-                processed_values.append(str_value)
-        
-        # Store processed values and range conditions
-        if processed_values:
-            processed_filters[field_name] = processed_values
-        if range_conditions:
-            processed_filters[f"{field_name}_range"] = range_conditions
-    
-    return processed_filters
-
-def _build_metadata_query_conditions(processed_filters: Dict[str, Any]) -> List[str]:
-    """Build PostgreSQL query conditions for metadata filters."""
-    conditions = []
-    
-    for field_name, values in processed_filters.items():
-        if field_name.endswith('_range'):
-            # Handle range conditions
-            base_field = field_name[:-6]  # Remove '_range' suffix
-            range_conditions = values
-            
-            if 'date_from' in range_conditions:
-                conditions.append(f"(dm.extracted_fields->>'{base_field}')::date >= '{range_conditions['date_from']}'")
-            if 'date_to' in range_conditions:
-                conditions.append(f"(dm.extracted_fields->>'{base_field}')::date <= '{range_conditions['date_to']}'")
-            if 'number_min' in range_conditions:
-                conditions.append(f"(dm.extracted_fields->>'{base_field}')::numeric >= {range_conditions['number_min']}")
-            if 'number_max' in range_conditions:
-                conditions.append(f"(dm.extracted_fields->>'{base_field}')::numeric <= {range_conditions['number_max']}")
-        else:
-            # Handle exact value matches
-            if len(values) == 1:
-                # Single value - handle both direct values and array membership
-                value = values[0]
-                conditions.append(f"""(
-                    dm.extracted_fields->>'{field_name}' = '{value}' OR
-                    dm.extracted_fields->'{field_name}' ? '{value}'
-                )""")
-            else:
-                # Multiple values - use IN clause and array membership
-                values_str = "','".join(values)
-                conditions.append(f"""(
-                    dm.extracted_fields->>'{field_name}' IN ('{values_str}') OR
-                    dm.extracted_fields->'{field_name}' ?| ARRAY['{values_str}']
-                )""")
-    
-    return conditions
 
 @router.post("/search", response_model=SearchResponse)
 async def enhanced_search_endpoint(request: SearchRequest):
@@ -153,7 +178,8 @@ async def enhanced_search_endpoint(request: SearchRequest):
         # Check if advanced metadata filters are provided
         filters = _prepare_enhanced_search_filters(request)
         has_advanced_filters = any(key in filters for key in [
-            'metadata_filters', 'author_filter', 'tag_filter', 'status_filter', 'date_range_filter'
+            'metadata_filters', 'author_filter', 'tag_filter', 'status_filter', 'date_range_filter',
+            'text_filter', 'number_filter', 'select_filter', 'checkbox_filter'
         ])
         
         if has_advanced_filters:
@@ -234,7 +260,8 @@ async def hybrid_search_endpoint(request: SearchRequest):
         # Check if advanced metadata filters are provided
         filters = _prepare_enhanced_search_filters(request)
         has_advanced_filters = any(key in filters for key in [
-            'metadata_filters', 'author_filter', 'tag_filter', 'status_filter', 'date_range_filter'
+            'metadata_filters', 'author_filter', 'tag_filter', 'status_filter', 'date_range_filter',
+            'text_filter', 'number_filter', 'select_filter', 'checkbox_filter'
         ])
         
         if has_advanced_filters:
