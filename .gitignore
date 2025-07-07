@@ -40,3 +40,6 @@ next-env.d.ts
 
 # Log
 *.log
+
+# Data
+data/
