@@ -2,6 +2,7 @@
 Services for the evaluation system.
 """
 
-from .data_collector import DataCollector
+# Import services individually as needed to avoid dependency issues
+# from .data_collector import DataCollector
 
-__all__ = ['DataCollector'] 
+__all__ = [] 

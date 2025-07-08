@@ -1,0 +1,97 @@
+# Multi-lingual Chunking Configuration
+# Supports Chinese, English, and French text
+
+[chunking]
+# Universal sentence punctuation
+chinese_punctuation = ["。", "！", "？", "；", "......"]
+western_punctuation = [".", "!", "?", "..."]
+
+# Quotation mark pairs: [opening, closing]
+# ASCII quotes use same character for open/close (ambiguous)
+# Other quotes have distinct open/close characters (unambiguous)
+quote_pairs = [
+    ["\"", "\""],        # ASCII double quotes (ambiguous)
+    ["'", "'"],          # ASCII single quotes (ambiguous)
+    ["\u201c", "\u201d"],  # Curved double quotes " " (unambiguous)
+    ["\u2018", "\u2019"],  # Curved single quotes ' ' (unambiguous)
+    ["\u300c", "\u300d"],  # Chinese corner brackets 「 」 (unambiguous)
+    ["\u300e", "\u300f"],  # Chinese double corner brackets 『 』 (unambiguous)
+    ["\u00ab", "\u00bb"]   # French guillemets « » (unambiguous)
+]
+
+# Derived flat list for pattern matching (maintained for compatibility)
+quotation_marks = [
+    "\"", "'",           # ASCII quotes
+    "\u201c", "\u201d",  # Curved double quotes " "
+    "\u2018", "\u2019",  # Curved single quotes ' '
+    "\u300c", "\u300d",  # Chinese corner brackets 「 」
+    "\u300e", "\u300f",  # Chinese double corner brackets 『 』
+    "\u00ab", "\u00bb"   # French guillemets « »
+]
+
+# English abbreviations that should NOT trigger sentence splits
+english_abbreviations = [
+    # Titles
+    "Mr", "Mrs", "Ms", "Dr", "Prof", "Sr", "Jr",
+    # Academic degrees
+    "Ph\\.D", "B\\.A", "M\\.A", "B\\.S", "M\\.S", "B\\.Sc", "M\\.Sc",
+    # Business
+    "Inc", "Ltd", "Corp", "Co", "LLC",
+    # Common abbreviations
+    "etc", "vs", "i\\.e", "e\\.g", "cf", "ibid",
+    # Time
+    "a\\.m", "p\\.m", "AM", "PM",
+    # Units
+    "cm", "km", "kg", "lb", "oz", "ft", "in"
+]
+
+# French abbreviations
+french_abbreviations = [
+    # Titles
+    "M", "Mme", "Mlle", "Dr", "Prof",
+    # Common
+    "c\\.-à-d", "p\\. ex", "cf", "etc"
+]
+
+[semantic_merging]
+# Similarity threshold for merging adjacent sentences
+similarity_threshold = 0.85
+
+# Maximum number of sentences to merge in one chunk
+max_merge_distance = 3
+
+# Context window for adjacent chunk context
+context_window_size = 2
+
+[token_optimization]
+# Target chunk size in tokens
+target_chunk_size = 500
+
+# Maximum allowed chunk size
+max_chunk_size = 600
+
+# Minimum chunk size (chunks smaller than this will be merged)
+min_chunk_size = 100
+
+# Overlap between adjacent chunks in tokens
+overlap_tokens = 75
+
+[embeddings]
+# Embedding model for semantic similarity
+model = "text-embedding-3-small"
+
+# Batch size for embedding generation
+batch_size = 32
+
+# Enable caching of embeddings
+enable_caching = true
+
+[performance]
+# Enable debug logging
+debug_logging = false
+
+# Enable performance metrics collection
+enable_metrics = true
+
+# Maximum text length to process in one operation
+max_text_length = 100000 
