@@ -8,13 +8,13 @@ This script coordinates the 4-step chunking process:
 3. Generate embeddings for sentences using sentence_embedding.py (with caching)
 4. Merge semantically similar sentences using semantic_merger.py
 
-The script is designed for experimentation with step 4 parameters while
-efficiently caching results from steps 1-3.
+All parameters are controlled via the configuration file (chunking_config.toml).
+No configuration overrides are accepted via CLI to ensure consistency.
 
 Usage:
     python orchestrate_chunking.py --input-file data/collected_documents.json
-    python orchestrate_chunking.py --input-file data/collected_documents.json --similarity-threshold 0.8
-    python orchestrate_chunking.py --input-file data/collected_documents.json --experiment-name "high_similarity"
+    python orchestrate_chunking.py --input-file data/collected_documents.json --experiment-name "experiment_1"
+    python orchestrate_chunking.py --input-file data/collected_documents.json --config custom_config.toml
 """
 
 import argparse
@@ -291,41 +291,26 @@ class ChunkingOrchestrator:
             }
     
     def merge_semantic_sentences(self, doc_sentences: Dict[str, List[str]], 
-                               doc_embeddings: Dict[str, List[List[float]]], 
-                               similarity_threshold: Optional[float] = None,
-                               max_merge_distance: Optional[int] = None,
-                               max_chunk_size: Optional[int] = None) -> Dict[str, List[Dict[str, Any]]]:
+                               doc_embeddings: Dict[str, List[List[float]]]) -> Dict[str, List[Dict[str, Any]]]:
         """
         Step 4: Merge semantically similar sentences using semantic_merger.py.
+        
+        Uses configuration values from chunking_config.toml. No parameter overrides allowed.
         
         Args:
             doc_sentences: Dictionary mapping document_id to list of sentences
             doc_embeddings: Dictionary mapping document_id to list of embeddings
-            similarity_threshold: Override config similarity threshold
-            max_merge_distance: Override config max merge distance
-            max_chunk_size: Override config max chunk size
             
         Returns:
             Dictionary mapping document_id to list of chunk dictionaries
         """
         logger.info("🔄 Step 4: Merging semantically similar sentences")
         
-        # Create semantic merger with overridden parameters if provided
-        merger_config = self.config.copy()
-        if similarity_threshold is not None:
-            merger_config['semantic_merging']['similarity_threshold'] = similarity_threshold
-        if max_merge_distance is not None:
-            merger_config['semantic_merging']['max_merge_distance'] = max_merge_distance
-        if max_chunk_size is not None:
-            merger_config['semantic_merging']['max_chunk_size'] = max_chunk_size
-        
-        # Log the active parameters
-        active_params = merger_config['semantic_merging']
-        logger.info(f"Active parameters: threshold={active_params['similarity_threshold']}, "
+        # Use configuration values directly (no overrides)
+        active_params = self.config['semantic_merging']
+        logger.info(f"Configuration parameters: threshold={active_params['similarity_threshold']}, "
                    f"max_distance={active_params['max_merge_distance']}, "
                    f"max_size={active_params['max_chunk_size']}")
-        
-        semantic_merger = SemanticMerger(self.tokenizer, merger_config)
         
         doc_chunks = {}
         total_chunks = 0
@@ -343,7 +328,7 @@ class ChunkingOrchestrator:
                 continue
             
             # Merge sentences into chunks
-            chunk_results = semantic_merger.merge_sentences(sentences, embeddings)
+            chunk_results = self.semantic_merger.merge_sentences(sentences, embeddings)
             
             # Convert to dictionary format for JSON serialization
             chunks = []
@@ -370,8 +355,7 @@ class ChunkingOrchestrator:
                       doc_chunks: Dict[str, List[Dict[str, Any]]],
                       similarity_stats: Dict[str, Any],
                       input_file: str,
-                      experiment_name: str = None,
-                      experiment_params: Dict[str, Any] = None) -> Dict[str, str]:
+                      experiment_name: str = None) -> Dict[str, str]:
         """
         Save all intermediate artifacts for debugging and reuse.
         
@@ -379,9 +363,9 @@ class ChunkingOrchestrator:
             doc_sentences: Document sentences from step 2
             doc_embeddings: Document embeddings from step 3
             doc_chunks: Document chunks from step 4
+            similarity_stats: Similarity analysis results
             input_file: Original input file path
             experiment_name: Optional experiment name for file naming
-            experiment_params: Parameters used for this experiment
             
         Returns:
             Dictionary of saved file paths
@@ -425,7 +409,7 @@ class ChunkingOrchestrator:
             'metadata': {
                 'input_file': input_file,
                 'experiment_name': experiment_name,
-                'experiment_params': experiment_params or {},
+                'config_params': self.config,
                 'generated_at': datetime.now().isoformat(),
                 'total_documents': len(doc_chunks),
                 'total_chunks': sum(len(chunks) for chunks in doc_chunks.values())
@@ -454,24 +438,24 @@ class ChunkingOrchestrator:
         saved_files['similarity_analysis'] = str(similarity_file)
         
         # Save experiment log
-        if experiment_params:
-            log_file = self.processed_dir / f"{base_name}_experiment_log.json"
-            log_data = {
-                'experiment_name': experiment_name,
-                'input_file': input_file,
-                'parameters': experiment_params,
-                'results': {
-                    'total_documents': len(doc_chunks),
-                    'total_chunks': sum(len(chunks) for chunks in doc_chunks.values()),
-                    'avg_chunks_per_doc': sum(len(chunks) for chunks in doc_chunks.values()) / len(doc_chunks) if doc_chunks else 0
-                },
-                'artifacts': saved_files,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            with open(log_file, 'w', encoding='utf-8') as f:
-                json.dump(log_data, f, indent=2, ensure_ascii=False)
-            saved_files['experiment_log'] = str(log_file)
+        log_file = self.processed_dir / f"{base_name}_experiment_log.json"
+        log_data = {
+            'experiment_name': experiment_name,
+            'input_file': input_file,
+            'config_file': 'chunking_config.toml',
+            'config_params': self.config,
+            'results': {
+                'total_documents': len(doc_chunks),
+                'total_chunks': sum(len(chunks) for chunks in doc_chunks.values()),
+                'avg_chunks_per_doc': sum(len(chunks) for chunks in doc_chunks.values()) / len(doc_chunks) if doc_chunks else 0
+            },
+            'artifacts': saved_files,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(log_data, f, indent=2, ensure_ascii=False)
+        saved_files['experiment_log'] = str(log_file)
         
         logger.info(f"✅ Saved {len(saved_files)} artifact files")
         for artifact_type, file_path in saved_files.items():
@@ -479,19 +463,14 @@ class ChunkingOrchestrator:
         
         return saved_files
     
-    async def run_full_pipeline(self, input_file: str, 
-                               similarity_threshold: Optional[float] = None,
-                               max_merge_distance: Optional[int] = None,
-                               max_chunk_size: Optional[int] = None,
-                               experiment_name: Optional[str] = None) -> Dict[str, str]:
+    async def run_full_pipeline(self, input_file: str, experiment_name: Optional[str] = None) -> Dict[str, str]:
         """
         Run the complete 4-step chunking pipeline.
         
+        All chunking parameters are read from the configuration file.
+        
         Args:
             input_file: Path to collected documents JSON file
-            similarity_threshold: Override config similarity threshold
-            max_merge_distance: Override config max merge distance
-            max_chunk_size: Override config max chunk size
             experiment_name: Optional experiment name for file naming
             
         Returns:
@@ -499,15 +478,14 @@ class ChunkingOrchestrator:
         """
         start_time = time.time()
         logger.info(f"🚀 Starting full chunking pipeline for {input_file}")
+        logger.info(f"📋 Using configuration: {self.config_loader.config_dir}/chunking_config.toml")
         
-        # Collect experiment parameters
-        experiment_params = {}
-        if similarity_threshold is not None:
-            experiment_params['similarity_threshold'] = similarity_threshold
-        if max_merge_distance is not None:
-            experiment_params['max_merge_distance'] = max_merge_distance
-        if max_chunk_size is not None:
-            experiment_params['max_chunk_size'] = max_chunk_size
+        # Log active configuration parameters
+        config_params = self.config['semantic_merging']
+        logger.info(f"🔧 Active parameters:")
+        logger.info(f"  similarity_threshold: {config_params['similarity_threshold']}")
+        logger.info(f"  max_merge_distance: {config_params['max_merge_distance']}")
+        logger.info(f"  max_chunk_size: {config_params['max_chunk_size']}")
         
         try:
             # Step 1: Load documents
@@ -522,16 +500,13 @@ class ChunkingOrchestrator:
             # Step 3.5: Analyze similarity distribution
             similarity_stats = self.analyze_similarity_distribution(doc_sentences, doc_embeddings)
             
-            # Step 4: Merge sentences
-            doc_chunks = self.merge_semantic_sentences(
-                doc_sentences, doc_embeddings, 
-                similarity_threshold, max_merge_distance, max_chunk_size
-            )
+            # Step 4: Merge sentences using config parameters
+            doc_chunks = self.merge_semantic_sentences(doc_sentences, doc_embeddings)
             
             # Save artifacts
             saved_files = self.save_artifacts(
                 doc_sentences, doc_embeddings, doc_chunks, similarity_stats,
-                input_file, experiment_name, experiment_params
+                input_file, experiment_name
             )
             
             elapsed_time = time.time() - start_time
@@ -547,7 +522,8 @@ class ChunkingOrchestrator:
 async def main():
     """Main entry point for the orchestration script."""
     parser = argparse.ArgumentParser(
-        description='Orchestrate the 4-step chunking workflow for evaluation dataset preparation'
+        description='Orchestrate the 4-step chunking workflow for evaluation dataset preparation. '
+                   'All chunking parameters are controlled via the configuration file.'
     )
     parser.add_argument(
         '--input-file', 
@@ -555,58 +531,30 @@ async def main():
         help='Path to JSON file containing collected documents from data_collector.py'
     )
     parser.add_argument(
-        '--similarity-threshold', 
-        type=float,
-        help='Override similarity threshold for semantic merging (0.0-1.0)'
-    )
-    parser.add_argument(
-        '--max-merge-distance', 
-        type=int,
-        help='Override maximum merge distance (number of sentences)'
-    )
-    parser.add_argument(
-        '--max-chunk-size', 
-        type=int,
-        help='Override maximum chunk size in tokens'
-    )
-    parser.add_argument(
         '--experiment-name', 
-        help='Optional experiment name for file naming'
+        help='Optional experiment name for file naming and organization'
     )
     parser.add_argument(
         '--config', 
         default='chunking_config.toml',
-        help='Path to chunking configuration file'
+        help='Path to chunking configuration file (default: chunking_config.toml)'
     )
     
     args = parser.parse_args()
     
-    # Validate arguments
-    if args.similarity_threshold is not None:
-        if not 0.0 <= args.similarity_threshold <= 1.0:
-            print("❌ Error: similarity_threshold must be between 0.0 and 1.0")
-            sys.exit(1)
-    
-    if args.max_merge_distance is not None:
-        if args.max_merge_distance <= 0:
-            print("❌ Error: max_merge_distance must be positive")
-            sys.exit(1)
-    
-    if args.max_chunk_size is not None:
-        if args.max_chunk_size <= 0:
-            print("❌ Error: max_chunk_size must be positive")
-            sys.exit(1)
-    
     try:
-        # Initialize orchestrator
+        # Initialize orchestrator with config file
         orchestrator = ChunkingOrchestrator(args.config)
+        
+        # Log configuration being used
+        print(f"📋 Using configuration file: {args.config}")
+        print(f"📁 Processing input file: {args.input_file}")
+        if args.experiment_name:
+            print(f"🏷️  Experiment name: {args.experiment_name}")
         
         # Run pipeline
         saved_files = await orchestrator.run_full_pipeline(
             input_file=args.input_file,
-            similarity_threshold=args.similarity_threshold,
-            max_merge_distance=args.max_merge_distance,
-            max_chunk_size=args.max_chunk_size,
             experiment_name=args.experiment_name
         )
         
