@@ -29,6 +29,11 @@ Notion Companion is a production-ready AI-powered knowledge assistant that conne
 - `cd backend && uv run python scripts/model_config_demo.py` - Test model configuration
 - `cd backend && uv run python test_contextual_rag.py` - Test enhanced RAG components
 
+### Evaluation System Operations
+- `.venv/bin/python evaluation/scripts/collect_data.py` - Collect documents from Notion for evaluation
+- `.venv/bin/python evaluation/scripts/orchestrate_chunking.py --input-file [file] --experiment-name [name]` - Run chunking pipeline with similarity analysis
+- **See "Evaluation System (v5.0)" section below for comprehensive documentation**
+
 ### Python Environment Management
 **IMPORTANT: Always use uv for Python operations with pyproject.toml**
 - **Install dependencies**: `cd backend && uv sync` (replaces pip install -r requirements.txt)
@@ -449,6 +454,163 @@ context_boost_factor = 0.05        # Re-ranking boost for contextual information
 - **Configuration loading** validated with comprehensive test suite
 - **API integration** verified with both default and override parameters
 
+## Evaluation System (v5.0) - July 2025
+
+**MAJOR ADDITION**: Comprehensive evaluation pipeline for RAG performance assessment and chunking strategy optimization.
+
+### 🎯 **Purpose & Scope**
+The evaluation system provides data-driven analysis of RAG chunking strategies to optimize Q&A generation quality and retrieval performance. Located in the `evaluation/` directory, it operates independently from the main application.
+
+### 🏗️ **Architecture Overview**
+
+#### **4-Step Chunking Pipeline**
+1. **Data Collection** (`data_collector.py`): Collect documents from Notion databases
+2. **Sentence Splitting** (`sentence_splitter.py`): Multi-lingual sentence boundary detection
+3. **Embedding Generation** (`sentence_embedding.py`): Batch embedding generation with caching
+4. **Semantic Merging** (`semantic_merger.py`): Cosine similarity-based sentence merging
+
+#### **Key Components**
+- **Orchestration Script**: `evaluation/scripts/orchestrate_chunking.py` - Coordinates full pipeline
+- **Configuration**: `evaluation/config/chunking_config.toml` - All parameters centralized
+- **Services**: Individual components for each pipeline step
+- **Caching System**: Persistent embedding cache for cost-effective experimentation
+
+### 🔧 **Configuration-Driven Design**
+
+All chunking parameters are controlled via `evaluation/config/chunking_config.toml`:
+
+```toml
+[semantic_merging]
+similarity_threshold = 0.85     # Cosine similarity threshold for merging
+max_merge_distance = 3          # Maximum sentences to merge per chunk
+max_chunk_size = 500           # Maximum tokens per chunk
+
+[embeddings]
+model = "text-embedding-3-small"
+batch_size = 512               # Batch size for embedding generation
+cache_dir = "evaluation/data/cache"
+
+[chunking]
+# Multi-lingual sentence boundary detection settings
+chinese_punctuation = ["。", "！", "？", "；"]
+western_punctuation = [".", "!", "?", "..."]
+quote_pairs = [["\"", "\""], ["\u201c", "\u201d"]]
+```
+
+### 📊 **Similarity Analysis & Data-Driven Tuning**
+
+**Innovation**: Built-in similarity distribution analysis provides data-driven threshold recommendations:
+
+#### **Automatic Analysis Features**
+- **Adjacent Sentence Similarity**: Analyzes cosine similarity between consecutive sentences
+- **Threshold Recommendations**: Conservative (99th percentile), Moderate (95th), Aggressive (90th)
+- **Merge Rate Prediction**: Estimates chunk reduction for different thresholds
+- **Document-Level Statistics**: Per-document similarity patterns and characteristics
+
+#### **Example Analysis Output**
+```
+📈 Similarity Analysis Results:
+  Total adjacent pairs: 917
+  Mean similarity: 0.363
+  Median similarity: 0.351
+  90th percentile: 0.555
+  95th percentile: 0.605
+
+🎯 Threshold Recommendations:
+  Conservative (1% merge): 0.708
+  Moderate (5% merge): 0.605
+  Aggressive (10% merge): 0.555
+```
+
+### 🚀 **Usage & Workflow**
+
+#### **Basic Operation**
+```bash
+# Process documents with default parameters
+.venv/bin/python evaluation/scripts/orchestrate_chunking.py \
+    --input-file evaluation/data/collected_documents.json \
+    --experiment-name "baseline"
+```
+
+#### **Experimentation Workflow**
+1. **Data Collection**: Use `collect_data.py` to gather Notion documents
+2. **Baseline Analysis**: Run orchestration script to get similarity analysis
+3. **Parameter Tuning**: Adjust `chunking_config.toml` based on recommendations
+4. **Comparative Analysis**: Run multiple experiments with different configurations
+5. **Performance Assessment**: Analyze chunk quality and token distribution
+
+### 💾 **Artifact Management & Caching**
+
+#### **Generated Artifacts**
+- **Sentences File**: Raw sentence splitting results (Step 2)
+- **Chunks File**: Final merged chunks with metadata (Step 4) - **Primary Output**
+- **Similarity Analysis**: Statistical analysis and threshold recommendations
+- **Experiment Log**: Complete configuration and results summary
+
+#### **Advanced Caching System**
+- **Sentence-Level Caching**: 914 embeddings cached with 52% hit rate
+- **Cost Optimization**: Avoids redundant OpenAI API calls during experimentation
+- **Performance Boost**: ~8 seconds vs >2 minutes for 920 sentences (batch processing)
+- **Persistent Storage**: Cache survives across sessions in `evaluation/data/cache/`
+
+### 🧪 **Performance Optimizations**
+
+#### **Batch Processing Implementation**
+- **Problem Solved**: Individual embedding calls caused 2+ minute timeouts
+- **Solution**: Direct OpenAI API batch calls (100 sentences per request)
+- **Performance Gain**: 15x speedup (8 seconds vs 120+ seconds)
+- **Rate Limiting**: Smart delays between batches to avoid API throttling
+
+#### **Configuration Validation**
+- **Fail-Fast Design**: Comprehensive config validation with descriptive error messages
+- **Type Safety**: Strong typing for all configuration parameters
+- **Required Fields**: Clear specification of mandatory vs optional parameters
+
+### 📈 **Experimental Results & Insights**
+
+#### **Threshold Analysis (Real Data)**
+Based on analysis of 917 adjacent sentence pairs:
+- **Current threshold (0.85)** merges only 0.2% of sentences (too conservative)
+- **Recommended thresholds** for meaningful chunking: 0.55-0.7 range
+- **Content observation**: Diverse technical content has lower similarity (mean: 0.363)
+
+#### **Architecture Decisions**
+- **Configuration over CLI**: All parameters via config file for reproducibility
+- **Modular Design**: Each pipeline step is independently testable
+- **Artifact Persistence**: All intermediate results saved for debugging
+- **Multi-lingual Support**: Robust sentence boundary detection for Chinese/English content
+
+### 🔮 **Future Enhancements**
+
+#### **Planned Features**
+- **Q&A Generation**: Automatic question-answer pair generation from chunks
+- **Quality Metrics**: Automated chunk quality assessment
+- **Hyperparameter Tuning**: Automatic parameter optimization
+- **Parallel Processing**: Multi-threaded embedding generation
+- **Result Visualization**: Web dashboard for experiment comparison
+
+#### **Integration Path**
+The evaluation system is designed to inform production RAG improvements:
+- **Chunking Strategy Optimization**: Apply learnings to main application
+- **Model Performance Baselines**: Establish quality benchmarks
+- **A/B Testing Framework**: Compare different chunking approaches
+
+### 🧭 **Debugging & Development**
+
+#### **Common Issues**
+- **Cache location**: Ensure `evaluation/data/cache/` exists and is writable
+- **OpenAI API key**: Must be configured in root `.env` file
+- **Python environment**: Always use `.venv/bin/python` (uv managed)
+- **Configuration errors**: Check TOML syntax and required fields
+
+#### **Performance Monitoring**
+- **Embedding cache stats**: Monitor hit rates and cost savings
+- **Batch processing logs**: Track API call efficiency
+- **Similarity distribution**: Analyze content characteristics
+- **Token counting**: Validate chunk size constraints
+
+This evaluation system represents a significant advancement in RAG optimization, providing data-driven insights for chunking strategy development and establishing a foundation for systematic performance improvement.
+
 ## Future Considerations
 
 ### Potential Multi-Workspace Support (v4.0+)
@@ -484,3 +646,9 @@ All documentation has been consolidated in the `docs/` directory:
 - **[Configuration Guide](docs/backend/CONFIG_GUIDE.md)** - Model and system configuration
 - **Setup Guide**: Visit `/setup` page for complete database schema and environment setup
 - **Architecture History**: See this file's "Recent Architecture Changes" section for workspace removal details
+
+### Evaluation System Documentation
+- **[Orchestration README](evaluation/scripts/README_orchestration.md)** - Comprehensive usage guide for chunking pipeline
+- **[Evaluation Architecture](evaluation/EVALUATION_SYSTEM_ARCHITECTURE.md)** - System design and component overview
+- **[Caching Implementation](evaluation/CACHING_IMPLEMENTATION_SUMMARY.md)** - Embedding cache design and performance
+- **Configuration**: `evaluation/config/chunking_config.toml` - All chunking parameters and settings
