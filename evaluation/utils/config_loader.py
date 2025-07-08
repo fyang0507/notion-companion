@@ -89,7 +89,7 @@ class ConfigLoader:
         """
         try:
             # Check required sections exist
-            required_sections = ['chunking', 'semantic_merging', 'embeddings', 'performance']
+            required_sections = ['chunking', 'semantic_merging', 'embeddings']
             for section in required_sections:
                 if section not in config:
                     raise ValueError(f"Missing required configuration section: {section}")
@@ -119,6 +119,28 @@ class ConfigLoader:
             max_chunk_size = semantic_merging['max_chunk_size']
             if not isinstance(max_chunk_size, int) or max_chunk_size <= 0:
                 raise ValueError(f"semantic_merging.max_chunk_size must be a positive integer, got {max_chunk_size}")
+            
+            # Validate embeddings section
+            embeddings = config['embeddings']
+            
+            # Required fields in embeddings section
+            required_embedding_fields = ['model', 'batch_size', 'cache_dir']
+            for field in required_embedding_fields:
+                if field not in embeddings:
+                    raise ValueError(f"Missing required field: embeddings.{field}")
+            
+            # Validate embeddings configuration values
+            model = embeddings['model']
+            if not isinstance(model, str) or not model.strip():
+                raise ValueError(f"embeddings.model must be a non-empty string, got {model}")
+            
+            batch_size = embeddings['batch_size']
+            if not isinstance(batch_size, int) or batch_size <= 0:
+                raise ValueError(f"embeddings.batch_size must be a positive integer, got {batch_size}")
+            
+            cache_dir = embeddings['cache_dir']
+            if not isinstance(cache_dir, str) or not cache_dir.strip():
+                raise ValueError(f"embeddings.cache_dir must be a non-empty string, got {cache_dir}")
             
             logger.info("Configuration validation passed")
             return True

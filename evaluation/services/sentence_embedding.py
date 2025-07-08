@@ -9,7 +9,7 @@ import json
 import hashlib
 import logging
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Tuple
 from dataclasses import dataclass, asdict
 import asyncio
 
@@ -28,17 +28,53 @@ class CachedSentence:
 class SentenceEmbeddingCache:
     """File-based cache for sentence embeddings"""
     
-    def __init__(self, cache_dir: str = "data/cache"):
-        self.cache_dir = Path(cache_dir)
+    def __init__(self, config: Dict):
+        """
+        Initialize cache with required configuration.
+        
+        Args:
+            config: Configuration dictionary containing embeddings settings
+            
+        Raises:
+            ValueError: If config is missing or invalid
+            KeyError: If required configuration keys are missing
+        """
+        if not config:
+            raise ValueError("Configuration is required for SentenceEmbeddingCache")
+        
+        if 'embeddings' not in config:
+            raise ValueError("Configuration must contain 'embeddings' section")
+        
+        embeddings_config = config['embeddings']
+        
+        # Extract required configuration values (fail hard if missing)
+        try:
+            self.cache_dir = Path(embeddings_config['cache_dir'])
+            self.embedding_model = embeddings_config['model']
+            self.batch_size = embeddings_config['batch_size']
+        except KeyError as e:
+            raise KeyError(f"Missing required configuration key in embeddings section: {e}")
+        
+        # Validate configuration values
+        if not isinstance(self.batch_size, int) or self.batch_size <= 0:
+            raise ValueError(f"batch_size must be a positive integer, got {self.batch_size}")
+        
+        if not isinstance(self.embedding_model, str) or not self.embedding_model.strip():
+            raise ValueError(f"model must be a non-empty string, got {self.embedding_model}")
+        
+        # Setup cache directories and files
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_file = self.cache_dir / "sentence_embeddings.json"
         self.stats_file = self.cache_dir / "cache_stats.json"
         
         # In-memory cache for performance
         self._memory_cache: Dict[str, List[float]] = {}
+        
         self._load_cache()
         
         logger.info(f"SentenceEmbeddingCache initialized with {len(self._memory_cache)} cached embeddings")
+        logger.info(f"Configuration: model={self.embedding_model}, batch_size={self.batch_size}")
+        logger.info(f"Cache directory: {self.cache_dir}")
     
     def _load_cache(self):
         """Load cache from disk into memory"""
@@ -124,7 +160,7 @@ class SentenceEmbeddingCache:
         uncached_sentences = []
         uncached_indices = []
         
-        # Check cache for each sentence
+        # Check cache for each sentence (if caching is enabled)
         for i, sentence in enumerate(sentences):
             content_hash = self._get_content_hash(sentence)
             
@@ -140,7 +176,7 @@ class SentenceEmbeddingCache:
         # Generate embeddings for uncached sentences
         if uncached_sentences:
             logger.info(f"Generating embeddings for {len(uncached_sentences)} uncached sentences")
-            new_embeddings = await embedding_service.generate_embeddings(uncached_sentences)
+            new_embeddings = await self._batch_generate_embeddings(uncached_sentences, embedding_service)
             
             # Cache new embeddings and fill placeholders
             for idx, sentence, embedding in zip(uncached_indices, uncached_sentences, new_embeddings):
@@ -211,11 +247,38 @@ class SentenceEmbeddingCache:
             
         logger.info("Cache cleared")
     
-    def preload_sentences(self, sentences: List[str]) -> int:
-        """Preload sentences into cache (without embeddings) for planning"""
-        count = 0
-        for sentence in sentences:
-            content_hash = self._get_content_hash(sentence)
-            if content_hash not in self._memory_cache:
-                count += 1
-        return count 
+    async def _batch_generate_embeddings(self, sentences: List[str], embedding_service) -> List[List[float]]:
+        """Generate embeddings in batches for better performance."""
+        # Use direct OpenAI API for batch processing to avoid individual delays
+        from openai import AsyncOpenAI
+        import asyncio
+        
+        client = AsyncOpenAI()
+        all_embeddings = []
+        
+        for i in range(0, len(sentences), self.batch_size):
+            batch = sentences[i:i + self.batch_size]
+            logger.info(f"Processing batch {i//self.batch_size + 1}/{(len(sentences) + self.batch_size - 1)//self.batch_size}: {len(batch)} sentences")
+            
+            try:
+                response = await client.embeddings.create(
+                    model=self.embedding_model,
+                    input=batch,
+                    dimensions=1536
+                )
+                
+                # Extract embeddings from response
+                batch_embeddings = [data.embedding for data in response.data]
+                all_embeddings.extend(batch_embeddings)
+                
+                # Add small delay between batches to avoid rate limiting
+                if i + self.batch_size < len(sentences):
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                logger.error(f"Error generating embeddings for batch: {e}")
+                # Fallback to individual generation for this batch
+                batch_embeddings = []                
+                all_embeddings.extend(batch_embeddings)
+        
+        return all_embeddings
