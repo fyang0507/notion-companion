@@ -7,6 +7,7 @@ Tests various scenarios including:
 - French text with guillemets
 - Mixed-language documents
 - Edge cases and corner cases
+- Caching functionality (NEW)
 """
 
 import pytest
@@ -14,12 +15,14 @@ import logging
 from pathlib import Path
 import sys
 from typing import List, Dict, Any
+import tempfile
+import os
 
 # Add evaluation root to path
 evaluation_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(evaluation_root))
 
-from services.multilingual_chunker import MultiLingualChunker, ChunkResult
+from evaluation.services.multilingual_chunker import MultiLingualChunker, ChunkResult
 
 # Configure logging for tests
 logging.basicConfig(
@@ -256,4 +259,270 @@ class TestMultiLingualChunker:
             assert isinstance(chunk.context_before, str), "context_before should be string"
             assert isinstance(chunk.context_after, str), "context_after should be string"
             
-        logger.info(f"Context test: {len(chunks)} chunks with context preservation") 
+        logger.info(f"Context test: {len(chunks)} chunks with context preservation")
+
+
+@pytest.mark.unit
+class TestCachingFunctionality:
+    """Test suite for caching functionality in multilingual chunker"""
+    
+    @pytest.fixture
+    def temp_cache_dir(self):
+        """Create temporary cache directory for testing"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yield temp_dir
+    
+    @pytest.fixture
+    def cached_chunker(self, mock_embedding_service, mock_tokenizer, chunking_config, temp_cache_dir):
+        """Create a chunker instance with temporary cache directory"""
+        return MultiLingualChunker(
+            embedding_service=mock_embedding_service,
+            tokenizer=mock_tokenizer,
+            config=chunking_config,
+            cache_dir=temp_cache_dir
+        )
+    
+    @pytest.mark.asyncio
+    async def test_cache_initialization(self, cached_chunker):
+        """Test that cache is properly initialized"""
+        cache_info = cached_chunker.get_cache_info()
+        
+        # Should have all required cache info fields
+        assert 'cached_sentences' in cache_info
+        assert 'cache_file' in cache_info
+        assert 'cache_file_exists' in cache_info
+        assert 'stats' in cache_info
+        
+        # Stats should have required fields
+        stats = cache_info['stats']
+        assert 'total_requests' in stats
+        assert 'total_cache_hits' in stats
+        assert 'total_cache_misses' in stats
+        assert 'hit_rate' in stats
+        
+        logger.info(f"Initial cache info: {cache_info}")
+    
+    @pytest.mark.asyncio
+    async def test_sentence_embedding_caching(self, cached_chunker):
+        """Test that sentence embeddings are cached and reused"""
+        # Test text with repeated sentences
+        text1 = "这是一个测试句子。This is a test sentence."
+        text2 = "这是一个测试句子。Another test sentence."  # First sentence repeated
+        
+        # First chunking - should miss cache
+        chunks1 = await cached_chunker.chunk_text(text1, "cache_test_1")
+        cache_info_1 = cached_chunker.get_cache_info()
+        
+        # Second chunking with overlapping sentences - should hit cache
+        chunks2 = await cached_chunker.chunk_text(text2, "cache_test_2")
+        cache_info_2 = cached_chunker.get_cache_info()
+        
+        # Verify chunks were created
+        assert len(chunks1) > 0, "Should create chunks for first text"
+        assert len(chunks2) > 0, "Should create chunks for second text"
+        
+        # Verify cache hits increased
+        hits_1 = cache_info_1['stats']['total_cache_hits']
+        hits_2 = cache_info_2['stats']['total_cache_hits']
+        
+        assert hits_2 > hits_1, "Cache hits should increase when reusing sentences"
+        
+        logger.info(f"Cache hits increased from {hits_1} to {hits_2}")
+    
+    @pytest.mark.asyncio
+    async def test_cache_performance_improvement(self, cached_chunker):
+        """Test that caching improves performance on repeated text"""
+        import time
+        
+        text = """
+        人工智能技术正在快速发展。机器学习算法变得越来越复杂。
+        深度学习模型在各个领域都有应用。自然语言处理技术不断进步。
+        """
+        
+        # First run - populates cache
+        start_time = time.time()
+        chunks1 = await cached_chunker.chunk_text(text, "perf_test_1")
+        first_run_time = time.time() - start_time
+        
+        # Second run - should use cache
+        start_time = time.time()
+        chunks2 = await cached_chunker.chunk_text(text, "perf_test_2")
+        second_run_time = time.time() - start_time
+        
+        # Verify results are consistent
+        assert len(chunks1) == len(chunks2), "Should produce consistent results"
+        
+        # Log performance (second run may be faster due to caching)
+        logger.info(f"Performance test - First: {first_run_time:.4f}s, Second: {second_run_time:.4f}s")
+        
+        # Get cache statistics
+        cache_info = cached_chunker.get_cache_info()
+        logger.info(f"Cache performance: {cache_info['stats']}")
+    
+    @pytest.mark.asyncio
+    async def test_cache_consistency(self, cached_chunker):
+        """Test that cached results are consistent with non-cached results"""
+        text = "Consistent results test. This text should produce the same chunks."
+        
+        # First run - creates cache entries
+        chunks1 = await cached_chunker.chunk_text(text, "consistency_test_1")
+        
+        # Second run - should use cache
+        chunks2 = await cached_chunker.chunk_text(text, "consistency_test_2")
+        
+        # Verify consistency
+        assert len(chunks1) == len(chunks2), "Should produce same number of chunks"
+        
+        for i, (chunk1, chunk2) in enumerate(zip(chunks1, chunks2)):
+            assert chunk1.content == chunk2.content, f"Chunk {i} content should be identical"
+            assert chunk1.start_sentence == chunk2.start_sentence, f"Chunk {i} start should be identical"
+            assert chunk1.end_sentence == chunk2.end_sentence, f"Chunk {i} end should be identical"
+            
+        logger.info(f"Consistency test passed: {len(chunks1)} chunks are identical")
+    
+    @pytest.mark.asyncio
+    async def test_cache_isolation(self, temp_cache_dir, mock_embedding_service, mock_tokenizer, chunking_config):
+        """Test that different cache directories are properly isolated"""
+        # Create two chunkers with different cache directories
+        cache_dir_1 = os.path.join(temp_cache_dir, "cache1")
+        cache_dir_2 = os.path.join(temp_cache_dir, "cache2")
+        
+        chunker1 = MultiLingualChunker(mock_embedding_service, mock_tokenizer, chunking_config, cache_dir_1)
+        chunker2 = MultiLingualChunker(mock_embedding_service, mock_tokenizer, chunking_config, cache_dir_2)
+        
+        text = "Cache isolation test sentence."
+        
+        # Use first chunker
+        await chunker1.chunk_text(text, "isolation_test_1")
+        cache_info_1 = chunker1.get_cache_info()
+        
+        # Use second chunker (should have separate cache)
+        await chunker2.chunk_text(text, "isolation_test_2")
+        cache_info_2 = chunker2.get_cache_info()
+        
+        # Verify caches are isolated
+        assert cache_info_1['cache_file'] != cache_info_2['cache_file'], "Cache files should be different"
+        
+        logger.info(f"Cache isolation test passed")
+        logger.info(f"Cache 1: {cache_info_1['cache_file']}")
+        logger.info(f"Cache 2: {cache_info_2['cache_file']}")
+    
+    @pytest.mark.asyncio
+    async def test_cache_clear_functionality(self, cached_chunker):
+        """Test cache clearing functionality"""
+        text = "Test cache clearing with this sentence."
+        
+        # Create some cache entries
+        await cached_chunker.chunk_text(text, "clear_test")
+        cache_info_before = cached_chunker.get_cache_info()
+        
+        # Verify cache has entries
+        assert cache_info_before['cached_sentences'] > 0, "Cache should have entries before clearing"
+        
+        # Clear cache
+        cached_chunker.clear_cache()
+        cache_info_after = cached_chunker.get_cache_info()
+        
+        # Verify cache is cleared
+        assert cache_info_after['cached_sentences'] == 0, "Cache should be empty after clearing"
+        
+        logger.info(f"Cache clear test: {cache_info_before['cached_sentences']} -> {cache_info_after['cached_sentences']}")
+    
+    @pytest.mark.asyncio
+    async def test_cache_hit_rate_calculation(self, cached_chunker):
+        """Test that cache hit rate is calculated correctly"""
+        # Use same text multiple times to ensure high hit rate
+        text = "Repeated text for hit rate testing."
+        
+        # First run - all misses
+        await cached_chunker.chunk_text(text, "hit_rate_1")
+        
+        # Subsequent runs - should be hits
+        for i in range(3):
+            await cached_chunker.chunk_text(text, f"hit_rate_{i+2}")
+        
+        cache_info = cached_chunker.get_cache_info()
+        stats = cache_info['stats']
+        
+        # Verify hit rate calculation
+        total_requests = stats['total_requests']
+        hit_rate = stats['hit_rate']
+        
+        assert total_requests > 0, "Should have made cache requests"
+        assert 0 <= hit_rate <= 1, "Hit rate should be between 0 and 1"
+        
+        # With repeated text, hit rate should be relatively high
+        logger.info(f"Hit rate test: {hit_rate:.2%} ({stats['total_cache_hits']}/{total_requests})")
+    
+    @pytest.mark.asyncio
+    async def test_precompute_embeddings(self, cached_chunker):
+        """Test the precompute embeddings functionality"""
+        # Prepare test documents
+        test_documents = [
+            {"content": "第一个测试文档内容。包含中文句子。", "id": "doc1"},
+            {"content": "Second test document content. Contains English sentences.", "id": "doc2"},
+            {"content": "Troisième document de test. Contient des phrases françaises.", "id": "doc3"},
+        ]
+        
+        # Get initial cache state
+        initial_cache_info = cached_chunker.get_cache_info()
+        initial_sentences = initial_cache_info['cached_sentences']
+        
+        # Precompute embeddings
+        precompute_stats = await cached_chunker.precompute_sentence_embeddings(test_documents)
+        
+        # Verify precompute results
+        assert 'total_documents' in precompute_stats
+        assert 'total_sentences' in precompute_stats
+        assert 'cache_hits' in precompute_stats
+        assert 'cache_misses' in precompute_stats
+        assert 'hit_rate' in precompute_stats
+        
+        assert precompute_stats['total_documents'] == len(test_documents)
+        assert precompute_stats['total_sentences'] > 0
+        
+        # Verify cache was populated
+        final_cache_info = cached_chunker.get_cache_info()
+        final_sentences = final_cache_info['cached_sentences']
+        
+        assert final_sentences > initial_sentences, "Cache should have more sentences after precomputation"
+        
+        logger.info(f"Precompute test: {precompute_stats}")
+        logger.info(f"Cache sentences: {initial_sentences} -> {final_sentences}")
+    
+    @pytest.mark.asyncio
+    async def test_cache_with_different_parameters(self, temp_cache_dir, mock_embedding_service, mock_tokenizer):
+        """Test that cache works correctly with different chunking parameters"""
+        from evaluation.utils.config_loader import ConfigLoader
+        
+        # Load base config
+        config_loader = ConfigLoader("config")
+        base_config = config_loader.load_chunking_config("chunking_config.toml")
+        
+        # Create modified config with different similarity threshold
+        import copy
+        modified_config = copy.deepcopy(base_config)
+        modified_config['semantic_merging']['similarity_threshold'] = 0.9
+        
+        # Create chunkers with different configs but same cache
+        chunker1 = MultiLingualChunker(mock_embedding_service, mock_tokenizer, base_config, temp_cache_dir)
+        chunker2 = MultiLingualChunker(mock_embedding_service, mock_tokenizer, modified_config, temp_cache_dir)
+        
+        text = "Parameter test with this specific sentence content."
+        
+        # Use both chunkers
+        chunks1 = await chunker1.chunk_text(text, "param_test_1")
+        chunks2 = await chunker2.chunk_text(text, "param_test_2")
+        
+        # Both should benefit from shared sentence-level cache
+        cache_info_1 = chunker1.get_cache_info()
+        cache_info_2 = chunker2.get_cache_info()
+        
+        # Cache should be shared (same cache file)
+        assert cache_info_1['cache_file'] == cache_info_2['cache_file'], "Should share cache file"
+        
+        # Both should have cache hits (shared sentence embeddings)
+        assert cache_info_1['stats']['total_cache_hits'] > 0, "First chunker should have cache hits"
+        assert cache_info_2['stats']['total_cache_hits'] > 0, "Second chunker should have cache hits"
+        
+        logger.info(f"Parameter test passed with shared caching") 

@@ -39,6 +39,7 @@ def main():
         print("  coverage    - Run tests with coverage report")
         print("  install     - Install test dependencies")
         print("  chunker     - Run multilingual chunker tests only")
+        print("  cache       - Run caching functionality tests only")
         print("  collection  - Run data collection tests only")
         print("  slow        - Run slow/large tests only")
         print("  fast        - Run all tests except slow ones")
@@ -86,8 +87,13 @@ def main():
         
     elif command == "chunker":
         success = run_command([
-            "uv", "run", "python", "-m", "pytest", "tests/unit/test_multilingual_chunker.py", "-v"
-        ], "Running multilingual chunker tests")
+            "uv", "run", "python", "-m", "pytest", "tests/unit/test_multilingual_chunker.py", "-v", "-m", "not caching"
+        ], "Running multilingual chunker tests (excluding caching)")
+        
+    elif command == "cache":
+        success = run_command([
+            "uv", "run", "python", "-m", "pytest", "tests/", "-v", "-k", "cache or Cache"
+        ], "Running caching functionality tests")
         
     elif command == "collection":
         success = run_command([
@@ -186,7 +192,7 @@ def main():
         
     else:
         print(f"❌ Unknown command: {command}")
-        print("Valid commands: unit, integration, all, ci, coverage, install, chunker, collection, slow, fast")
+        print("Valid commands: unit, integration, all, ci, coverage, install, chunker, cache, collection, slow, fast")
         sys.exit(1)
 
 
