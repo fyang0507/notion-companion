@@ -620,9 +620,9 @@ class ChunkingOrchestrator:
             logger.info(f"  95th percentile: {percentile_values[percentiles.index(95)]:.3f}")
             
             logger.info(f"🎯 Threshold Recommendations:")
-            logger.info(f"  Conservative (1% merge): {percentile_values[percentiles.index(99)]:.3f}")
-            logger.info(f"  Moderate (5% merge): {percentile_values[percentiles.index(95)]:.3f}")
-            logger.info(f"  Aggressive (10% merge): {percentile_values[percentiles.index(90)]:.3f}")
+            logger.info(f"  Conservative (25% merge): {percentile_values[percentiles.index(75)]:.3f}")
+            logger.info(f"  Moderate (50% merge): {percentile_values[percentiles.index(50)]:.3f}")
+            logger.info(f"  Aggressive (75% merge): {percentile_values[percentiles.index(25)]:.3f}")
             
             result = {
                 'overall_stats': overall_stats,
@@ -961,6 +961,25 @@ async def main():
             print(f"❌ Error displaying basic pipeline info: {e}")
             print(f"Cache summary keys: {list(cache_summary.keys()) if cache_summary else 'None'}")
         
+        # Show similarity analysis statistics
+        try:
+            step4_data = orchestrator.cache_manager.load_step_data(4, "similarity_analysis", args.experiment_name)
+            if step4_data and 'similarity_analysis' in step4_data:
+                similarity_stats = step4_data['similarity_analysis']['overall_stats']
+                print(f"\n📈 Similarity Analysis Results:")
+                print(f"  📊 Total adjacent pairs: {similarity_stats['total_adjacent_pairs']}")
+                print(f"  📊 Mean similarity: {similarity_stats['mean_similarity']:.3f}")
+                print(f"  📊 Median similarity: {similarity_stats['median_similarity']:.3f}")
+                print(f"  📊 90th percentile: {similarity_stats['percentiles']['90']:.3f}")
+                print(f"  📊 95th percentile: {similarity_stats['percentiles']['95']:.3f}")
+                print(f"  🎯 Threshold recommendations:")
+                print(f"     Conservative (25% merge): {similarity_stats['percentiles']['75']:.3f}")
+                print(f"     Moderate (50% merge): {similarity_stats['percentiles']['50']:.3f}")
+                print(f"     Aggressive (75% merge): {similarity_stats['percentiles']['25']:.3f}")
+        except Exception as e:
+            logger.warning(f"Could not load similarity analysis data: {e}")
+            print(f"  ❌ Similarity analysis data unavailable")
+
         # Show merging statistics
         if 'merging_statistics' in cache_summary:
             merging_stats = cache_summary['merging_statistics']
