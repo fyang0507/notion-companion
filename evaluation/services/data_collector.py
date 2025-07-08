@@ -124,7 +124,7 @@ class DataCollector:
     
     async def _save_documents(self, documents: List[Document], database_id: str):
         """Save documents to JSON file."""
-        filename = f"{database_id[-10:]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        filename = f"{database_id[-10:]}_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
         filepath = self.output_dir / filename
         
         # Convert to dict for JSON serialization
