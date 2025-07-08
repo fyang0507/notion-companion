@@ -7,7 +7,21 @@ Provides easy commands to run different test suites.
 import subprocess
 import sys
 import os
+import shutil
 from pathlib import Path
+
+def get_python_executable():
+    """Get the appropriate Python executable for the current environment."""
+    # Check if we're in a uv environment
+    if shutil.which("uv") and os.getenv("VIRTUAL_ENV"):
+        # Use uv run python if uv is available and we're in a virtual env
+        return ["uv", "run", "python"]
+    elif Path(".venv/bin/python").exists():
+        # Use local venv if it exists
+        return [".venv/bin/python"]
+    else:
+        # Fall back to current Python executable
+        return [sys.executable]
 
 def run_command(cmd, description):
     """Run a command and handle the output."""
@@ -49,8 +63,9 @@ def main():
     
     if command == "install":
         print("📦 Installing test dependencies...")
-        success = run_command([
-            ".venv/bin/python", "-m", "pip", "install", 
+        python_cmd = get_python_executable()
+        success = run_command(
+            python_cmd + ["-m", "pip", "install", 
             "pytest", "pytest-mock", "pytest-asyncio", "respx", "coverage"
         ], "Installing test dependencies")
         
@@ -61,18 +76,21 @@ def main():
             sys.exit(1)
             
     elif command == "unit":
-        success = run_command([
-            ".venv/bin/python", "-m", "pytest", "tests/unit/", "-v", "-m", "unit"
+        python_cmd = get_python_executable()
+        success = run_command(
+            python_cmd + ["-m", "pytest", "tests/unit/", "-v", "-m", "unit"
         ], "Running unit tests")
         
     elif command == "integration":
-        success = run_command([
-            ".venv/bin/python", "-m", "pytest", "tests/integration/", "-v", "-m", "integration"
+        python_cmd = get_python_executable()
+        success = run_command(
+            python_cmd + ["-m", "pytest", "tests/integration/", "-v", "-m", "integration"
         ], "Running integration tests")
         
     elif command == "api":
-        success = run_command([
-            ".venv/bin/python", "-m", "pytest", "tests/api/", "-v", "-m", "api"
+        python_cmd = get_python_executable()
+        success = run_command(
+            python_cmd + ["-m", "pytest", "tests/api/", "-v", "-m", "api"
         ], "Running API tests")
         
     elif command == "all":
@@ -86,8 +104,9 @@ def main():
         ]
         
         results = []
+        python_cmd = get_python_executable()
         for test_args, name in test_suites:
-            cmd = [".venv/bin/python", "-m", "pytest"] + test_args + ["-v"]
+            cmd = python_cmd + ["-m", "pytest"] + test_args + ["-v"]
             success = run_command(cmd, f"Running {name}")
             results.append((name, success))
         
@@ -114,8 +133,9 @@ def main():
         print("🏗️ Running tests in CI mode (fail-fast, concise output)...")
         
         # Run all tests with CI-optimized flags
-        success = run_command([
-            ".venv/bin/python", "-m", "pytest", "tests/", 
+        python_cmd = get_python_executable()
+        success = run_command(
+            python_cmd + ["-m", "pytest", "tests/", 
             "-x",  # Stop on first failure
             "--tb=short",  # Short traceback format
             "--disable-warnings",  # Suppress warnings for cleaner output
@@ -134,20 +154,21 @@ def main():
         print("📈 Running tests with coverage...")
         
         # Run tests with coverage
-        success = run_command([
-            ".venv/bin/python", "-m", "coverage", "run", 
+        python_cmd = get_python_executable()
+        success = run_command(
+            python_cmd + ["-m", "coverage", "run", 
             "-m", "pytest", "tests/", "-v"
         ], "Running tests with coverage")
         
         if success:
             # Generate coverage report
-            run_command([
-                ".venv/bin/python", "-m", "coverage", "report"
+            run_command(
+                python_cmd + ["-m", "coverage", "report"
             ], "Generating coverage report")
             
             # Generate HTML report
-            run_command([
-                ".venv/bin/python", "-m", "coverage", "html"
+            run_command(
+                python_cmd + ["-m", "coverage", "html"
             ], "Generating HTML coverage report")
             
             print("\n📄 Coverage reports generated:")
