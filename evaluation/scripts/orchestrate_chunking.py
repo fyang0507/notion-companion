@@ -682,6 +682,7 @@ class ChunkingOrchestrator:
         
         doc_chunks = {}
         total_chunks = 0
+        aggregate_stats = {'total_chunks': 0, 'single_sentence_chunks': 0, 'stopped_by_similarity': 0, 'stopped_by_token_limit': 0, 'stopped_by_distance_limit': 0, 'stopped_by_end_of_sentences': 0}
         
         for doc_id in doc_sentences.keys():
             if doc_id not in doc_embeddings:
@@ -696,7 +697,15 @@ class ChunkingOrchestrator:
                 continue
             
             # Merge sentences into chunks
-            chunk_results = self.semantic_merger.merge_sentences(sentences, embeddings)
+            chunk_results, doc_stats = self.semantic_merger.merge_sentences(sentences, embeddings)
+            
+            # Aggregate statistics across all documents
+            aggregate_stats['total_chunks'] += doc_stats.total_chunks
+            aggregate_stats['single_sentence_chunks'] += doc_stats.single_sentence_chunks
+            aggregate_stats['stopped_by_similarity'] += doc_stats.stopped_by_similarity
+            aggregate_stats['stopped_by_token_limit'] += doc_stats.stopped_by_token_limit
+            aggregate_stats['stopped_by_distance_limit'] += doc_stats.stopped_by_distance_limit
+            aggregate_stats['stopped_by_end_of_sentences'] += doc_stats.stopped_by_end_of_sentences
             
             # Convert to dictionary format for JSON serialization
             chunks = []
@@ -730,6 +739,17 @@ class ChunkingOrchestrator:
                 }
             chunk_hashes[doc_id] = doc_chunk_hashes
         
+        # Calculate merge stopping percentages
+        stopping_percentages = {}
+        if aggregate_stats['total_chunks'] > 0:
+            stopping_percentages = {
+                'single_sentence': (aggregate_stats['single_sentence_chunks'] / aggregate_stats['total_chunks']) * 100,
+                'similarity_threshold': (aggregate_stats['stopped_by_similarity'] / aggregate_stats['total_chunks']) * 100,
+                'token_limit': (aggregate_stats['stopped_by_token_limit'] / aggregate_stats['total_chunks']) * 100,
+                'distance_limit': (aggregate_stats['stopped_by_distance_limit'] / aggregate_stats['total_chunks']) * 100,
+                'end_of_sentences': (aggregate_stats['stopped_by_end_of_sentences'] / aggregate_stats['total_chunks']) * 100
+            }
+        
         step_data = {
             'document_chunks': doc_chunks,
             'chunk_metadata': chunk_hashes,
@@ -739,6 +759,8 @@ class ChunkingOrchestrator:
                 'avg_chunks_per_doc': total_chunks / len(doc_chunks) if doc_chunks else 0,
                 'total_input_sentences': sum(len(sentences) for sentences in doc_sentences.values()),
                 'merge_reduction_rate': 1 - (total_chunks / sum(len(sentences) for sentences in doc_sentences.values())) if doc_sentences else 0,
+                'merge_stopping_statistics': aggregate_stats,
+                'merge_stopping_percentages': stopping_percentages,
                 'config_used': {
                     'similarity_threshold': self.config['semantic_merging']['similarity_threshold'],
                     'max_merge_distance': self.config['semantic_merging']['max_merge_distance'],
@@ -748,6 +770,15 @@ class ChunkingOrchestrator:
         }
         
         self.cache_manager.save_step_data(5, "semantic_merging", step_data, experiment_name)
+        
+        # Log merge stopping statistics
+        if aggregate_stats['total_chunks'] > 0:
+            logger.info(f"📊 Chunk stopping reasons (out of {aggregate_stats['total_chunks']} chunks):")
+            logger.info(f"   • Single sentence: {stopping_percentages['single_sentence']:.1f}% ({aggregate_stats['single_sentence_chunks']} chunks)")
+            logger.info(f"   • Similarity threshold: {stopping_percentages['similarity_threshold']:.1f}% ({aggregate_stats['stopped_by_similarity']} chunks)")
+            logger.info(f"   • Token limit: {stopping_percentages['token_limit']:.1f}% ({aggregate_stats['stopped_by_token_limit']} chunks)")
+            logger.info(f"   • Distance limit: {stopping_percentages['distance_limit']:.1f}% ({aggregate_stats['stopped_by_distance_limit']} chunks)")
+            logger.info(f"   • End of sentences: {stopping_percentages['end_of_sentences']:.1f}% ({aggregate_stats['stopped_by_end_of_sentences']} chunks)")
         
         logger.info(f"✅ Merged {len(doc_chunks)} documents into {total_chunks} chunks")
         return doc_chunks
@@ -817,6 +848,14 @@ class ChunkingOrchestrator:
             logger.info("🔄 Running Step 5: Semantic merging (always executed)")
             doc_chunks = self.merge_semantic_sentences(doc_sentences, doc_embeddings, experiment_name)
             
+            # Load step 5 data to get merge stopping statistics
+            try:
+                step5_data = self.cache_manager.load_step_data(5, "semantic_merging", experiment_name)
+                logger.info(f"✅ Successfully loaded step 5 data for merge stopping statistics")
+            except FileNotFoundError as e:
+                logger.warning(f"Step 5 data not found for merge stopping statistics: {e}")
+                step5_data = None
+            
             # Get cache summary and add merging statistics
             cache_summary = self.cache_manager.get_cache_summary()
             
@@ -845,6 +884,8 @@ class ChunkingOrchestrator:
                 'avg_sentences_per_chunk': sum(all_chunk_sentence_counts) / len(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
                 'max_sentences_per_chunk': max(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
                 'min_sentences_per_chunk': min(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
+                'merge_stopping_statistics': step5_data['merging_statistics']['merge_stopping_statistics'] if step5_data else {},
+                'merge_stopping_percentages': step5_data['merging_statistics']['merge_stopping_percentages'] if step5_data else {},
                 'config_used': {
                     'similarity_threshold': self.config['semantic_merging']['similarity_threshold'],
                     'max_merge_distance': self.config['semantic_merging']['max_merge_distance'],
@@ -853,6 +894,7 @@ class ChunkingOrchestrator:
             }
             
             elapsed_time = time.time() - start_time
+            cache_summary['pipeline_execution_time'] = elapsed_time
             logger.info(f"✅ Pipeline completed successfully in {elapsed_time:.2f} seconds")
             
             return cache_summary
@@ -906,30 +948,55 @@ async def main():
         print("📊 CHUNKING PIPELINE RESULTS")
         print("="*60)
         print(f"✅ Pipeline completed successfully!")
-        print(f"🆔 Experiment ID: {cache_summary['experiment_id']}")
-        print(f"📁 Step files created: {cache_summary['total_step_files']}")
-        print(f"📂 Cache directory: {cache_summary['cached_dir']}")
-        print("\n📋 Step-by-step artifacts:")
-        for step in cache_summary['steps_cached']:
-            print(f"  • Step {step['step_number']} ({step['step_name']}): {step['file_size_mb']:.2f} MB")
+        
+        try:
+            print(f"🆔 Experiment ID: {cache_summary['experiment_id']}")
+            print(f"📁 Step files created: {cache_summary['total_step_files']}")
+            print(f"📂 Cache directory: {cache_summary['cached_dir']}")
+            print("\n📋 Step-by-step artifacts:")
+            for step in cache_summary['steps_cached']:
+                print(f"  • Step {step['step_number']} ({step['step_name']}): {step['file_size_mb']:.2f} MB")
+        except Exception as e:
+            logger.error(f"Error displaying basic pipeline info: {e}")
+            print(f"❌ Error displaying basic pipeline info: {e}")
+            print(f"Cache summary keys: {list(cache_summary.keys()) if cache_summary else 'None'}")
         
         # Show merging statistics
         if 'merging_statistics' in cache_summary:
             merging_stats = cache_summary['merging_statistics']
-            print(f"\n🔄 Semantic Merging Results:")
-            print(f"  📊 Reduction: {merging_stats['total_input_sentences']} sentences → {merging_stats['total_output_chunks']} chunks ({merging_stats['reduction_percentage']:.1f}% reduction)")
-            print(f"  📏 Chunk sizes: {merging_stats['min_chunk_tokens']}-{merging_stats['max_chunk_tokens']} tokens (avg: {merging_stats['avg_chunk_tokens']:.1f})")
-            print(f"  📝 Sentences per chunk: {merging_stats['min_sentences_per_chunk']}-{merging_stats['max_sentences_per_chunk']} (avg: {merging_stats['avg_sentences_per_chunk']:.1f})")
-            print(f"  ⚙️  Config: threshold={merging_stats['config_used']['similarity_threshold']}, max_distance={merging_stats['config_used']['max_merge_distance']}, max_size={merging_stats['config_used']['max_chunk_size']}")
+            try:
+                print(f"\n🔄 Semantic Merging Results:")
+                print(f"  📊 Reduction: {merging_stats['total_input_sentences']} sentences → {merging_stats['total_output_chunks']} chunks ({merging_stats['reduction_percentage']:.1f}% reduction)")
+                print(f"  📏 Chunk sizes: {merging_stats['min_chunk_tokens']}-{merging_stats['max_chunk_tokens']} tokens (avg: {merging_stats['avg_chunk_tokens']:.1f})")
+                print(f"  📝 Sentences per chunk: {merging_stats['min_sentences_per_chunk']}-{merging_stats['max_sentences_per_chunk']} (avg: {merging_stats['avg_sentences_per_chunk']:.1f})")
+                print(f"  ⚙️  Config: threshold={merging_stats['config_used']['similarity_threshold']}, max_distance={merging_stats['config_used']['max_merge_distance']}, max_size={merging_stats['config_used']['max_chunk_size']}")
+                
+                # Show merge stopping statistics if available
+                if 'merge_stopping_percentages' in merging_stats:
+                    stopping_percentages = merging_stats['merge_stopping_percentages']
+                    print(f"\n📊 Why chunks stopped growing:")
+                    print(f"  • Single sentence: {stopping_percentages['single_sentence']:.1f}%")
+                    print(f"  • Similarity threshold: {stopping_percentages['similarity_threshold']:.1f}%") 
+                    print(f"  • Token limit: {stopping_percentages['token_limit']:.1f}%")
+                    print(f"  • Distance limit: {stopping_percentages['distance_limit']:.1f}%")
+                    print(f"  • End of sentences: {stopping_percentages['end_of_sentences']:.1f}%")
+            except Exception as e:
+                logger.error(f"Error displaying merging statistics: {e}")
+                print(f"  ❌ Error displaying merging statistics: {e}")
         
         print("="*60)
         
         # Show cache info
-        cache_info = orchestrator.embedding_cache.get_cache_info()
-        print(f"📊 Embedding cache: {cache_info['cached_sentences']} sentences cached")
-        if 'stats' in cache_info and cache_info['stats']:
-            hit_rate = cache_info['stats'].get('hit_rate', 0)
-            print(f"🎯 Cache hit rate: {hit_rate:.2%}")
+        try:
+            cache_info = orchestrator.embedding_cache.get_cache_info()
+            if cache_info:
+                print(f"📊 Embedding cache: {cache_info.get('cached_sentences', 0)} sentences cached")
+                if 'stats' in cache_info and cache_info['stats']:
+                    hit_rate = cache_info['stats'].get('hit_rate', 0)
+                    print(f"🎯 Cache hit rate: {hit_rate:.2%}")
+        except Exception as e:
+            logger.warning(f"Could not get cache info: {e}")
+            print(f"📊 Embedding cache: info unavailable")
         
     except Exception as e:
         print(f"❌ Error: {str(e)}")
