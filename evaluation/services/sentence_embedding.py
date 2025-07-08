@@ -102,6 +102,15 @@ class SentenceEmbeddingCache:
         from datetime import datetime
         return datetime.now().isoformat()
     
+    async def generate_single_embedding(self, content: str, embedding_service) -> List[float]:
+        """Generate embedding for a single text content with caching"""
+        try:
+            embeddings, _, _ = await self.get_embeddings([content], embedding_service)
+            return embeddings[0] if embeddings else []
+        except Exception as e:
+            logger.warning(f"Failed to generate embedding for content: {str(e)}")
+            return []
+    
     async def get_embeddings(self, sentences: List[str], embedding_service) -> Tuple[List[List[float]], int, int]:
         """
         Get embeddings for sentences, using cache when available.
