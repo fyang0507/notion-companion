@@ -3,7 +3,7 @@
 
 [chunking]
 # Universal sentence punctuation
-chinese_punctuation = ["。", "！", "？", "；", "......"]
+chinese_punctuation = ["。", "！", "？", "......"]  # removed "；"
 western_punctuation = [".", "!", "?", "..."]
 
 # Quotation mark pairs: [opening, closing]
@@ -45,7 +45,7 @@ french_abbreviations = [
 
 [semantic_merging]
 # Similarity threshold for merging adjacent sentences
-similarity_threshold = 0.85
+similarity_threshold = 0.35
 
 # Maximum number of sentences to merge in one chunk
 max_merge_distance = 3
@@ -70,5 +70,3 @@ max_chunk_size = 500
 model = "text-embedding-3-small"
 # Batch size for embedding generation
 batch_size = 512
-# cache directory for embeddings
-cache_dir = "evaluation/data/cache"

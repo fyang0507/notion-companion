@@ -23,9 +23,10 @@ import json
 import logging
 import sys
 import time
+import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 import tiktoken
 import numpy as np
 
@@ -48,13 +49,166 @@ from backend.services.openai_service import OpenAIService
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('evaluation/logs/orchestration.log'),
-        logging.StreamHandler()
-    ]
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+class UnifiedCacheManager:
+    """Unified caching system for all pipeline steps with consistent naming and hashing."""
+    
+    def __init__(self, base_dir: Path, config: Dict[str, Any] = None):
+        self.base_dir = base_dir
+        self.cached_dir = base_dir
+        self.config = config or {}
+        
+        # Create directories
+        self.cached_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Generate experiment ID for this run
+        self.experiment_id = datetime.now().strftime("%Y%m%d_%H%M")
+        
+    def _generate_content_hash(self, content: Any) -> str:
+        """Generate consistent hash for any content."""
+        if isinstance(content, str):
+            content_str = content
+        elif isinstance(content, (dict, list)):
+            content_str = json.dumps(content, sort_keys=True, ensure_ascii=False)
+        else:
+            content_str = str(content)
+        
+        return hashlib.sha256(content_str.encode('utf-8')).hexdigest()[:16]
+    
+    def _sort_config(self, config_dict):
+        """Sort config dictionary for consistent comparison."""
+        sorted_dict = {}
+        for key, value in config_dict.items():
+            if isinstance(value, list):
+                # Handle nested lists (like quote_pairs which is list of lists)
+                if all(isinstance(item, list) for item in value):
+                    sorted_dict[key] = sorted([sorted(item) for item in value])
+                else:
+                    sorted_dict[key] = sorted(value)
+            else:
+                sorted_dict[key] = value
+        return sorted_dict
+    
+    def _generate_step_filename(self, step_num: int, step_name: str, experiment_name: str = None) -> str:
+        """Generate consistent filename for pipeline steps."""
+        base = f"{self.experiment_id}_step{step_num}_{step_name}"
+        if experiment_name:
+            base = f"{base}_{experiment_name}"
+        return f"{base}.json"
+    
+    def save_step_data(self, step_num: int, step_name: str, data: Dict[str, Any], 
+                      experiment_name: str = None, include_hashes: bool = True, input_file: str = None) -> str:
+        """
+        Save step data with consistent format and optional content hashing.
+        
+        Args:
+            step_num: Pipeline step number (1-4)
+            step_name: Human-readable step name
+            data: Data to save
+            experiment_name: Optional experiment name
+            include_hashes: Whether to generate content hashes for traceability
+            input_file: Input file path for configuration hash generation
+            
+        Returns:
+            Path to saved file
+        """
+        filename = self._generate_step_filename(step_num, step_name, experiment_name)
+        filepath = self.cached_dir / filename
+        
+        # Create configuration snapshot for cache reuse (include full config for unified cache detection)
+        if step_num in [2, 3, 4]:  # Steps that participate in unified caching
+            config_snapshot = {
+                'step_number': step_num,
+                'input_file': input_file,
+                'timestamp': datetime.now().isoformat(),
+                'chunking_config': self._sort_config(self.config.get('chunking', {})),
+                'embeddings_config': self._sort_config(self.config.get('embeddings', {}))
+                # Note: semantic_merging config excluded - only affects Step 5 which always runs
+            }
+        else:
+            config_snapshot = {
+                'step_number': step_num,
+                'input_file': input_file,
+                'timestamp': datetime.now().isoformat()
+            }
+        
+        # Create unified metadata structure
+        metadata = {
+            'step_number': step_num,
+            'step_name': step_name,
+            'experiment_id': self.experiment_id,
+            'experiment_name': experiment_name,
+            'generated_at': datetime.now().isoformat(),
+            'config_snapshot': config_snapshot,
+            'content_hash': self._generate_content_hash(data) if include_hashes else None,
+            'data_keys': list(data.keys()) if isinstance(data, dict) else None
+        }
+        
+        # Add content hashes for individual items if requested
+        if include_hashes and isinstance(data, dict):
+            content_hashes = {}
+            for key, value in data.items():
+                if isinstance(value, (list, dict)):
+                    content_hashes[key] = self._generate_content_hash(value)
+            metadata['item_hashes'] = content_hashes
+        
+        # Save with unified structure
+        save_data = {
+            'metadata': metadata,
+            'data': data
+        }
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(save_data, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"💾 Saved Step {step_num} ({step_name}): {filepath}")
+        return str(filepath)
+    
+    def load_step_data(self, step_num: int, step_name: str, experiment_name: str = None) -> Dict[str, Any]:
+        """Load step data with error handling."""
+        filename = self._generate_step_filename(step_num, step_name, experiment_name)
+        filepath = self.cached_dir / filename
+        
+        if not filepath.exists():
+            raise FileNotFoundError(f"Step {step_num} data not found: {filepath}")
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            loaded_data = json.load(f)
+        
+        return loaded_data['data']
+    
+    
+    def get_cache_summary(self) -> Dict[str, Any]:
+        """Get summary of all cached data for this experiment."""
+        cache_files = list(self.cached_dir.glob(f"{self.experiment_id}_step*.json"))
+        
+        summary = {
+            'experiment_id': self.experiment_id,
+            'total_step_files': len(cache_files),
+            'steps_cached': [],
+            'cached_dir': str(self.cached_dir)
+        }
+        
+        for file_path in sorted(cache_files):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    metadata = data.get('metadata', {})
+                    summary['steps_cached'].append({
+                        'step_number': metadata.get('step_number'),
+                        'step_name': metadata.get('step_name'),
+                        'file_path': str(file_path),
+                        'file_size_mb': file_path.stat().st_size / (1024*1024),
+                        'generated_at': metadata.get('generated_at')
+                    })
+            except Exception as e:
+                logger.warning(f"Could not read cache file {file_path}: {e}")
+        
+        return summary
 
 
 class ChunkingOrchestrator:
@@ -65,6 +219,10 @@ class ChunkingOrchestrator:
         self.config_loader = ConfigLoader()
         self.config = self.config_loader.load_chunking_config(config_path)
         
+        # Initialize unified cache manager with config
+        self.data_dir = Path(__file__).parent.parent / "data"
+        self.cache_manager = UnifiedCacheManager(self.data_dir, self.config)
+        
         # Initialize components
         self.sentence_splitter = RobustSentenceSplitter(self.config)
         self.embedding_cache = SentenceEmbeddingCache(self.config)
@@ -74,13 +232,112 @@ class ChunkingOrchestrator:
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
         self.semantic_merger = SemanticMerger(self.tokenizer, self.config)
         
-        # Create output directories
-        self.data_dir = Path(__file__).parent / "data"
-        self.processed_dir = self.data_dir / "processed"
-        self.processed_dir.mkdir(parents=True, exist_ok=True)
-        
-        logger.info("ChunkingOrchestrator initialized successfully")
+        logger.info(f"ChunkingOrchestrator initialized successfully (Experiment ID: {self.cache_manager.experiment_id})")
     
+    def _create_config_fingerprint(self, input_file: str = None) -> Dict[str, Any]:
+        """Create a configuration fingerprint for Steps 2-4 cache matching."""
+        # Sort lists deterministically to ensure consistent comparison
+        def sort_config(config_dict):
+            sorted_dict = {}
+            for key, value in config_dict.items():
+                if isinstance(value, list):
+                    # Handle nested lists (like quote_pairs which is list of lists)
+                    if all(isinstance(item, list) for item in value):
+                        sorted_dict[key] = sorted([sorted(item) for item in value])
+                    else:
+                        sorted_dict[key] = sorted(value)
+                else:
+                    sorted_dict[key] = value
+            return sorted_dict
+        
+        fingerprint = {
+            'input_file': input_file,
+            'chunking_config': sort_config(self.config.get('chunking', {})),
+            'embeddings_config': sort_config(self.config.get('embeddings', {}))
+            # Note: semantic_merging config is excluded as it only affects Step 5 (always runs)
+        }
+        
+        return fingerprint
+    
+    def _check_cached_pipeline_stage(self, experiment_name: str = None, input_file: str = None) -> Tuple[bool, Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """
+        Check if Steps 2-4 can be loaded from cache with matching configuration.
+        
+        Returns:
+            Tuple of (cache_matches, step2_data, step3_data, step4_data)
+        """
+        current_fingerprint = self._create_config_fingerprint(input_file)
+        
+        # Look for Step 3 cache file (the expensive one that determines if we can reuse)
+        pattern = f"*_step3_embedding_generation_*.json"
+        if experiment_name:
+            pattern = f"*_step3_embedding_generation_{experiment_name}.json"
+        
+        cache_files = list(self.cache_manager.cached_dir.glob(pattern))
+        
+        if not cache_files:
+            logger.info("🔍 No Step 3 cache found - will run full pipeline from Step 2")
+            return False, {}, {}, {}
+        
+        # Get the most recent cache file
+        latest_cache = max(cache_files, key=lambda f: f.stat().st_mtime)
+        
+        try:
+            with open(latest_cache, 'r', encoding='utf-8') as f:
+                step3_data = json.load(f)
+            
+            # Compare config fingerprints (excluding timestamp)
+            cached_config = step3_data.get('metadata', {}).get('config_snapshot', {})
+            cached_fingerprint = {
+                'input_file': cached_config.get('input_file'),
+                'chunking_config': cached_config.get('chunking_config', {}),
+                'embeddings_config': cached_config.get('embeddings_config', {})
+            }
+            
+            if current_fingerprint == cached_fingerprint:
+                logger.info(f"✅ Found matching cache for Steps 2-4: {latest_cache.name}")
+                
+                # Load corresponding Step 2 and Step 4 data  
+                # Extract experiment ID (e.g., "20250708_1521" from "20250708_1521_step3_embedding_generation_test.json")
+                exp_id = '_'.join(latest_cache.name.split('_')[:2])
+                step2_pattern = f"{exp_id}_step2_sentence_splitting_*.json"
+                step4_pattern = f"{exp_id}_step4_similarity_analysis_*.json"
+                
+                step2_files = list(self.cache_manager.cached_dir.glob(step2_pattern))
+                step4_files = list(self.cache_manager.cached_dir.glob(step4_pattern))
+                
+                logger.info(f"🔍 Looking for Step 2: {step2_pattern}, found {len(step2_files)} files")
+                logger.info(f"🔍 Looking for Step 4: {step4_pattern}, found {len(step4_files)} files")
+                
+                step2_data = {}
+                step4_data = {}
+                
+                if step2_files:
+                    with open(step2_files[0], 'r', encoding='utf-8') as f:
+                        step2_full = json.load(f)
+                        step2_data = step2_full.get('data', {})
+                    logger.info(f"  ✅ Step 2: {step2_files[0].name}")
+                
+                if step4_files:
+                    with open(step4_files[0], 'r', encoding='utf-8') as f:
+                        step4_full = json.load(f)
+                        step4_data = step4_full.get('data', {})
+                    logger.info(f"  ✅ Step 4: {step4_files[0].name}")
+                
+                # Extract data from step3 as well
+                step3_data = step3_data.get('data', {})
+                
+                return True, step2_data, step3_data, step4_data
+            else:
+                logger.info(f"❌ Step 3 cache found but config doesn't match - will regenerate from Step 2")
+                logger.info(f"🔍 Current fingerprint: {current_fingerprint}")
+                logger.info(f"🔍 Cached fingerprint: {cached_fingerprint}")
+                return False, {}, {}, {}
+                
+        except Exception as e:
+            logger.warning(f"⚠️  Error reading Step 3 cache {latest_cache}: {e}")
+            return False, {}, {}, {}
+
     def load_collected_documents(self, input_file: str) -> List[Dict[str, Any]]:
         """
         Step 1: Load documents from data_collector.py output.
@@ -105,12 +362,14 @@ class ChunkingOrchestrator:
         
         return documents
     
-    def split_documents_into_sentences(self, documents: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    def split_documents_into_sentences(self, documents: List[Dict[str, Any]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[str]]:
         """
         Step 2: Split documents into sentences using sentence_splitter.py.
         
         Args:
             documents: List of document dictionaries
+            experiment_name: Optional experiment name for saving
+            input_file: Input file path for metadata
             
         Returns:
             Dictionary mapping document_id to list of sentences
@@ -134,24 +393,67 @@ class ChunkingOrchestrator:
             
             logger.debug(f"Document {doc_id}: {len(sentences)} sentences")
         
+        # Create indexed sentence data with hashes for cross-step linking
+        indexed_sentences = {}
+        sentence_lookup = {}  # For easy manual analysis
+        
+        for doc_id, sentences in doc_sentences.items():
+            doc_indexed_sentences = {}
+            for i, sentence in enumerate(sentences):
+                sentence_hash = self.cache_manager._generate_content_hash(sentence)
+                sentence_info = {
+                    'index': i,
+                    'content': sentence,
+                    'hash': sentence_hash,
+                    'char_length': len(sentence),
+                    'word_count': len(sentence.split())
+                }
+                doc_indexed_sentences[i] = sentence_info
+                
+                # Add to global lookup for easy access
+                sentence_lookup[sentence_hash] = {
+                    'document_id': doc_id,
+                    'sentence_index': i,
+                    'content': sentence
+                }
+            
+            indexed_sentences[doc_id] = doc_indexed_sentences
+        
+        # Save step data with enhanced indexing
+        step_data = {
+            'document_sentences': indexed_sentences,
+            'sentence_lookup': sentence_lookup,  # Global hash -> sentence mapping
+            'input_documents': {doc['id']: {'title': doc.get('title', 'Untitled'), 'content_length': len(doc['content'])} for doc in documents},
+            'statistics': {
+                'total_documents': len(doc_sentences),
+                'total_sentences': total_sentences,
+                'avg_sentences_per_doc': total_sentences / len(doc_sentences) if doc_sentences else 0
+            }
+        }
+        
+        self.cache_manager.save_step_data(2, "sentence_splitting", step_data, experiment_name, input_file=input_file)
+        
         logger.info(f"✅ Split {len(doc_sentences)} documents into {total_sentences} sentences")
         return doc_sentences
     
-    async def generate_sentence_embeddings(self, doc_sentences: Dict[str, List[str]]) -> Dict[str, List[List[float]]]:
+    async def generate_sentence_embeddings(self, doc_sentences: Dict[str, List[str]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[List[float]]]:
         """
-        Step 3: Generate embeddings for sentences using sentence_embedding.py with caching.
+        Step 3: Generate embeddings for sentences using sentence_embedding.py.
         
         Args:
             doc_sentences: Dictionary mapping document_id to list of sentences
+            experiment_name: Optional experiment name for saving
+            input_file: Input file path for metadata
             
         Returns:
             Dictionary mapping document_id to list of embeddings
         """
-        logger.info("🔢 Step 3: Generating sentence embeddings (with caching)")
+        logger.info("🔢 Step 3: Generating sentence embeddings")
         
         doc_embeddings = {}
         total_cache_hits = 0
         total_cache_misses = 0
+        sentence_hashes = {}
         
         for doc_id, sentences in doc_sentences.items():
             if not sentences:
@@ -169,7 +471,55 @@ class ChunkingOrchestrator:
             total_cache_hits += cache_hits
             total_cache_misses += cache_misses
             
+            # Generate enhanced sentence metadata with embeddings
+            doc_sentence_metadata = {}
+            for i, sentence in enumerate(sentences):
+                sentence_hash = self.cache_manager._generate_content_hash(sentence)
+                embedding = embeddings[i] if i < len(embeddings) else None
+                doc_sentence_metadata[i] = {
+                    'index': i,
+                    'content': sentence,
+                    'hash': sentence_hash,
+                    'embedding': embedding,
+                    'embedding_dimensions': len(embedding) if embedding else 0,
+                    'char_length': len(sentence),
+                    'word_count': len(sentence.split())
+                }
+            sentence_hashes[doc_id] = doc_sentence_metadata
+            
             logger.debug(f"Document {doc_id}: {cache_hits} cache hits, {cache_misses} cache misses")
+        
+        # Create global sentence lookup with embeddings for manual analysis
+        global_sentence_lookup = {}
+        for doc_id, doc_metadata in sentence_hashes.items():
+            for sentence_idx, sentence_info in doc_metadata.items():
+                hash_key = sentence_info['hash']
+                global_sentence_lookup[hash_key] = {
+                    'document_id': doc_id,
+                    'sentence_index': sentence_idx,
+                    'content': sentence_info['content'],
+                    'embedding': sentence_info['embedding'],
+                    'char_length': sentence_info['char_length'],
+                    'word_count': sentence_info['word_count']
+                }
+        
+        # Save step data with unified caching including sentence hashes
+        step_data = {
+            'document_embeddings': doc_embeddings,
+            'sentence_metadata': sentence_hashes,
+            'global_sentence_lookup': global_sentence_lookup,  # Easy hash-based lookup
+            'embedding_statistics': {
+                'total_documents': len(doc_embeddings),
+                'total_embeddings': sum(len(embs) for embs in doc_embeddings.values()),
+                'cache_hits': total_cache_hits,
+                'cache_misses': total_cache_misses,
+                'cache_hit_rate': total_cache_hits / (total_cache_hits + total_cache_misses) if (total_cache_hits + total_cache_misses) > 0 else 0,
+                'embedding_model': self.config['embeddings']['model'],
+                'embedding_dimensions': len(next(iter(doc_embeddings.values()))[0]) if doc_embeddings and next(iter(doc_embeddings.values())) else 0
+            }
+        }
+        
+        self.cache_manager.save_step_data(3, "embedding_generation", step_data, experiment_name, input_file=input_file)
         
         logger.info(f"✅ Generated embeddings for {len(doc_embeddings)} documents")
         logger.info(f"📊 Cache performance: {total_cache_hits} hits, {total_cache_misses} misses")
@@ -177,7 +527,8 @@ class ChunkingOrchestrator:
         return doc_embeddings
     
     def analyze_similarity_distribution(self, doc_sentences: Dict[str, List[str]], 
-                                      doc_embeddings: Dict[str, List[List[float]]]) -> Dict[str, Any]:
+                                      doc_embeddings: Dict[str, List[List[float]]], 
+                                      experiment_name: str = None) -> Dict[str, Any]:
         """
         Analyze similarity distribution of adjacent sentences to inform threshold tuning.
         
@@ -273,7 +624,7 @@ class ChunkingOrchestrator:
             logger.info(f"  Moderate (5% merge): {percentile_values[percentiles.index(95)]:.3f}")
             logger.info(f"  Aggressive (10% merge): {percentile_values[percentiles.index(90)]:.3f}")
             
-            return {
+            result = {
                 'overall_stats': overall_stats,
                 'document_stats': doc_stats,
                 'recommendations': {
@@ -284,14 +635,31 @@ class ChunkingOrchestrator:
             }
         else:
             logger.warning("No adjacent sentence pairs found for similarity analysis")
-            return {
+            result = {
                 'overall_stats': {},
                 'document_stats': doc_stats,
                 'recommendations': {}
             }
+        
+        # Save step data with unified caching (Step 3.5)
+        step_data = {
+            'similarity_analysis': result,
+            'analysis_metadata': {
+                'total_documents_analyzed': len(doc_stats),
+                'analysis_type': 'adjacent_sentence_similarity',
+                'similarity_metric': 'cosine_similarity',
+                'percentiles_calculated': [10, 25, 50, 75, 90, 95, 99],
+                'test_thresholds': [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+            }
+        }
+        
+        self.cache_manager.save_step_data(4, "similarity_analysis", step_data, experiment_name)
+        
+        return result
     
     def merge_semantic_sentences(self, doc_sentences: Dict[str, List[str]], 
-                               doc_embeddings: Dict[str, List[List[float]]]) -> Dict[str, List[Dict[str, Any]]]:
+                               doc_embeddings: Dict[str, List[List[float]]], 
+                               experiment_name: str = None) -> Dict[str, List[Dict[str, Any]]]:
         """
         Step 4: Merge semantically similar sentences using semantic_merger.py.
         
@@ -347,123 +715,45 @@ class ChunkingOrchestrator:
             
             logger.debug(f"Document {doc_id}: {len(sentences)} sentences → {len(chunks)} chunks")
         
+        # Save step data with unified caching
+        chunk_hashes = {}
+        for doc_id, chunks in doc_chunks.items():
+            doc_chunk_hashes = {}
+            for i, chunk in enumerate(chunks):
+                chunk_hash = self.cache_manager._generate_content_hash(chunk['content'])
+                doc_chunk_hashes[i] = {
+                    'chunk_hash': chunk_hash,
+                    'token_count': chunk['token_count'],
+                    'sentence_count': chunk['sentence_count'],
+                    'start_sentence': chunk['start_sentence'],
+                    'end_sentence': chunk['end_sentence']
+                }
+            chunk_hashes[doc_id] = doc_chunk_hashes
+        
+        step_data = {
+            'document_chunks': doc_chunks,
+            'chunk_metadata': chunk_hashes,
+            'merging_statistics': {
+                'total_documents': len(doc_chunks),
+                'total_chunks': total_chunks,
+                'avg_chunks_per_doc': total_chunks / len(doc_chunks) if doc_chunks else 0,
+                'total_input_sentences': sum(len(sentences) for sentences in doc_sentences.values()),
+                'merge_reduction_rate': 1 - (total_chunks / sum(len(sentences) for sentences in doc_sentences.values())) if doc_sentences else 0,
+                'config_used': {
+                    'similarity_threshold': self.config['semantic_merging']['similarity_threshold'],
+                    'max_merge_distance': self.config['semantic_merging']['max_merge_distance'],
+                    'max_chunk_size': self.config['semantic_merging']['max_chunk_size']
+                }
+            }
+        }
+        
+        self.cache_manager.save_step_data(5, "semantic_merging", step_data, experiment_name)
+        
         logger.info(f"✅ Merged {len(doc_chunks)} documents into {total_chunks} chunks")
         return doc_chunks
     
-    def save_artifacts(self, doc_sentences: Dict[str, List[str]], 
-                      doc_embeddings: Dict[str, List[List[float]]],
-                      doc_chunks: Dict[str, List[Dict[str, Any]]],
-                      similarity_stats: Dict[str, Any],
-                      input_file: str,
-                      experiment_name: str = None) -> Dict[str, str]:
-        """
-        Save all intermediate artifacts for debugging and reuse.
-        
-        Args:
-            doc_sentences: Document sentences from step 2
-            doc_embeddings: Document embeddings from step 3
-            doc_chunks: Document chunks from step 4
-            similarity_stats: Similarity analysis results
-            input_file: Original input file path
-            experiment_name: Optional experiment name for file naming
-            
-        Returns:
-            Dictionary of saved file paths
-        """
-        logger.info("💾 Saving artifacts")
-        
-        # Generate base filename from input file
-        input_path = Path(input_file)
-        base_name = input_path.stem
-        
-        # Add experiment name if provided
-        if experiment_name:
-            base_name = f"{base_name}_{experiment_name}"
-        
-        # Add timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name = f"{base_name}_{timestamp}"
-        
-        saved_files = {}
-        
-        # Save sentences
-        sentences_file = self.processed_dir / f"{base_name}_sentences.json"
-        sentences_data = {
-            'metadata': {
-                'input_file': input_file,
-                'experiment_name': experiment_name,
-                'generated_at': datetime.now().isoformat(),
-                'total_documents': len(doc_sentences),
-                'total_sentences': sum(len(sentences) for sentences in doc_sentences.values())
-            },
-            'sentences': doc_sentences
-        }
-        
-        with open(sentences_file, 'w', encoding='utf-8') as f:
-            json.dump(sentences_data, f, indent=2, ensure_ascii=False)
-        saved_files['sentences'] = str(sentences_file)
-        
-        # Save chunks (main output)
-        chunks_file = self.processed_dir / f"{base_name}_chunks.json"
-        chunks_data = {
-            'metadata': {
-                'input_file': input_file,
-                'experiment_name': experiment_name,
-                'config_params': self.config,
-                'generated_at': datetime.now().isoformat(),
-                'total_documents': len(doc_chunks),
-                'total_chunks': sum(len(chunks) for chunks in doc_chunks.values())
-            },
-            'chunks': doc_chunks
-        }
-        
-        with open(chunks_file, 'w', encoding='utf-8') as f:
-            json.dump(chunks_data, f, indent=2, ensure_ascii=False)
-        saved_files['chunks'] = str(chunks_file)
-        
-        # Save similarity analysis
-        similarity_file = self.processed_dir / f"{base_name}_similarity_analysis.json"
-        similarity_data = {
-            'metadata': {
-                'input_file': input_file,
-                'experiment_name': experiment_name,
-                'generated_at': datetime.now().isoformat(),
-                'analysis_type': 'adjacent_sentence_similarity'
-            },
-            'similarity_stats': similarity_stats
-        }
-        
-        with open(similarity_file, 'w', encoding='utf-8') as f:
-            json.dump(similarity_data, f, indent=2, ensure_ascii=False)
-        saved_files['similarity_analysis'] = str(similarity_file)
-        
-        # Save experiment log
-        log_file = self.processed_dir / f"{base_name}_experiment_log.json"
-        log_data = {
-            'experiment_name': experiment_name,
-            'input_file': input_file,
-            'config_file': 'chunking_config.toml',
-            'config_params': self.config,
-            'results': {
-                'total_documents': len(doc_chunks),
-                'total_chunks': sum(len(chunks) for chunks in doc_chunks.values()),
-                'avg_chunks_per_doc': sum(len(chunks) for chunks in doc_chunks.values()) / len(doc_chunks) if doc_chunks else 0
-            },
-            'artifacts': saved_files,
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        with open(log_file, 'w', encoding='utf-8') as f:
-            json.dump(log_data, f, indent=2, ensure_ascii=False)
-        saved_files['experiment_log'] = str(log_file)
-        
-        logger.info(f"✅ Saved {len(saved_files)} artifact files")
-        for artifact_type, file_path in saved_files.items():
-            logger.info(f"  {artifact_type}: {file_path}")
-        
-        return saved_files
     
-    async def run_full_pipeline(self, input_file: str, experiment_name: Optional[str] = None) -> Dict[str, str]:
+    async def run_full_pipeline(self, input_file: str, experiment_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Run the complete 4-step chunking pipeline.
         
@@ -491,28 +781,81 @@ class ChunkingOrchestrator:
             # Step 1: Load documents
             documents = self.load_collected_documents(input_file)
             
-            # Step 2: Split into sentences
-            doc_sentences = self.split_documents_into_sentences(documents)
+            # Check for Step 3 cache with matching config (simplified two-stage approach)
+            cache_matched, step2_data, step3_data, step4_data = self._check_cached_pipeline_stage(experiment_name, input_file)
             
-            # Step 3: Generate embeddings
-            doc_embeddings = await self.generate_sentence_embeddings(doc_sentences)
+            if cache_matched:
+                # Use cached data for Steps 2-4
+                logger.info("♻️ Using cached data for Steps 2-4 (config matched)")
+                
+                # Extract data from cached steps
+                doc_sentences = {}
+                if 'document_sentences' in step2_data:
+                    # Convert indexed sentences back to simple lists
+                    for doc_id, indexed_sentences in step2_data['document_sentences'].items():
+                        doc_sentences[doc_id] = [sent_info['content'] for sent_info in indexed_sentences.values()]
+                
+                doc_embeddings = step3_data.get('document_embeddings', {})
+                similarity_stats = step4_data.get('similarity_analysis', {})
+                
+                logger.info(f"♻️ Loaded: {len(doc_sentences)} documents, {sum(len(s) for s in doc_sentences.values())} sentences, {len(doc_embeddings)} embedding sets")
+                
+            else:
+                # Run Steps 2-4 from scratch (bypassing individual step caching)
+                logger.info("🔄 Running Steps 2-4 from scratch (no matching cache)")
+                
+                # Step 2: Split into sentences
+                doc_sentences = self.split_documents_into_sentences(documents, experiment_name, input_file)
+                
+                # Step 3: Generate embeddings
+                doc_embeddings = await self.generate_sentence_embeddings(doc_sentences, experiment_name, input_file)
+                
+                # Step 4: Analyze similarity distribution
+                similarity_stats = self.analyze_similarity_distribution(doc_sentences, doc_embeddings, experiment_name)
             
-            # Step 3.5: Analyze similarity distribution
-            similarity_stats = self.analyze_similarity_distribution(doc_sentences, doc_embeddings)
+            # Step 5: Always run semantic merging (fast and shows current results)
+            logger.info("🔄 Running Step 5: Semantic merging (always executed)")
+            doc_chunks = self.merge_semantic_sentences(doc_sentences, doc_embeddings, experiment_name)
             
-            # Step 4: Merge sentences using config parameters
-            doc_chunks = self.merge_semantic_sentences(doc_sentences, doc_embeddings)
+            # Get cache summary and add merging statistics
+            cache_summary = self.cache_manager.get_cache_summary()
             
-            # Save artifacts
-            saved_files = self.save_artifacts(
-                doc_sentences, doc_embeddings, doc_chunks, similarity_stats,
-                input_file, experiment_name
-            )
+            # Calculate overall merging statistics
+            total_input_sentences = sum(len(sentences) for sentences in doc_sentences.values())
+            total_output_chunks = sum(len(chunks) for chunks in doc_chunks.values())
+            reduction_rate = 1 - (total_output_chunks / total_input_sentences) if total_input_sentences > 0 else 0
+            
+            # Calculate chunk size statistics
+            all_chunk_tokens = []
+            all_chunk_sentence_counts = []
+            for chunks in doc_chunks.values():
+                for chunk in chunks:
+                    all_chunk_tokens.append(chunk['token_count'])
+                    all_chunk_sentence_counts.append(chunk['sentence_count'])
+            
+            # Add merging statistics to cache summary
+            cache_summary['merging_statistics'] = {
+                'total_input_sentences': total_input_sentences,
+                'total_output_chunks': total_output_chunks,
+                'reduction_rate': reduction_rate,
+                'reduction_percentage': reduction_rate * 100,
+                'avg_chunk_tokens': sum(all_chunk_tokens) / len(all_chunk_tokens) if all_chunk_tokens else 0,
+                'max_chunk_tokens': max(all_chunk_tokens) if all_chunk_tokens else 0,
+                'min_chunk_tokens': min(all_chunk_tokens) if all_chunk_tokens else 0,
+                'avg_sentences_per_chunk': sum(all_chunk_sentence_counts) / len(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
+                'max_sentences_per_chunk': max(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
+                'min_sentences_per_chunk': min(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
+                'config_used': {
+                    'similarity_threshold': self.config['semantic_merging']['similarity_threshold'],
+                    'max_merge_distance': self.config['semantic_merging']['max_merge_distance'],
+                    'max_chunk_size': self.config['semantic_merging']['max_chunk_size']
+                }
+            }
             
             elapsed_time = time.time() - start_time
             logger.info(f"✅ Pipeline completed successfully in {elapsed_time:.2f} seconds")
             
-            return saved_files
+            return cache_summary
             
         except Exception as e:
             logger.error(f"❌ Pipeline failed: {str(e)}")
@@ -553,7 +896,7 @@ async def main():
             print(f"🏷️  Experiment name: {args.experiment_name}")
         
         # Run pipeline
-        saved_files = await orchestrator.run_full_pipeline(
+        cache_summary = await orchestrator.run_full_pipeline(
             input_file=args.input_file,
             experiment_name=args.experiment_name
         )
@@ -563,9 +906,22 @@ async def main():
         print("📊 CHUNKING PIPELINE RESULTS")
         print("="*60)
         print(f"✅ Pipeline completed successfully!")
-        print(f"📁 Saved artifacts:")
-        for artifact_type, file_path in saved_files.items():
-            print(f"  • {artifact_type}: {file_path}")
+        print(f"🆔 Experiment ID: {cache_summary['experiment_id']}")
+        print(f"📁 Step files created: {cache_summary['total_step_files']}")
+        print(f"📂 Cache directory: {cache_summary['cached_dir']}")
+        print("\n📋 Step-by-step artifacts:")
+        for step in cache_summary['steps_cached']:
+            print(f"  • Step {step['step_number']} ({step['step_name']}): {step['file_size_mb']:.2f} MB")
+        
+        # Show merging statistics
+        if 'merging_statistics' in cache_summary:
+            merging_stats = cache_summary['merging_statistics']
+            print(f"\n🔄 Semantic Merging Results:")
+            print(f"  📊 Reduction: {merging_stats['total_input_sentences']} sentences → {merging_stats['total_output_chunks']} chunks ({merging_stats['reduction_percentage']:.1f}% reduction)")
+            print(f"  📏 Chunk sizes: {merging_stats['min_chunk_tokens']}-{merging_stats['max_chunk_tokens']} tokens (avg: {merging_stats['avg_chunk_tokens']:.1f})")
+            print(f"  📝 Sentences per chunk: {merging_stats['min_sentences_per_chunk']}-{merging_stats['max_sentences_per_chunk']} (avg: {merging_stats['avg_sentences_per_chunk']:.1f})")
+            print(f"  ⚙️  Config: threshold={merging_stats['config_used']['similarity_threshold']}, max_distance={merging_stats['config_used']['max_merge_distance']}, max_size={merging_stats['config_used']['max_chunk_size']}")
+        
         print("="*60)
         
         # Show cache info

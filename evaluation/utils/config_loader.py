@@ -124,7 +124,7 @@ class ConfigLoader:
             embeddings = config['embeddings']
             
             # Required fields in embeddings section
-            required_embedding_fields = ['model', 'batch_size', 'cache_dir']
+            required_embedding_fields = ['model', 'batch_size']
             for field in required_embedding_fields:
                 if field not in embeddings:
                     raise ValueError(f"Missing required field: embeddings.{field}")
@@ -137,10 +137,6 @@ class ConfigLoader:
             batch_size = embeddings['batch_size']
             if not isinstance(batch_size, int) or batch_size <= 0:
                 raise ValueError(f"embeddings.batch_size must be a positive integer, got {batch_size}")
-            
-            cache_dir = embeddings['cache_dir']
-            if not isinstance(cache_dir, str) or not cache_dir.strip():
-                raise ValueError(f"embeddings.cache_dir must be a non-empty string, got {cache_dir}")
             
             logger.info("Configuration validation passed")
             return True
