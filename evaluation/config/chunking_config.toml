@@ -12,21 +12,11 @@ western_punctuation = [".", "!", "?", "..."]
 quote_pairs = [
     ["\"", "\""],        # ASCII double quotes (ambiguous)
     ["'", "'"],          # ASCII single quotes (ambiguous)
-    ["\u201c", "\u201d"],  # Curved double quotes " " (unambiguous)
-    ["\u2018", "\u2019"],  # Curved single quotes ' ' (unambiguous)
+    ["\u201c", "\u201d"],  # Curved/Chinese double quotes " " (unambiguous)
+    ["\u2018", "\u2019"],  # Curved/Chinese single quotes ' ' (unambiguous)
     ["\u300c", "\u300d"],  # Chinese corner brackets 「 」 (unambiguous)
     ["\u300e", "\u300f"],  # Chinese double corner brackets 『 』 (unambiguous)
     ["\u00ab", "\u00bb"]   # French guillemets « » (unambiguous)
-]
-
-# Derived flat list for pattern matching (maintained for compatibility)
-quotation_marks = [
-    "\"", "'",           # ASCII quotes
-    "\u201c", "\u201d",  # Curved double quotes " "
-    "\u2018", "\u2019",  # Curved single quotes ' '
-    "\u300c", "\u300d",  # Chinese corner brackets 「 」
-    "\u300e", "\u300f",  # Chinese double corner brackets 『 』
-    "\u00ab", "\u00bb"   # French guillemets « »
 ]
 
 # English abbreviations that should NOT trigger sentence splits
@@ -60,21 +50,20 @@ similarity_threshold = 0.85
 # Maximum number of sentences to merge in one chunk
 max_merge_distance = 3
 
-# Context window for adjacent chunk context
-context_window_size = 2
-
-[token_optimization]
-# Target chunk size in tokens
-target_chunk_size = 500
-
-# Maximum allowed chunk size
-max_chunk_size = 600
-
-# Minimum chunk size (chunks smaller than this will be merged)
-min_chunk_size = 100
-
-# Overlap between adjacent chunks in tokens
-overlap_tokens = 75
+# Maximum chunk size in tokens (merging stops when this would be exceeded)
+# 
+# NOTE: Token counting depends on the tokenizer used:
+# - OpenAI tokenizers (tiktoken): Subword-based tokenization
+#   * English/French: Common words = 1 token, complex words = 2-4 tokens
+#   * Chinese: Characters often 1-2 tokens each, but varies by context
+#   * Example: "Hello world" = 2 tokens, "你好世界" = 4 tokens
+# - Other tokenizers may count differently (whitespace, character-based, etc.)
+# 
+# For reference with OpenAI's cl100k_base tokenizer:
+# - English: ~1 token per 0.75 words (750 words ≈ 1000 tokens)
+# - Chinese: ~1 token per 0.5-1 characters (500-1000 characters ≈ 1000 tokens)
+# - Mixed content: Token density varies by language ratio
+max_chunk_size = 500
 
 [embeddings]
 # Embedding model for semantic similarity

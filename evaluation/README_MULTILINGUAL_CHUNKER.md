@@ -4,30 +4,25 @@ A robust text chunking system supporting Chinese, English, and French languages 
 
 - **Paired Quotation Mark Detection**: Distinguishes opening/closing quotes
 - **Abbreviation Protection**: Prevents splitting on "Dr.", "Ph.D.", etc.
-- **Semantic Similarity Merging**: Groups related sentences
-- **Token-based Optimization**: Maintains optimal chunk sizes
+- **Token-Aware Semantic Merging**: Groups related sentences while respecting token limits
 - **Multi-language Support**: Handles mixed-language documents
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    MultiLingualChunker                         │
+│                    MultiLingualChunker                          │
 ├─────────────────────────────────────────────────────────────────┤
-│  1. RobustSentenceSplitter                                     │
-│     ├── QuoteStateMachine (paired quote detection)             │
-│     ├── Abbreviation protection                                │
-│     └── Multi-language punctuation support                     │
-│                                                                │
-│  2. SemanticMerger                                             │
-│     ├── Embedding-based similarity                            │
-│     ├── Adjacent sentence context                             │
-│     └── Configurable similarity threshold                     │
-│                                                                │
-│  3. TokenOptimizer                                             │
-│     ├── Target chunk size enforcement                         │
-│     ├── Token-based splitting                                 │
-│     └── Overlap management                                     │
+│  1. RobustSentenceSplitter                                      │
+│     ├── QuoteStateMachine (paired quote detection)              │
+│     ├── Abbreviation protection                                 │
+│     └── Multi-language punctuation support                      │
+│                                                                 │
+│  2. Token-Aware SemanticMerger                                  │
+│     ├── Embedding-based similarity                              │
+│     ├── Adjacent sentence context                               │
+│     ├── Configurable similarity threshold                       │
+│     └── Token limit enforcement during merging                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -36,9 +31,6 @@ A robust text chunking system supporting Chinese, English, and French languages 
 ### 1. Install Dependencies
 
 ```bash
-cd evaluation
-pip install -r requirements.txt
-# or with uv:
 uv sync
 ```
 
@@ -66,14 +58,14 @@ Configuration is managed through `config/chunking_config.toml`:
 chinese_punctuation = ["。", "！", "？", "；"]
 western_punctuation = [".", "!", "?"]
 
-# Quotation marks (all supported types)
-quotation_marks = [
-    "\"", "'",           # ASCII quotes
-    "\u201c", "\u201d",  # Curved quotes " "
-    "\u2018", "\u2019",  # Single quotes ' '
-    "\u300c", "\u300d",  # Chinese brackets 「 」
-    "\u300e", "\u300f",  # Chinese double brackets 『 』
-    "\u00ab", "\u00bb"   # French guillemets « »
+# Quotation mark pairs (opening/closing)
+quote_pairs = [
+    ["\"", "\""],         # ASCII quotes
+    ["\u201c", "\u201d"], # Curved quotes " "
+    ["\u2018", "\u2019"], # Single quotes ' '
+    ["\u300c", "\u300d"], # Chinese brackets 「 」
+    ["\u300e", "\u300f"], # Chinese double brackets 『 』
+    ["\u00ab", "\u00bb"]  # French guillemets « »
 ]
 
 # Abbreviations that should NOT trigger splits
@@ -88,14 +80,17 @@ english_abbreviations = [
 similarity_threshold = 0.85
 # Maximum sentences to merge
 max_merge_distance = 3
+# Maximum chunk size in tokens (enforced during merging)
+max_chunk_size = 500
 
-[token_optimization]
-# Target chunk size in tokens
-target_chunk_size = 500
-# Maximum allowed size
-max_chunk_size = 600
-# Overlap between chunks
-overlap_tokens = 75
+# Token Counting Notes:
+# - Uses OpenAI's tiktoken cl100k_base tokenizer
+# - Token density varies by language:
+#   * English: ~0.75 words/token ("Hello world" = 2 tokens)
+#   * Chinese: ~0.5-1 characters/token ("你好世界" = 4 tokens)
+#   * French: ~0.7-0.8 words/token ("Bonjour monde" = 3 tokens)
+# - Punctuation and spaces count as separate tokens
+# - Consider language mix when setting max_chunk_size
 ```
 
 ## Usage Examples
@@ -130,7 +125,7 @@ chunks = await chunker.chunk_text(text, document_id="example")
 for chunk in chunks:
     print(f"Chunk: {chunk.content}")
     print(f"Sentences: {chunk.start_sentence}-{chunk.end_sentence}")
-    print(f"Context: {chunk.context_before}")
+    print(f"Token count: {len(chunk.content.split())}")  # Approximate
     print("---")
 ```
 
@@ -141,13 +136,16 @@ for chunk in chunks:
 custom_config = {
     'chinese_punctuation': ['。', '！', '？'],
     'western_punctuation': ['.', '!', '?'],
-    'quotation_marks': ['"', "'", '"', '"'],
+    'quote_pairs': [
+        ['"', '"'],         # ASCII quotes
+        ['"', '"'],         # Curved quotes
+        ['「', '」']         # Chinese brackets
+    ],
     'english_abbreviations': ['Dr', 'Mr', 'Mrs', 'Ph\\.D'],
     'french_abbreviations': ['M', 'Mme', 'Dr'],
     'similarity_threshold': 0.8,
     'max_merge_distance': 2,
-    'target_chunk_size': 400,
-    'max_chunk_size': 500,
+    'max_chunk_size': 400,
 }
 
 chunker = MultiLingualChunker(
@@ -201,9 +199,9 @@ chunks = await chunker.chunk_text(text)
 ### 2. Paired Quote Detection
 
 **QuoteStateMachine logic:**
-- Unambiguous quotes (different open/close): `"text"` vs `"text"`
-- Ambiguous quotes (same char): Uses context heuristics
-- Multiple quote types: `"English" and 「Chinese」 and « French »`
+- Structured quote pairs: `[["\"", "\""]]` for unambiguous open/close detection
+- Multiple quote types: `"English"` and `「Chinese」` and `« French »`
+- Context-aware handling of ambiguous quotes
 
 ### 3. Abbreviation Protection
 
@@ -213,20 +211,20 @@ chunks = await chunker.chunk_text(text)
 - Business: `Inc.`, `Ltd.`, `Corp.`
 - Time: `a.m.`, `p.m.`
 
-### 4. Semantic Merging
+### 4. Token-Aware Semantic Merging
 
-**Groups related sentences:**
+**Intelligent sentence grouping:**
 - Calculates embedding similarity between adjacent sentences
 - Merges sentences above similarity threshold
-- Maintains context windows for better understanding
+- **Enforces token limits during merging** - stops merging when token limit would be exceeded
+- Maintains semantic coherence while respecting size constraints
 
-### 5. Token Optimization
+### 5. Multilingual Token Handling
 
-**Maintains optimal chunk sizes:**
-- Target chunk size: 500 tokens
-- Maximum allowed: 600 tokens
-- Splits oversized chunks intelligently
-- Adds overlap between chunks
+**Language-aware token counting:**
+- Uses OpenAI's tiktoken cl100k_base tokenizer
+- Understands different token densities across languages
+- Handles mixed-language documents appropriately
 
 ## Performance
 
@@ -244,16 +242,19 @@ chunks = await chunker.chunk_text(text)
    - Use escaped dots: `Ph\\.D` not `Ph.D`
 
 2. **Quotes not handled correctly**
-   - Check quotation mark Unicode characters
+   - Check quotation mark Unicode characters in `quote_pairs`
    - Verify quote pairing logic in logs
+   - Ensure proper opening/closing pair structure
 
-3. **Chunks too large/small**
-   - Adjust `target_chunk_size` and `max_chunk_size`
+3. **Chunks too large**
+   - Reduce `max_chunk_size` in semantic_merging section
    - Check tokenizer compatibility
+   - Consider language-specific token density
 
 4. **Semantic merging not working**
    - Verify embedding service is working
    - Adjust `similarity_threshold` (lower = more merging)
+   - Check `max_merge_distance` setting
 
 ### Debug Mode
 
@@ -297,6 +298,31 @@ Results are saved to `logs/chunking_results/` with:
 - Language detection statistics
 - Configuration used
 - Error reports
+
+## Token Counting Guide
+
+### Understanding Token Density
+
+Different languages have varying token densities when using OpenAI's tiktoken:
+
+**English** (~0.75 words/token):
+- "Hello world" = 2 tokens
+- "The quick brown fox" = 4 tokens
+
+**Chinese** (~0.5-1 characters/token):
+- "你好世界" = 4 tokens
+- "这是一个例子" = 6 tokens
+
+**French** (~0.7-0.8 words/token):
+- "Bonjour monde" = 3 tokens
+- "C'est un exemple" = 4 tokens
+
+### Setting max_chunk_size
+
+Consider your document's language mix:
+- **English-heavy**: 500-600 tokens ≈ 375-450 words
+- **Chinese-heavy**: 500-600 tokens ≈ 250-600 characters
+- **Mixed languages**: Start with 500 tokens and adjust based on results
 
 ## Future Enhancements
 

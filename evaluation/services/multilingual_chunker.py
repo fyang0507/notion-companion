@@ -5,8 +5,7 @@ Handles:
 - Robust sentence boundary detection
 - Paired quotation marks (only closing quotes end sentences)
 - Abbreviation detection to avoid false splits
-- Semantic similarity merging
-- Token-based optimization
+- Token-aware semantic similarity merging
 """
 
 import re
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChunkResult:
-    """Result of chunking operation"""
+    """Result of chunking operation for evaluation dataset preparation"""
     content: str
     start_sentence: int
     end_sentence: int
@@ -246,10 +245,11 @@ class RobustSentenceSplitter:
 
 
 class SemanticMerger:
-    """Merge semantically similar adjacent sentences into chunks"""
+    """Merge semantically similar adjacent sentences into chunks with token-aware limits"""
     
-    def __init__(self, embedding_service, config: Dict):
+    def __init__(self, embedding_service, tokenizer, config: Dict):
         self.embedding_service = embedding_service
+        self.tokenizer = tokenizer
         
         # Require semantic_merging configuration - fail hard if missing
         if 'semantic_merging' not in config:
@@ -262,9 +262,12 @@ class SemanticMerger:
             raise ValueError("Missing required 'similarity_threshold' in semantic_merging configuration")
         if 'max_merge_distance' not in semantic_config:
             raise ValueError("Missing required 'max_merge_distance' in semantic_merging configuration")
+        if 'max_chunk_size' not in semantic_config:
+            raise ValueError("Missing required 'max_chunk_size' in semantic_merging configuration")
             
         self.similarity_threshold = semantic_config['similarity_threshold']
         self.max_merge_distance = semantic_config['max_merge_distance']
+        self.max_chunk_size = semantic_config['max_chunk_size']
     
     async def merge_sentences(self, sentences: List[str]) -> List[ChunkResult]:
         """Merge semantically similar adjacent sentences"""
@@ -303,7 +306,7 @@ class SemanticMerger:
         return similarity_matrix
     
     def _merge_by_similarity(self, sentences: List[str], similarity_matrix: np.ndarray) -> List[ChunkResult]:
-        """Merge adjacent sentences based on similarity threshold"""
+        """Merge adjacent sentences based on similarity threshold with token-aware limits"""
         chunks = []
         i = 0
         
@@ -314,10 +317,20 @@ class SemanticMerger:
             
             # Look ahead for similar sentences to merge
             merge_count = 0
-            while (j < len(sentences) and 
-                   merge_count < self.max_merge_distance and
-                   similarity_matrix[i][j] >= self.similarity_threshold):
+            while j < len(sentences) and merge_count < self.max_merge_distance:
+                # Check semantic similarity
+                if similarity_matrix[i][j] < self.similarity_threshold:
+                    break
                 
+                # Check token count before adding sentence
+                test_content = ' '.join(chunk_sentences + [sentences[j]])
+                token_count = len(self.tokenizer.encode(test_content))
+                
+                if token_count > self.max_chunk_size:
+                    # Would exceed token limit, stop merging
+                    break
+                
+                # Safe to add this sentence
                 chunk_sentences.append(sentences[j])
                 merge_count += 1
                 j += 1
@@ -326,151 +339,17 @@ class SemanticMerger:
             chunk = ChunkResult(
                 content=' '.join(chunk_sentences),
                 start_sentence=start_idx,
-                end_sentence=j - 1,
-                context_before=self._get_context_before(sentences, start_idx),
-                context_after=self._get_context_after(sentences, j - 1)
+                end_sentence=j - 1
             )
             
             chunks.append(chunk)
             i = j
         
         return chunks
-    
-    def _get_context_before(self, sentences: List[str], start_idx: int, context_size: int = 2) -> str:
-        """Get context sentences before the chunk"""
-        if start_idx == 0:
-            return ""
-        
-        context_start = max(0, start_idx - context_size)
-        context_sentences = sentences[context_start:start_idx]
-        return ' '.join(context_sentences)
-    
-    def _get_context_after(self, sentences: List[str], end_idx: int, context_size: int = 2) -> str:
-        """Get context sentences after the chunk"""
-        if end_idx >= len(sentences) - 1:
-            return ""
-        
-        context_end = min(len(sentences), end_idx + 1 + context_size)
-        context_sentences = sentences[end_idx + 1:context_end]
-        return ' '.join(context_sentences)
-
-
-class TokenOptimizer:
-    """Optimize chunk length based on token count"""
-    
-    def __init__(self, tokenizer, config: Dict):
-        self.tokenizer = tokenizer
-        
-        # Require token_optimization configuration - fail hard if missing
-        if 'token_optimization' not in config:
-            raise ValueError("Missing required 'token_optimization' configuration section")
-        
-        token_config = config['token_optimization']
-        
-        # Require key token optimization parameters
-        if 'target_chunk_size' not in token_config:
-            raise ValueError("Missing required 'target_chunk_size' in token_optimization configuration")
-        if 'max_chunk_size' not in token_config:
-            raise ValueError("Missing required 'max_chunk_size' in token_optimization configuration")
-        if 'overlap_tokens' not in token_config:
-            raise ValueError("Missing required 'overlap_tokens' in token_optimization configuration")
-            
-        self.target_chunk_size = token_config['target_chunk_size']
-        self.max_chunk_size = token_config['max_chunk_size']
-        self.overlap_tokens = token_config['overlap_tokens']
-        
-        # Require chunking configuration for punctuation pattern
-        if 'chunking' not in config:
-            raise ValueError("Missing required 'chunking' configuration section")
-        
-        chunking_config = config['chunking']
-        
-        if 'chinese_punctuation' not in chunking_config:
-            raise ValueError("Missing required 'chinese_punctuation' in chunking configuration")
-        if 'western_punctuation' not in chunking_config:
-            raise ValueError("Missing required 'western_punctuation' in chunking configuration")
-        
-        # Build sentence punctuation pattern from config
-        all_punctuation = (
-            chunking_config['chinese_punctuation'] + 
-            chunking_config['western_punctuation']
-        )
-        # Escape special regex characters and join for pattern
-        escaped_punct = [re.escape(p) for p in all_punctuation]
-        self.sentence_punctuation_pattern = '[' + ''.join(escaped_punct) + ']+'
-    
-    def optimize_chunks(self, chunks: List[ChunkResult]) -> List[ChunkResult]:
-        """Optimize chunk sizes based on token count"""
-        optimized_chunks = []
-        
-        for chunk in chunks:
-            token_count = len(self.tokenizer.encode(chunk.content))
-            
-            if token_count <= self.target_chunk_size:
-                # Chunk is good size
-                optimized_chunks.append(chunk)
-            elif token_count <= self.max_chunk_size:
-                # Chunk is acceptable but large
-                optimized_chunks.append(chunk)
-            else:
-                # Chunk is too large, need to split
-                split_chunks = self._split_large_chunk(chunk)
-                optimized_chunks.extend(split_chunks)
-        
-        # Add overlap between chunks
-        return self._add_chunk_overlap(optimized_chunks)
-    
-    def _split_large_chunk(self, chunk: ChunkResult) -> List[ChunkResult]:
-        """Split a chunk that's too large"""
-        # Simple sentence-based splitting for now
-        sentences = re.split(self.sentence_punctuation_pattern, chunk.content)
-        sentences = [s.strip() for s in sentences if s.strip()]
-        
-        sub_chunks = []
-        current_content = ""
-        current_sentences = []
-        
-        for sentence in sentences:
-            test_content = current_content + (" " if current_content else "") + sentence
-            token_count = len(self.tokenizer.encode(test_content))
-            
-            if token_count <= self.target_chunk_size:
-                current_content = test_content
-                current_sentences.append(sentence)
-            else:
-                # Save current chunk and start new one
-                if current_content:
-                    sub_chunks.append(ChunkResult(
-                        content=current_content,
-                        start_sentence=chunk.start_sentence,
-                        end_sentence=chunk.end_sentence
-                    ))
-                
-                current_content = sentence
-                current_sentences = [sentence]
-        
-        # Add final chunk
-        if current_content:
-            sub_chunks.append(ChunkResult(
-                content=current_content,
-                start_sentence=chunk.start_sentence,
-                end_sentence=chunk.end_sentence
-            ))
-        
-        return sub_chunks
-    
-    def _add_chunk_overlap(self, chunks: List[ChunkResult]) -> List[ChunkResult]:
-        """Add overlap between adjacent chunks"""
-        if len(chunks) <= 1:
-            return chunks
-        
-        # For now, implement basic overlap by extending chunk boundaries
-        # In a full implementation, this would extract overlapping sentences
-        return chunks
 
 
 class MultiLingualChunker:
-    """Main multi-lingual chunker service"""
+    """Main multi-lingual chunker service with integrated token-aware semantic merging"""
     
     def __init__(self, embedding_service, tokenizer, config: Dict):
         self.embedding_service = embedding_service
@@ -478,13 +357,12 @@ class MultiLingualChunker:
         self.config = config
         
         self.sentence_splitter = RobustSentenceSplitter(config)
-        self.semantic_merger = SemanticMerger(embedding_service, config)
-        self.token_optimizer = TokenOptimizer(tokenizer, config)
+        self.semantic_merger = SemanticMerger(embedding_service, tokenizer, config)
         
         logger.info("MultiLingualChunker initialized")
     
     async def chunk_text(self, text: str, document_id: str = None) -> List[ChunkResult]:
-        """Main chunking method for multi-lingual text"""
+        """Main chunking method for multi-lingual text with integrated token-aware semantic merging"""
         if not text.strip():
             return []
         
@@ -494,21 +372,16 @@ class MultiLingualChunker:
             sentences = self.sentence_splitter.split(text)
             logger.debug(f"Found {len(sentences)} sentences")
             
-            # Step 2: Semantic similarity merging
-            logger.debug("Performing semantic similarity merging")
+            # Step 2: Token-aware semantic similarity merging (integrated token limits)
+            logger.debug("Performing token-aware semantic similarity merging")
             chunks = await self.semantic_merger.merge_sentences(sentences)
             logger.debug(f"Created {len(chunks)} semantic chunks")
             
-            # Step 3: Token-based optimization
-            logger.debug("Optimizing chunk token lengths")
-            final_chunks = self.token_optimizer.optimize_chunks(chunks)
-            logger.debug(f"Final chunk count: {len(final_chunks)}")
-            
-            # Add metadata
-            for i, chunk in enumerate(final_chunks):
+            # Step 3: Add embeddings
+            for i, chunk in enumerate(chunks):
                 chunk.embedding = await self._get_chunk_embedding(chunk.content)
             
-            return final_chunks
+            return chunks
             
         except Exception as e:
             logger.error(f"Error chunking text: {str(e)}")

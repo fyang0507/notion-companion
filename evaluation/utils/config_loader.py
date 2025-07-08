@@ -89,7 +89,7 @@ class ConfigLoader:
         """
         try:
             # Check required sections exist
-            required_sections = ['chunking', 'semantic_merging', 'token_optimization', 'embeddings', 'performance']
+            required_sections = ['chunking', 'semantic_merging', 'embeddings', 'performance']
             for section in required_sections:
                 if section not in config:
                     raise ValueError(f"Missing required configuration section: {section}")
@@ -112,25 +112,13 @@ class ConfigLoader:
             if not isinstance(max_merge_distance, int) or max_merge_distance <= 0:
                 raise ValueError(f"max_merge_distance must be a positive integer, got {max_merge_distance}")
             
-            # Validate token_optimization section
-            token_opt = config['token_optimization']
-            required_token_fields = ['min_chunk_size', 'target_chunk_size', 'max_chunk_size']
-            for field in required_token_fields:
-                if field not in token_opt:
-                    raise ValueError(f"Missing required field: token_optimization.{field}")
-                value = token_opt[field]
-                if not isinstance(value, int) or value <= 0:
-                    raise ValueError(f"token_optimization.{field} must be a positive integer, got {value}")
+            # Validate token limits in semantic_merging section
+            if 'max_chunk_size' not in semantic_merging:
+                raise ValueError("Missing required field: semantic_merging.max_chunk_size")
             
-            min_chunk_size = token_opt['min_chunk_size']
-            target_chunk_size = token_opt['target_chunk_size']
-            max_chunk_size = token_opt['max_chunk_size']
-            
-            if min_chunk_size >= target_chunk_size:
-                raise ValueError(f"min_chunk_size ({min_chunk_size}) must be less than target_chunk_size ({target_chunk_size})")
-            
-            if target_chunk_size > max_chunk_size:
-                raise ValueError(f"target_chunk_size ({target_chunk_size}) must be <= max_chunk_size ({max_chunk_size})")
+            max_chunk_size = semantic_merging['max_chunk_size']
+            if not isinstance(max_chunk_size, int) or max_chunk_size <= 0:
+                raise ValueError(f"semantic_merging.max_chunk_size must be a positive integer, got {max_chunk_size}")
             
             logger.info("Configuration validation passed")
             return True

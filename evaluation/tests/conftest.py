@@ -226,13 +226,7 @@ def chunking_config() -> Dict[str, Any]:
         "semantic_merging": {
             "similarity_threshold": 0.85,
             "max_merge_distance": 3,
-            "context_window_size": 2
-        },
-        "token_optimization": {
-            "target_chunk_size": 500,
-            "max_chunk_size": 600,
-            "min_chunk_size": 100,
-            "overlap_tokens": 75
+            "max_chunk_size": 500
         },
         "embeddings": {
             "model": "text-embedding-3-small",
