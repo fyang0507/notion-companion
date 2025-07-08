@@ -75,7 +75,7 @@ class ChunkingOrchestrator:
         self.semantic_merger = SemanticMerger(self.tokenizer, self.config)
         
         # Create output directories
-        self.data_dir = Path("evaluation/data")
+        self.data_dir = Path(__file__).parent / "data"
         self.processed_dir = self.data_dir / "processed"
         self.processed_dir.mkdir(parents=True, exist_ok=True)
         
