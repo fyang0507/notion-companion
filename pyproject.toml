@@ -1,0 +1,101 @@
+[project]
+name = "notion-companion"
+version = "0.1.0"
+description = "AI-powered knowledge assistant with multi-lingual chunking and RAG capabilities"
+authors = [
+    {name = "Fred Yang"}
+]
+dependencies = [
+    # Backend dependencies
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "python-dotenv",
+    "httpx",
+    "python-multipart",
+    "click",
+    "h11",
+    "starlette",
+    "tiktoken",
+    "supabase",
+    "openai",
+    "notion-client",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.0.0",
+    "pytest-mock>=3.14.1",
+    "coverage>=7.9.2",
+    "respx>=0.22.0",
+    "numpy>=2.3.1",
+    "pytest-timeout>=2.4.0",
+]
+requires-python = ">=3.12"
+readme = "README.md"
+
+[project.optional-dependencies]
+dev = [
+    # Testing dependencies (only needed when running tests)
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "respx",
+    "coverage",
+    "trio",
+
+    # Evaluation dependencies
+    "numpy",
+    "typing-extensions",
+]
+
+evaluation = [
+    # Future evaluation-specific dependencies if needed
+    # (Currently evaluation only uses numpy and typing-extensions which are in main deps)
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*", "evaluation*", "components*", "lib*", "hooks*", "types*"]
+exclude = ["tests*", "docs*", "__tests__*", "node_modules*", ".next*", "logs*"]
+
+# Tool configurations only for tools that are actually used
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["backend/tests", "evaluation/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--disable-warnings",
+    "--asyncio-mode=auto",
+]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests", 
+    "api: API tests",
+    "slow: Slow running tests",
+    "anyio: Async tests using anyio",
+]
+
+# Coverage configuration (only used when running tests with coverage)
+[tool.coverage.run]
+source = ["backend", "evaluation"]
+omit = [
+    "*/tests/*",
+    "*/scripts/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+] 
