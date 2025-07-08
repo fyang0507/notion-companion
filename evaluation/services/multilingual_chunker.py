@@ -1,11 +1,14 @@
 """
 Multi-lingual text chunker for Chinese, English, and French text.
 
+Enhanced version with sentence-level embedding caching for fast parameter tuning.
+
 Handles:
 - Robust sentence boundary detection
 - Paired quotation marks (only closing quotes end sentences)
 - Abbreviation detection to avoid false splits
 - Token-aware semantic similarity merging
+- Sentence-level embedding caching for fast parameter experimentation
 """
 
 import re
@@ -13,6 +16,9 @@ import logging
 from typing import List, Dict, Tuple, Optional
 import numpy as np
 from dataclasses import dataclass
+
+# Import caching functionality  
+from .sentence_embedding_cache import SentenceEmbeddingCache
 
 logger = logging.getLogger(__name__)
 
@@ -245,11 +251,14 @@ class RobustSentenceSplitter:
 
 
 class SemanticMerger:
-    """Merge semantically similar adjacent sentences into chunks with token-aware limits"""
+    """Merge semantically similar adjacent sentences into chunks with token-aware limits and caching"""
     
-    def __init__(self, embedding_service, tokenizer, config: Dict):
+    def __init__(self, embedding_service, tokenizer, config: Dict, cache_dir: str = "data/cache"):
         self.embedding_service = embedding_service
         self.tokenizer = tokenizer
+        
+        # Initialize embedding cache
+        self.embedding_cache = SentenceEmbeddingCache(cache_dir)
         
         # Require semantic_merging configuration - fail hard if missing
         if 'semantic_merging' not in config:
@@ -270,7 +279,7 @@ class SemanticMerger:
         self.max_chunk_size = semantic_config['max_chunk_size']
     
     async def merge_sentences(self, sentences: List[str]) -> List[ChunkResult]:
-        """Merge semantically similar adjacent sentences"""
+        """Merge semantically similar adjacent sentences using cached embeddings"""
         if not sentences:
             return []
         
@@ -281,8 +290,13 @@ class SemanticMerger:
                 end_sentence=0
             )]
         
-        # Get embeddings for all sentences
-        embeddings = await self.embedding_service.generate_embeddings(sentences)
+        # Get embeddings with caching
+        logger.debug(f"Getting embeddings for {len(sentences)} sentences")
+        embeddings, cache_hits, cache_misses = await self.embedding_cache.get_embeddings(
+            sentences, self.embedding_service
+        )
+        
+        logger.info(f"Sentence embedding cache performance: {cache_hits} hits, {cache_misses} misses")
         
         # Calculate similarity matrix
         similarity_matrix = self._calculate_similarity_matrix(embeddings)
@@ -291,6 +305,14 @@ class SemanticMerger:
         chunks = self._merge_by_similarity(sentences, similarity_matrix)
         
         return chunks
+    
+    def get_cache_info(self) -> Dict:
+        """Get cache information and statistics"""
+        return self.embedding_cache.get_cache_info()
+    
+    def clear_cache(self):
+        """Clear embedding cache"""
+        self.embedding_cache.clear_cache()
     
     def _calculate_similarity_matrix(self, embeddings: List[List[float]]) -> np.ndarray:
         """Calculate cosine similarity matrix between all sentence embeddings"""
@@ -349,20 +371,21 @@ class SemanticMerger:
 
 
 class MultiLingualChunker:
-    """Main multi-lingual chunker service with integrated token-aware semantic merging"""
+    """Main multi-lingual chunker service with integrated token-aware semantic merging and caching"""
     
-    def __init__(self, embedding_service, tokenizer, config: Dict):
+    def __init__(self, embedding_service, tokenizer, config: Dict, cache_dir: str = "data/cache"):
         self.embedding_service = embedding_service
         self.tokenizer = tokenizer
         self.config = config
+        self.cache_dir = cache_dir
         
         self.sentence_splitter = RobustSentenceSplitter(config)
-        self.semantic_merger = SemanticMerger(embedding_service, tokenizer, config)
+        self.semantic_merger = SemanticMerger(embedding_service, tokenizer, config, cache_dir)
         
-        logger.info("MultiLingualChunker initialized")
+        logger.info("MultiLingualChunker initialized with caching")
     
     async def chunk_text(self, text: str, document_id: str = None) -> List[ChunkResult]:
-        """Main chunking method for multi-lingual text with integrated token-aware semantic merging"""
+        """Main chunking method for multi-lingual text with integrated token-aware semantic merging and caching"""
         if not text.strip():
             return []
         
@@ -372,8 +395,8 @@ class MultiLingualChunker:
             sentences = self.sentence_splitter.split(text)
             logger.debug(f"Found {len(sentences)} sentences")
             
-            # Step 2: Token-aware semantic similarity merging (integrated token limits)
-            logger.debug("Performing token-aware semantic similarity merging")
+            # Step 2: Token-aware semantic similarity merging with caching
+            logger.debug("Performing cached token-aware semantic similarity merging")
             chunks = await self.semantic_merger.merge_sentences(sentences)
             logger.debug(f"Created {len(chunks)} semantic chunks")
             
@@ -386,6 +409,65 @@ class MultiLingualChunker:
         except Exception as e:
             logger.error(f"Error chunking text: {str(e)}")
             raise
+    
+    def get_cache_info(self) -> Dict:
+        """Get comprehensive cache information"""
+        return self.semantic_merger.get_cache_info()
+    
+    def clear_cache(self):
+        """Clear all caching"""
+        self.semantic_merger.clear_cache()
+    
+    async def precompute_sentence_embeddings(self, documents: List[Dict]) -> Dict:
+        """
+        Precompute and cache sentence embeddings for all documents.
+        
+        This is useful for Step 2 preparation - cache all sentence embeddings
+        before experimenting with different chunk merging parameters.
+        
+        Args:
+            documents: List of document dictionaries with 'content' field
+            
+        Returns:
+            Statistics about the precomputation process
+        """
+        logger.info("Starting sentence embedding precomputation")
+        
+        total_sentences = 0
+        total_documents = len(documents)
+        cache_hits = 0
+        cache_misses = 0
+        
+        for i, doc in enumerate(documents):
+            content = doc.get('content', '')
+            if not content.strip():
+                continue
+            
+            logger.info(f"Precomputing embeddings for document {i+1}/{total_documents}")
+            
+            # Split into sentences
+            sentences = self.sentence_splitter.split(content)
+            total_sentences += len(sentences)
+            
+            # Get/cache embeddings
+            _, hits, misses = await self.semantic_merger.embedding_cache.get_embeddings(
+                sentences, self.embedding_service
+            )
+            
+            cache_hits += hits
+            cache_misses += misses
+        
+        stats = {
+            'total_documents': total_documents,
+            'total_sentences': total_sentences,
+            'cache_hits': cache_hits,
+            'cache_misses': cache_misses,
+            'hit_rate': cache_hits / (cache_hits + cache_misses) if (cache_hits + cache_misses) > 0 else 0,
+            'cache_info': self.get_cache_info()
+        }
+        
+        logger.info(f"Sentence embedding precomputation complete: {stats}")
+        return stats
     
     async def _get_chunk_embedding(self, content: str) -> List[float]:
         """Get embedding for chunk content"""
