@@ -81,33 +81,33 @@ class RobustSentenceSplitter:
     def __init__(self, config: Dict):
         self.config = config
         
-        # Require chunking configuration - fail hard if missing
-        if 'chunking' not in config:
-            raise ValueError("Missing required 'chunking' configuration section")
+        # Require sentence_splitter configuration - fail hard if missing
+        if 'sentence_splitter' not in config:
+            raise ValueError("Missing required 'sentence_splitter' configuration section")
         
-        chunking_config = config['chunking']
+        sentence_config = config['sentence_splitter']
         
         # Require sentence punctuation configuration first
-        if 'chinese_punctuation' not in chunking_config:
-            raise ValueError("Missing required 'chinese_punctuation' in chunking configuration")
-        if 'western_punctuation' not in chunking_config:
-            raise ValueError("Missing required 'western_punctuation' in chunking configuration")
+        if 'chinese_punctuation' not in sentence_config:
+            raise ValueError("Missing required 'chinese_punctuation' in sentence_splitter configuration")
+        if 'western_punctuation' not in sentence_config:
+            raise ValueError("Missing required 'western_punctuation' in sentence_splitter configuration")
             
         # Build combined sentence punctuation set from config
         self.sentence_punctuation = set(
-            chunking_config['chinese_punctuation'] + 
-            chunking_config['western_punctuation']
+            sentence_config['chinese_punctuation'] + 
+            sentence_config['western_punctuation']
         )
         
         # Require quote_pairs configuration
-        if 'quote_pairs' not in chunking_config:
-            raise ValueError("Missing required 'quote_pairs' in chunking configuration")
-        self.quote_machine = QuoteStateMachine(chunking_config['quote_pairs'], self.sentence_punctuation)
+        if 'quote_pairs' not in sentence_config:
+            raise ValueError("Missing required 'quote_pairs' in sentence_splitter configuration")
+        self.quote_machine = QuoteStateMachine(sentence_config['quote_pairs'], self.sentence_punctuation)
         
         # Build abbreviation pattern - these can be empty lists
         all_abbreviations = (
-            chunking_config.get('english_abbreviations', []) + 
-            chunking_config.get('french_abbreviations', [])
+            sentence_config.get('english_abbreviations', []) + 
+            sentence_config.get('french_abbreviations', [])
         )
         self.abbreviations_pattern = '|'.join(re.escape(abbr) for abbr in all_abbreviations)
         
@@ -119,14 +119,19 @@ class RobustSentenceSplitter:
     def _compile_patterns(self):
         """Compile regex patterns for efficiency"""
         # Chinese punctuation (always sentence boundaries)
-        chunking_config = self.config.get('chunking', {})
-        chinese_punct = ''.join(re.escape(p) for p in chunking_config.get('chinese_punctuation', []))
+        sentence_config = self.config.get('sentence_splitter', {})
+        chinese_punct = ''.join(re.escape(p) for p in sentence_config.get('chinese_punctuation', []))
         
         # Western punctuation with abbreviation protection
-        western_punct = ''.join(re.escape(p) for p in chunking_config.get('western_punctuation', []))
+        western_punct = ''.join(re.escape(p) for p in sentence_config.get('western_punctuation', []))
         
-        # All possible quotes
-        all_quotes = ''.join(re.escape(q) for q in chunking_config.get('quotation_marks', []))
+        # All possible quotes (extract from quote_pairs)
+        quote_pairs = sentence_config.get('quote_pairs', [])
+        all_quotes = set()
+        for opening, closing in quote_pairs:
+            all_quotes.add(opening)
+            all_quotes.add(closing)
+        all_quotes = ''.join(re.escape(q) for q in all_quotes)
         
         # Simpler pattern without variable-width lookbehind
         # We'll handle abbreviation detection in the boundary detection logic

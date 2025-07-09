@@ -41,6 +41,7 @@ root_dir = Path(__file__).parent.parent.parent
 load_dotenv(dotenv_path=root_dir / ".env")
 
 from services.sentence_splitter import RobustSentenceSplitter
+from services.newline_splitter import NewlineSplitter
 from services.sentence_embedding import SentenceEmbeddingCache
 from services.semantic_merger import SemanticMerger
 from utils.config_loader import ConfigLoader
@@ -224,7 +225,7 @@ class ChunkingOrchestrator:
         self.cache_manager = UnifiedCacheManager(self.data_dir, self.config)
         
         # Initialize components
-        self.sentence_splitter = RobustSentenceSplitter(self.config)
+        self._initialize_splitter()
         self.embedding_cache = SentenceEmbeddingCache(self.config)
         self.openai_service = OpenAIService()
         
@@ -233,6 +234,21 @@ class ChunkingOrchestrator:
         self.semantic_merger = SemanticMerger(self.tokenizer, self.config)
         
         logger.info(f"ChunkingOrchestrator initialized successfully (Experiment ID: {self.cache_manager.experiment_id})")
+    
+    def _initialize_splitter(self):
+        """Initialize the text splitter based on configuration."""
+        splitter_method = self.config.get('chunking', {}).get('splitter_method', 'sentence')
+        
+        if splitter_method == 'sentence':
+            self.text_splitter = RobustSentenceSplitter(self.config)
+            logger.info("Using RobustSentenceSplitter for text splitting")
+        elif splitter_method == 'newline':
+            self.text_splitter = NewlineSplitter(self.config)
+            logger.info("Using NewlineSplitter for text splitting")
+        else:
+            raise ValueError(f"Unknown splitter method: {splitter_method}. Must be 'sentence' or 'newline'")
+        
+        self.splitter_method = splitter_method
     
     def _create_config_fingerprint(self, input_file: str = None) -> Dict[str, Any]:
         """Create a configuration fingerprint for Steps 2-4 cache matching."""
@@ -300,7 +316,7 @@ class ChunkingOrchestrator:
                 # Load corresponding Step 2 and Step 4 data  
                 # Extract experiment ID (e.g., "20250708_1521" from "20250708_1521_step3_embedding_generation_test.json")
                 exp_id = '_'.join(latest_cache.name.split('_')[:2])
-                step2_pattern = f"{exp_id}_step2_sentence_splitting_*.json"
+                step2_pattern = f"{exp_id}_step2_*_splitting_*.json"
                 step4_pattern = f"{exp_id}_step4_similarity_analysis_*.json"
                 
                 step2_files = list(self.cache_manager.cached_dir.glob(step2_pattern))
@@ -364,7 +380,7 @@ class ChunkingOrchestrator:
     
     def split_documents_into_sentences(self, documents: List[Dict[str, Any]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[str]]:
         """
-        Step 2: Split documents into sentences using sentence_splitter.py.
+        Step 2: Split documents into text chunks using configured splitter.
         
         Args:
             documents: List of document dictionaries
@@ -372,9 +388,9 @@ class ChunkingOrchestrator:
             input_file: Input file path for metadata
             
         Returns:
-            Dictionary mapping document_id to list of sentences
+            Dictionary mapping document_id to list of text chunks
         """
-        logger.info("✂️ Step 2: Splitting documents into sentences")
+        logger.info(f"✂️ Step 2: Splitting documents using {self.splitter_method} splitter")
         
         doc_sentences = {}
         total_sentences = 0
@@ -387,11 +403,11 @@ class ChunkingOrchestrator:
                 logger.warning(f"Skipping empty document: {doc_id}")
                 continue
             
-            sentences = self.sentence_splitter.split(content)
+            sentences = self.text_splitter.split(content)
             doc_sentences[doc_id] = sentences
             total_sentences += len(sentences)
             
-            logger.debug(f"Document {doc_id}: {len(sentences)} sentences")
+            logger.debug(f"Document {doc_id}: {len(sentences)} text chunks")
         
         # Create indexed sentence data with hashes for cross-step linking
         indexed_sentences = {}
@@ -431,9 +447,10 @@ class ChunkingOrchestrator:
             }
         }
         
-        self.cache_manager.save_step_data(2, "sentence_splitting", step_data, experiment_name, input_file=input_file)
+        step_name = f"{self.splitter_method}_splitting"
+        self.cache_manager.save_step_data(2, step_name, step_data, experiment_name, input_file=input_file)
         
-        logger.info(f"✅ Split {len(doc_sentences)} documents into {total_sentences} sentences")
+        logger.info(f"✅ Split {len(doc_sentences)} documents into {total_sentences} text chunks")
         return doc_sentences
     
     async def generate_sentence_embeddings(self, doc_sentences: Dict[str, List[str]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[List[float]]]:
@@ -893,6 +910,16 @@ class ChunkingOrchestrator:
                 }
             }
             
+            # Add similarity analysis to cache summary (whether from cache or freshly generated)
+            cache_summary['similarity_analysis'] = similarity_stats
+            
+            # Add information about cache usage
+            cache_summary['cache_usage'] = {
+                'steps_2_4_cached': cache_matched,
+                'step_5_always_fresh': True,
+                'cache_reason': 'semantic_merging_config_only_changed' if cache_matched else 'no_matching_cache_found'
+            }
+            
             elapsed_time = time.time() - start_time
             cache_summary['pipeline_execution_time'] = elapsed_time
             logger.info(f"✅ Pipeline completed successfully in {elapsed_time:.2f} seconds")
@@ -953,6 +980,15 @@ async def main():
             print(f"🆔 Experiment ID: {cache_summary['experiment_id']}")
             print(f"📁 Step files created: {cache_summary['total_step_files']}")
             print(f"📂 Cache directory: {cache_summary['cached_dir']}")
+            
+            # Show cache usage information
+            if 'cache_usage' in cache_summary:
+                cache_usage = cache_summary['cache_usage']
+                if cache_usage['steps_2_4_cached']:
+                    print(f"♻️ Cache usage: Steps 2-4 loaded from cache, Step 5 regenerated")
+                else:
+                    print(f"🔄 Cache usage: All steps executed from scratch")
+            
             print("\n📋 Step-by-step artifacts:")
             for step in cache_summary['steps_cached']:
                 print(f"  • Step {step['step_number']} ({step['step_name']}): {step['file_size_mb']:.2f} MB")
@@ -963,19 +999,24 @@ async def main():
         
         # Show similarity analysis statistics
         try:
-            step4_data = orchestrator.cache_manager.load_step_data(4, "similarity_analysis", args.experiment_name)
-            if step4_data and 'similarity_analysis' in step4_data:
-                similarity_stats = step4_data['similarity_analysis']['overall_stats']
-                print(f"\n📈 Similarity Analysis Results:")
-                print(f"  📊 Total adjacent pairs: {similarity_stats['total_adjacent_pairs']}")
-                print(f"  📊 Mean similarity: {similarity_stats['mean_similarity']:.3f}")
-                print(f"  📊 Median similarity: {similarity_stats['median_similarity']:.3f}")
-                print(f"  📊 90th percentile: {similarity_stats['percentiles']['90']:.3f}")
-                print(f"  📊 95th percentile: {similarity_stats['percentiles']['95']:.3f}")
-                print(f"  🎯 Threshold recommendations:")
-                print(f"     Conservative (25% merge): {similarity_stats['percentiles']['75']:.3f}")
-                print(f"     Moderate (50% merge): {similarity_stats['percentiles']['50']:.3f}")
-                print(f"     Aggressive (75% merge): {similarity_stats['percentiles']['25']:.3f}")
+            if 'similarity_analysis' in cache_summary and cache_summary['similarity_analysis']:
+                similarity_data = cache_summary['similarity_analysis']
+                if 'overall_stats' in similarity_data:
+                    similarity_stats = similarity_data['overall_stats']
+                    print(f"\n📈 Similarity Analysis Results:")
+                    print(f"  📊 Total adjacent pairs: {similarity_stats['total_adjacent_pairs']}")
+                    print(f"  📊 Mean similarity: {similarity_stats['mean_similarity']:.3f}")
+                    print(f"  📊 Median similarity: {similarity_stats['median_similarity']:.3f}")
+                    print(f"  📊 90th percentile: {similarity_stats['percentiles']['90']:.3f}")
+                    print(f"  📊 95th percentile: {similarity_stats['percentiles']['95']:.3f}")
+                    print(f"  🎯 Threshold recommendations:")
+                    print(f"     Conservative (25% merge): {similarity_stats['percentiles']['75']:.3f}")
+                    print(f"     Moderate (50% merge): {similarity_stats['percentiles']['50']:.3f}")
+                    print(f"     Aggressive (75% merge): {similarity_stats['percentiles']['25']:.3f}")
+                else:
+                    print(f"  ❌ Similarity analysis data format issue")
+            else:
+                print(f"  ❌ Similarity analysis data unavailable")
         except Exception as e:
             logger.warning(f"Could not load similarity analysis data: {e}")
             print(f"  ❌ Similarity analysis data unavailable")

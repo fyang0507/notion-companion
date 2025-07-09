@@ -2,6 +2,14 @@
 # Supports Chinese, English, and French text
 
 [chunking]
+# Text splitting method: "sentence" or "newline"
+# - "sentence": Use robust sentence splitter with punctuation detection
+# - "newline": Split on newlines (\n) for simpler chunks
+splitter_method = "newline"
+
+[sentence_splitter]
+# Configuration for sentence-based splitting (when splitter_method = "sentence")
+
 # Universal sentence punctuation
 chinese_punctuation = ["。", "！", "？", "......"]  # removed "；"
 western_punctuation = [".", "!", "?", "..."]
@@ -43,12 +51,24 @@ french_abbreviations = [
     "c\\.-à-d", "p\\. ex", "cf", "etc"
 ]
 
+[newline_splitter]
+# Configuration for newline-based splitting (when splitter_method = "newline")
+
+# Split mode: "paragraph" or "line"
+# - "paragraph": Split on multiple consecutive newlines (paragraph breaks)
+# - "line": Split on single newlines (original behavior)
+split_mode = "paragraph"
+
+# Minimum consecutive newlines to consider a paragraph break (default: 2)
+# Only used when split_mode = "paragraph"
+paragraph_break_threshold = 2
+
 [semantic_merging]
 # Similarity threshold for merging adjacent sentences
-similarity_threshold = 0.35
+similarity_threshold = 0.6
 
 # Maximum number of sentences to merge in one chunk
-max_merge_distance = 3
+max_merge_distance = 5
 
 # Maximum chunk size in tokens (merging stops when this would be exceeded)
 # 
