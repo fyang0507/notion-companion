@@ -354,7 +354,7 @@ class ChunkingOrchestrator:
             logger.warning(f"⚠️  Error reading Step 3 cache {latest_cache}: {e}")
             return False, {}, {}, {}
 
-    def load_collected_documents(self, input_file: str) -> List[Dict[str, Any]]:
+    def load_collected_documents(self, input_file: str) -> Tuple[List[Dict[str, Any]], str]:
         """
         Step 1: Load documents from data_collector.py output.
         
@@ -362,7 +362,7 @@ class ChunkingOrchestrator:
             input_file: Path to JSON file containing collected documents
             
         Returns:
-            List of document dictionaries
+            Tuple of (List of document dictionaries, database_id)
         """
         logger.info(f"📖 Step 1: Loading collected documents from {input_file}")
         
@@ -374,9 +374,11 @@ class ChunkingOrchestrator:
             data = json.load(f)
         
         documents = data.get('documents', [])
-        logger.info(f"✅ Loaded {len(documents)} documents")
+        database_id = data.get('database_id', 'unknown')
         
-        return documents
+        logger.info(f"✅ Loaded {len(documents)} documents from database {database_id}")
+        
+        return documents, database_id
     
     def split_documents_into_text_units(self, documents: List[Dict[str, Any]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[str]]:
         """
@@ -676,7 +678,7 @@ class ChunkingOrchestrator:
     
     def merge_semantic_text_units(self, doc_text_units: Dict[str, List[str]], 
                                doc_embeddings: Dict[str, List[List[float]]], 
-                               experiment_name: str = None) -> Dict[str, List[Dict[str, Any]]]:
+                               experiment_name: str = None, database_id: str = None) -> Dict[str, List[Dict[str, Any]]]:
         """
         Step 4: Merge semantically similar text units using semantic_merger.py.
         
@@ -807,6 +809,7 @@ class ChunkingOrchestrator:
         step_data = {
             'document_chunks': doc_chunks,
             'chunk_metadata': chunk_hashes,
+            'database_id': database_id,
             'merging_statistics': {
                 'total_documents': len(doc_chunks),
                 'total_chunks': total_chunks,
@@ -867,7 +870,7 @@ class ChunkingOrchestrator:
         
         try:
             # Step 1: Load documents
-            documents = self.load_collected_documents(input_file)
+            documents, database_id = self.load_collected_documents(input_file)
             
             # Check for Step 3 cache with matching config (simplified two-stage approach)
             cache_matched, step2_data, step3_data, step4_data = self._check_cached_pipeline_stage(experiment_name, input_file)
@@ -903,7 +906,7 @@ class ChunkingOrchestrator:
             
             # Step 5: Always run semantic merging (fast and shows current results)
             logger.info("🔄 Running Step 5: Semantic merging (always executed)")
-            doc_chunks = self.merge_semantic_text_units(doc_text_units, doc_embeddings, experiment_name)
+            doc_chunks = self.merge_semantic_text_units(doc_text_units, doc_embeddings, experiment_name, database_id)
             
             # Load step 5 data to get merge stopping statistics
             try:
