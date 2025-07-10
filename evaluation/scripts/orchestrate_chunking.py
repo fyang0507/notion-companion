@@ -767,6 +767,43 @@ class ChunkingOrchestrator:
                 'end_of_text_units': (aggregate_stats['stopped_by_end_of_text_units'] / aggregate_stats['total_chunks']) * 100
             }
         
+        # Calculate detailed distribution statistics for chunk analysis
+        all_chunk_tokens = []
+        all_chunk_text_unit_counts = []
+        for chunks in doc_chunks.values():
+            for chunk in chunks:
+                all_chunk_tokens.append(chunk['token_count'])
+                all_chunk_text_unit_counts.append(chunk['text_unit_count'])
+        
+        def calculate_distribution_stats(values, name):
+            if not values:
+                return {}
+            
+            values_array = np.array(values)
+            percentiles = [10, 25, 50, 75, 90, 95, 99]
+            percentile_values = np.percentile(values_array, percentiles)
+            
+            return {
+                f'{name}_count': len(values),
+                f'{name}_min': int(np.min(values_array)),
+                f'{name}_max': int(np.max(values_array)),
+                f'{name}_mean': float(np.mean(values_array)),
+                f'{name}_median': float(np.median(values_array)),
+                f'{name}_std': float(np.std(values_array)),
+                f'{name}_percentiles': {
+                    str(p): float(v) for p, v in zip(percentiles, percentile_values)
+                },
+                f'{name}_quartiles': {
+                    'q1': float(np.percentile(values_array, 25)),
+                    'q2': float(np.percentile(values_array, 50)),
+                    'q3': float(np.percentile(values_array, 75)),
+                    'iqr': float(np.percentile(values_array, 75) - np.percentile(values_array, 25))
+                }
+            }
+        
+        token_distribution = calculate_distribution_stats(all_chunk_tokens, 'tokens')
+        text_unit_distribution = calculate_distribution_stats(all_chunk_text_unit_counts, 'text_units')
+        
         step_data = {
             'document_chunks': doc_chunks,
             'chunk_metadata': chunk_hashes,
@@ -778,6 +815,9 @@ class ChunkingOrchestrator:
                 'merge_reduction_rate': 1 - (total_chunks / sum(len(text_units) for text_units in doc_text_units.values())) if doc_text_units else 0,
                 'merge_stopping_statistics': aggregate_stats,
                 'merge_stopping_percentages': stopping_percentages,
+                # Detailed distribution statistics
+                'chunk_size_distribution': token_distribution,
+                'text_unit_distribution': text_unit_distribution,
                 'config_used': {
                     'similarity_threshold': self.config['semantic_merging']['similarity_threshold'],
                     'max_merge_distance': self.config['semantic_merging']['max_merge_distance'],
@@ -889,18 +929,53 @@ class ChunkingOrchestrator:
                     all_chunk_tokens.append(chunk['token_count'])
                     all_chunk_text_unit_counts.append(chunk['text_unit_count'])
             
+            # Calculate detailed distribution statistics
+            def calculate_distribution_stats(values, name):
+                if not values:
+                    return {}
+                
+                values_array = np.array(values)
+                percentiles = [10, 25, 50, 75, 90, 95, 99]
+                percentile_values = np.percentile(values_array, percentiles)
+                
+                return {
+                    f'{name}_count': len(values),
+                    f'{name}_min': int(np.min(values_array)),
+                    f'{name}_max': int(np.max(values_array)),
+                    f'{name}_mean': float(np.mean(values_array)),
+                    f'{name}_median': float(np.median(values_array)),
+                    f'{name}_std': float(np.std(values_array)),
+                    f'{name}_percentiles': {
+                        str(p): float(v) for p, v in zip(percentiles, percentile_values)
+                    },
+                    f'{name}_quartiles': {
+                        'q1': float(np.percentile(values_array, 25)),
+                        'q2': float(np.percentile(values_array, 50)),
+                        'q3': float(np.percentile(values_array, 75)),
+                        'iqr': float(np.percentile(values_array, 75) - np.percentile(values_array, 25))
+                    }
+                }
+            
+            # Calculate distribution stats for both metrics
+            token_distribution = calculate_distribution_stats(all_chunk_tokens, 'tokens')
+            text_unit_distribution = calculate_distribution_stats(all_chunk_text_unit_counts, 'text_units')
+            
             # Add merging statistics to cache summary
             cache_summary['merging_statistics'] = {
                 'total_input_text_units': total_input_text_units,
                 'total_output_chunks': total_output_chunks,
                 'reduction_rate': reduction_rate,
                 'reduction_percentage': reduction_rate * 100,
+                # Legacy simple stats (for backward compatibility)
                 'avg_chunk_tokens': sum(all_chunk_tokens) / len(all_chunk_tokens) if all_chunk_tokens else 0,
                 'max_chunk_tokens': max(all_chunk_tokens) if all_chunk_tokens else 0,
                 'min_chunk_tokens': min(all_chunk_tokens) if all_chunk_tokens else 0,
                 'avg_text_units_per_chunk': sum(all_chunk_text_unit_counts) / len(all_chunk_text_unit_counts) if all_chunk_text_unit_counts else 0,
                 'max_text_units_per_chunk': max(all_chunk_text_unit_counts) if all_chunk_text_unit_counts else 0,
                 'min_text_units_per_chunk': min(all_chunk_text_unit_counts) if all_chunk_text_unit_counts else 0,
+                # Detailed distribution statistics
+                'chunk_size_distribution': token_distribution,
+                'text_unit_distribution': text_unit_distribution,
                 'merge_stopping_statistics': step5_data['merging_statistics']['merge_stopping_statistics'] if step5_data else {},
                 'merge_stopping_percentages': step5_data['merging_statistics']['merge_stopping_percentages'] if step5_data else {},
                 'config_used': {
@@ -1030,6 +1105,21 @@ async def main():
                 print(f"  📏 Chunk sizes: {merging_stats['min_chunk_tokens']}-{merging_stats['max_chunk_tokens']} tokens (avg: {merging_stats['avg_chunk_tokens']:.1f})")
                 print(f"  📝 Text units per chunk: {merging_stats['min_text_units_per_chunk']}-{merging_stats['max_text_units_per_chunk']} (avg: {merging_stats['avg_text_units_per_chunk']:.1f})")
                 print(f"  ⚙️  Config: threshold={merging_stats['config_used']['similarity_threshold']}, max_distance={merging_stats['config_used']['max_merge_distance']}, max_size={merging_stats['config_used']['max_chunk_size']}")
+                
+                # Show detailed distribution statistics if available
+                if 'chunk_size_distribution' in merging_stats and merging_stats['chunk_size_distribution']:
+                    token_dist = merging_stats['chunk_size_distribution']
+                    print(f"\n📏 Token Count Distribution:")
+                    print(f"  📊 Quartiles: Q1={token_dist['tokens_quartiles']['q1']:.0f}, Median={token_dist['tokens_median']:.0f}, Q3={token_dist['tokens_quartiles']['q3']:.0f} (IQR={token_dist['tokens_quartiles']['iqr']:.0f})")
+                    print(f"  📊 Percentiles: 10th={token_dist['tokens_percentiles']['10']:.0f}, 90th={token_dist['tokens_percentiles']['90']:.0f}, 95th={token_dist['tokens_percentiles']['95']:.0f}, 99th={token_dist['tokens_percentiles']['99']:.0f}")
+                    print(f"  📊 Standard deviation: {token_dist['tokens_std']:.1f}")
+                
+                if 'text_unit_distribution' in merging_stats and merging_stats['text_unit_distribution']:
+                    unit_dist = merging_stats['text_unit_distribution']
+                    print(f"\n📝 Text Units per Chunk Distribution:")
+                    print(f"  📊 Quartiles: Q1={unit_dist['text_units_quartiles']['q1']:.0f}, Median={unit_dist['text_units_median']:.0f}, Q3={unit_dist['text_units_quartiles']['q3']:.0f} (IQR={unit_dist['text_units_quartiles']['iqr']:.0f})")
+                    print(f"  📊 Percentiles: 10th={unit_dist['text_units_percentiles']['10']:.0f}, 90th={unit_dist['text_units_percentiles']['90']:.0f}, 95th={unit_dist['text_units_percentiles']['95']:.0f}, 99th={unit_dist['text_units_percentiles']['99']:.0f}")
+                    print(f"  📊 Standard deviation: {unit_dist['text_units_std']:.1f}")
                 
                 # Show merge stopping statistics if available
                 if 'merge_stopping_percentages' in merging_stats:
