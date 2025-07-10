@@ -1,0 +1,16 @@
+# Multi-Database Evaluation Configuration
+
+[[databases.database_configs]]
+database_id = "1519782c4f4a80dc9deff9768446a113"
+name = "他山之石"
+
+# Add more databases here:
+# [[databases.database_configs]]
+# database_id = "another_database_id_here"
+# name = "Meeting Notes"
+
+[collection]
+# Data collection settings
+output_dir = "data/database"
+min_content_length = 10
+timeout_per_database = 300  # 5 minutes per database

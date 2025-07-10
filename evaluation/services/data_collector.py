@@ -21,7 +21,7 @@ from evaluation.models.evaluation_models import Document, CollectionStats
 class DataCollector:
     """Simple data collector for evaluation."""
     
-    def __init__(self, notion_token: str = None, output_dir: str = "data"):
+    def __init__(self, notion_token: str = None):
         # Load notion token from environment if not provided
         if not notion_token:
             notion_token = os.getenv("NOTION_ACCESS_TOKEN")
@@ -29,11 +29,9 @@ class DataCollector:
                 raise ValueError("NOTION_ACCESS_TOKEN environment variable is required")
         
         self.notion_service = NotionService(notion_token)
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
         
-    async def collect_database(self, database_id: str, min_content_length: int = 10) -> CollectionStats:
-        """Collect all documents from a database."""
+    async def collect_database(self, database_id: str, min_content_length: int = 10) -> tuple[List[Document], CollectionStats]:
+        """Collect all documents from a database and return them (no storage)."""
         print(f"📚 Collecting database: {database_id}")
         
         stats = CollectionStats(
@@ -86,17 +84,13 @@ class DataCollector:
                     stats.failed += 1
                     stats.errors.append(f"Page {page.get('id', 'unknown')}: {str(e)}")
             
-            # Save documents
-            if documents:
-                await self._save_documents(documents, database_id)
-                print(f"💾 Saved {len(documents)} documents")
-            
-            return stats
+            print(f"📄 Collected {len(documents)} documents")
+            return documents, stats
             
         except Exception as e:
             print(f"❌ Error collecting database: {e}")
             stats.errors.append(f"Database collection failed: {str(e)}")
-            return stats
+            return [], stats
     
     def _extract_title(self, page: Dict[str, Any]) -> str:
         """Extract page title."""
@@ -122,30 +116,12 @@ class DataCollector:
         except:
             return None
     
-    async def _save_documents(self, documents: List[Document], database_id: str):
-        """Save documents to JSON file."""
-        filename = f"{database_id[-10:]}_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
-        filepath = self.output_dir / filename
-        
-        # Convert to dict for JSON serialization
-        data = {
-            'database_id': database_id,
-            'collected_at': datetime.now().isoformat(),
-            'total_documents': len(documents),
-            'documents': [doc.model_dump() for doc in documents]
-        }
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
-        
-        print(f"📄 Saved to: {filepath}")
-    
-    async def collect_multiple(self, database_ids: List[str], min_content_length: int = 10) -> Dict[str, CollectionStats]:
-        """Collect from multiple databases."""
+    async def collect_multiple(self, database_ids: List[str], min_content_length: int = 10) -> Dict[str, tuple[List[Document], CollectionStats]]:
+        """Collect from multiple databases and return documents and stats."""
         results = {}
         
         for database_id in database_ids:
-            stats = await self.collect_database(database_id, min_content_length)
-            results[database_id] = stats
+            documents, stats = await self.collect_database(database_id, min_content_length)
+            results[database_id] = (documents, stats)
         
         return results 
