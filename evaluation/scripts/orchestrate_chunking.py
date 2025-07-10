@@ -624,7 +624,7 @@ class ChunkingOrchestrator:
                 'min_similarity': np.min(all_similarities),
                 'max_similarity': np.max(all_similarities),
                 'median_similarity': np.median(all_similarities),
-                'percentiles': dict(zip(percentiles, percentile_values)),
+                'percentiles': dict(zip([str(p) for p in percentiles], percentile_values)),
                 'threshold_analysis': threshold_analysis
             }
             
