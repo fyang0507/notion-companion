@@ -57,6 +57,9 @@ french_abbreviations = [
 # Split mode: "paragraph" or "line"
 # - "paragraph": Split on multiple consecutive newlines (paragraph breaks)
 # - "line": Split on single newlines (original behavior)
+# NOTE: Notion's default is "paragraph", the original doc is always separated by at least 2 newlines
+# - if you write in Notion and use ENTER to create a new line, it will be separated by 2 newlines
+# - if you use SHIFT + ENTER to create a new line, it will be separated by 1 newline
 split_mode = "paragraph"
 
 # Minimum consecutive newlines to consider a paragraph break (default: 2)
@@ -65,9 +68,9 @@ paragraph_break_threshold = 2
 
 [semantic_merging]
 # Similarity threshold for merging adjacent sentences
-similarity_threshold = 0.6
+similarity_threshold = 0.45
 
-# Maximum number of sentences to merge in one chunk
+# Maximum number of times text units can be merged)
 max_merge_distance = 5
 
 # Maximum chunk size in tokens (merging stops when this would be exceeded)
