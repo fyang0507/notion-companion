@@ -1,0 +1,54 @@
+# Question Generation Configuration for Evaluation System
+
+[models]
+# LLM model for question generation
+model = "gpt-4.1-nano"
+temperature = 0.2
+max_tokens = 2000
+timeout = 30.0
+
+[generation]
+# Number of questions to generate per chunk
+questions_per_chunk = 2
+min_questions_per_chunk = 1
+max_questions_per_chunk = 3
+
+# Content filtering criteria
+min_token_count = 100          # Minimum tokens for meaningful content
+max_token_count = 1000        # Maximum tokens to avoid overwhelming context
+exclude_headers = true        # Skip chunks that start with # or ##
+exclude_short_questions = true # Skip chunks that are just questions
+
+# Output configuration
+output_format = "json"
+include_metadata = true
+batch_size = 32               # Process chunks in batches to avoid rate limits
+delay_between_batches = 1.0  # Seconds to wait between batches
+
+[prompts]
+# System prompt for question generation
+system_prompt = """You are an expert at generating high-quality factual questions from text content.
+
+Your task is to create factual or explanatory questions that a user might naturally ask about the given text content. The questions should:
+- Be specific and answerable from the text
+- Focus on key facts, explanations, or insights
+- Be naturally phrased as a human would ask
+- Have clear, specific answers contained in the text
+- Questions should be in the same language as the provided text
+Always respond in JSON format with this exact structure:
+{
+  "questions": [
+    {
+      "question": "What specific question would someone ask?",
+      "answer": "The exact quote from the text where the answer can be found or inferred"
+    }
+  ]
+}"""
+
+# User prompt template
+user_prompt_template = """Based on the following text content, generate {num_questions} factual or explanatory questions that someone might ask about this content.
+
+Text content:
+{content}
+
+Remember to respond in JSON format with the questions and their answers."""

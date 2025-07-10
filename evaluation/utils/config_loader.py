@@ -143,4 +143,23 @@ class ConfigLoader:
             
         except (ValueError, KeyError) as e:
             logger.error(f"Configuration validation failed: {str(e)}")
-            raise 
+            raise
+
+
+def load_config(config_path: Path) -> Dict[str, Any]:
+    """Load a generic TOML configuration file."""
+    if not config_path.exists():
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    
+    logger.info(f"Loading configuration from {config_path}")
+    
+    try:
+        with open(config_path, 'rb') as f:
+            config_data = tomllib.load(f)
+        
+        logger.info("Configuration loaded successfully")
+        return config_data
+        
+    except Exception as e:
+        logger.error(f"Failed to load configuration from {config_path}: {str(e)}")
+        raise 

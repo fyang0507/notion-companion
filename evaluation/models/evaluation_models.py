@@ -20,4 +20,26 @@ class CollectionStats(BaseModel):
     successful: int
     failed: int
     skipped: int
+    errors: List[str] = Field(default_factory=list)
+
+
+class QuestionAnswerPair(BaseModel):
+    """Question-answer pair for evaluation dataset."""
+    question: str
+    answer: str
+    chunk_id: str
+    chunk_content: str
+    database_id: str
+    confidence: float = 1.0
+    # Metadata for chunk information (token count, text units, etc.)
+    chunk_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class QuestionGenerationStats(BaseModel):
+    """Statistics for question generation process."""
+    total_chunks_processed: int
+    successful_chunks: int
+    failed_chunks: int
+    total_questions_generated: int
+    generation_time_seconds: float
     errors: List[str] = Field(default_factory=list) 
