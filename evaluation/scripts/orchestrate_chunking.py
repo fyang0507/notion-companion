@@ -378,7 +378,7 @@ class ChunkingOrchestrator:
         
         return documents
     
-    def split_documents_into_sentences(self, documents: List[Dict[str, Any]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[str]]:
+    def split_documents_into_text_units(self, documents: List[Dict[str, Any]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[str]]:
         """
         Step 2: Split documents into text chunks using configured splitter.
         
@@ -392,8 +392,8 @@ class ChunkingOrchestrator:
         """
         logger.info(f"✂️ Step 2: Splitting documents using {self.splitter_method} splitter")
         
-        doc_sentences = {}
-        total_sentences = 0
+        doc_text_units = {}
+        total_text_units = 0
         
         for doc in documents:
             doc_id = doc['id']
@@ -403,62 +403,62 @@ class ChunkingOrchestrator:
                 logger.warning(f"Skipping empty document: {doc_id}")
                 continue
             
-            sentences = self.text_splitter.split(content)
-            doc_sentences[doc_id] = sentences
-            total_sentences += len(sentences)
+            text_units = self.text_splitter.split(content)
+            doc_text_units[doc_id] = text_units
+            total_text_units += len(text_units)
             
-            logger.debug(f"Document {doc_id}: {len(sentences)} text chunks")
+            logger.debug(f"Document {doc_id}: {len(text_units)} text chunks")
         
-        # Create indexed sentence data with hashes for cross-step linking
-        indexed_sentences = {}
-        sentence_lookup = {}  # For easy manual analysis
+        # Create indexed text unit data with hashes for cross-step linking
+        indexed_text_units = {}
+        text_unit_lookup = {}  # For easy manual analysis
         
-        for doc_id, sentences in doc_sentences.items():
-            doc_indexed_sentences = {}
-            for i, sentence in enumerate(sentences):
-                sentence_hash = self.cache_manager._generate_content_hash(sentence)
-                sentence_info = {
+        for doc_id, text_units in doc_text_units.items():
+            doc_indexed_text_units = {}
+            for i, text_unit in enumerate(text_units):
+                text_unit_hash = self.cache_manager._generate_content_hash(text_unit)
+                text_unit_info = {
                     'index': i,
-                    'content': sentence,
-                    'hash': sentence_hash,
-                    'char_length': len(sentence),
-                    'word_count': len(sentence.split())
+                    'content': text_unit,
+                    'hash': text_unit_hash,
+                    'char_length': len(text_unit),
+                    'word_count': len(text_unit.split())
                 }
-                doc_indexed_sentences[i] = sentence_info
+                doc_indexed_text_units[i] = text_unit_info
                 
                 # Add to global lookup for easy access
-                sentence_lookup[sentence_hash] = {
+                text_unit_lookup[text_unit_hash] = {
                     'document_id': doc_id,
-                    'sentence_index': i,
-                    'content': sentence
+                    'text_unit_index': i,
+                    'content': text_unit
                 }
             
-            indexed_sentences[doc_id] = doc_indexed_sentences
+            indexed_text_units[doc_id] = doc_indexed_text_units
         
         # Save step data with enhanced indexing
         step_data = {
-            'document_sentences': indexed_sentences,
-            'sentence_lookup': sentence_lookup,  # Global hash -> sentence mapping
+            'document_sentences': indexed_text_units,
+            'sentence_lookup': text_unit_lookup,  # Global hash -> text unit mapping
             'input_documents': {doc['id']: {'title': doc.get('title', 'Untitled'), 'content_length': len(doc['content'])} for doc in documents},
             'statistics': {
-                'total_documents': len(doc_sentences),
-                'total_sentences': total_sentences,
-                'avg_sentences_per_doc': total_sentences / len(doc_sentences) if doc_sentences else 0
+                'total_documents': len(doc_text_units),
+                'total_text_units': total_text_units,
+                'avg_text_units_per_doc': total_text_units / len(doc_text_units) if doc_text_units else 0
             }
         }
         
         step_name = f"{self.splitter_method}_splitting"
         self.cache_manager.save_step_data(2, step_name, step_data, experiment_name, input_file=input_file)
         
-        logger.info(f"✅ Split {len(doc_sentences)} documents into {total_sentences} text chunks")
-        return doc_sentences
+        logger.info(f"✅ Split {len(doc_text_units)} documents into {total_text_units} text chunks")
+        return doc_text_units
     
-    async def generate_sentence_embeddings(self, doc_sentences: Dict[str, List[str]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[List[float]]]:
+    async def generate_text_unit_embeddings(self, doc_text_units: Dict[str, List[str]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[List[float]]]:
         """
-        Step 3: Generate embeddings for sentences using sentence_embedding.py.
+        Step 3: Generate embeddings for text units using sentence_embedding.py.
         
         Args:
-            doc_sentences: Dictionary mapping document_id to list of sentences
+            doc_text_units: Dictionary mapping document_id to list of text units
             experiment_name: Optional experiment name for saving
             input_file: Input file path for metadata
             
@@ -470,61 +470,61 @@ class ChunkingOrchestrator:
         doc_embeddings = {}
         total_cache_hits = 0
         total_cache_misses = 0
-        sentence_hashes = {}
+        text_unit_hashes = {}
         
-        for doc_id, sentences in doc_sentences.items():
-            if not sentences:
-                logger.warning(f"Skipping document with no sentences: {doc_id}")
+        for doc_id, text_units in doc_text_units.items():
+            if not text_units:
+                logger.warning(f"Skipping document with no text units: {doc_id}")
                 continue
             
-            logger.info(f"Processing embeddings for document {doc_id} ({len(sentences)} sentences)")
+            logger.info(f"Processing embeddings for document {doc_id} ({len(text_units)} text units)")
             
             # Generate embeddings with caching
             embeddings, cache_hits, cache_misses = await self.embedding_cache.get_embeddings(
-                sentences, self.openai_service
+                text_units, self.openai_service
             )
             
             doc_embeddings[doc_id] = embeddings
             total_cache_hits += cache_hits
             total_cache_misses += cache_misses
             
-            # Generate enhanced sentence metadata with embeddings
-            doc_sentence_metadata = {}
-            for i, sentence in enumerate(sentences):
-                sentence_hash = self.cache_manager._generate_content_hash(sentence)
+            # Generate enhanced text unit metadata with embeddings
+            doc_text_unit_metadata = {}
+            for i, text_unit in enumerate(text_units):
+                text_unit_hash = self.cache_manager._generate_content_hash(text_unit)
                 embedding = embeddings[i] if i < len(embeddings) else None
-                doc_sentence_metadata[i] = {
+                doc_text_unit_metadata[i] = {
                     'index': i,
-                    'content': sentence,
-                    'hash': sentence_hash,
+                    'content': text_unit,
+                    'hash': text_unit_hash,
                     'embedding': embedding,
                     'embedding_dimensions': len(embedding) if embedding else 0,
-                    'char_length': len(sentence),
-                    'word_count': len(sentence.split())
+                    'char_length': len(text_unit),
+                    'word_count': len(text_unit.split())
                 }
-            sentence_hashes[doc_id] = doc_sentence_metadata
+            text_unit_hashes[doc_id] = doc_text_unit_metadata
             
             logger.debug(f"Document {doc_id}: {cache_hits} cache hits, {cache_misses} cache misses")
         
-        # Create global sentence lookup with embeddings for manual analysis
-        global_sentence_lookup = {}
-        for doc_id, doc_metadata in sentence_hashes.items():
-            for sentence_idx, sentence_info in doc_metadata.items():
-                hash_key = sentence_info['hash']
-                global_sentence_lookup[hash_key] = {
+        # Create global text unit lookup with embeddings for manual analysis
+        global_text_unit_lookup = {}
+        for doc_id, doc_metadata in text_unit_hashes.items():
+            for text_unit_idx, text_unit_info in doc_metadata.items():
+                hash_key = text_unit_info['hash']
+                global_text_unit_lookup[hash_key] = {
                     'document_id': doc_id,
-                    'sentence_index': sentence_idx,
-                    'content': sentence_info['content'],
-                    'embedding': sentence_info['embedding'],
-                    'char_length': sentence_info['char_length'],
-                    'word_count': sentence_info['word_count']
+                    'text_unit_index': text_unit_idx,
+                    'content': text_unit_info['content'],
+                    'embedding': text_unit_info['embedding'],
+                    'char_length': text_unit_info['char_length'],
+                    'word_count': text_unit_info['word_count']
                 }
         
-        # Save step data with unified caching including sentence hashes
+        # Save step data with unified caching including text unit hashes
         step_data = {
             'document_embeddings': doc_embeddings,
-            'sentence_metadata': sentence_hashes,
-            'global_sentence_lookup': global_sentence_lookup,  # Easy hash-based lookup
+            'sentence_metadata': text_unit_hashes,
+            'global_sentence_lookup': global_text_unit_lookup,  # Easy hash-based lookup
             'embedding_statistics': {
                 'total_documents': len(doc_embeddings),
                 'total_embeddings': sum(len(embs) for embs in doc_embeddings.values()),
@@ -543,14 +543,14 @@ class ChunkingOrchestrator:
         
         return doc_embeddings
     
-    def analyze_similarity_distribution(self, doc_sentences: Dict[str, List[str]], 
+    def analyze_similarity_distribution(self, doc_text_units: Dict[str, List[str]], 
                                       doc_embeddings: Dict[str, List[List[float]]], 
                                       experiment_name: str = None) -> Dict[str, Any]:
         """
-        Analyze similarity distribution of adjacent sentences to inform threshold tuning.
+        Analyze similarity distribution of adjacent text units to inform threshold tuning.
         
         Args:
-            doc_sentences: Dictionary mapping document_id to list of sentences
+            doc_text_units: Dictionary mapping document_id to list of text units
             doc_embeddings: Dictionary mapping document_id to list of embeddings
             
         Returns:
@@ -561,17 +561,17 @@ class ChunkingOrchestrator:
         all_similarities = []
         doc_stats = {}
         
-        for doc_id in doc_sentences.keys():
+        for doc_id in doc_text_units.keys():
             if doc_id not in doc_embeddings:
                 continue
                 
-            sentences = doc_sentences[doc_id]
+            text_units = doc_text_units[doc_id]
             embeddings = doc_embeddings[doc_id]
             
-            if len(sentences) < 2 or len(embeddings) < 2:
+            if len(text_units) < 2 or len(embeddings) < 2:
                 continue
             
-            # Calculate cosine similarity for adjacent sentences
+            # Calculate cosine similarity for adjacent text units
             doc_similarities = []
             embeddings_array = np.array(embeddings)
             
@@ -587,7 +587,7 @@ class ChunkingOrchestrator:
             
             # Document-level statistics
             doc_stats[doc_id] = {
-                'sentence_count': len(sentences),
+                'text_unit_count': len(text_units),
                 'adjacent_pairs': len(doc_similarities),
                 'mean_similarity': np.mean(doc_similarities),
                 'std_similarity': np.std(doc_similarities),
@@ -606,7 +606,7 @@ class ChunkingOrchestrator:
             
             # Count how many pairs would be merged at different thresholds
             threshold_analysis = {}
-            test_thresholds = [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+            test_thresholds = [0.25, 0.5, 0.75, 0.8, 0.9]
             
             for threshold in test_thresholds:
                 above_threshold = np.sum(all_similarities >= threshold)
@@ -674,16 +674,16 @@ class ChunkingOrchestrator:
         
         return result
     
-    def merge_semantic_sentences(self, doc_sentences: Dict[str, List[str]], 
+    def merge_semantic_text_units(self, doc_text_units: Dict[str, List[str]], 
                                doc_embeddings: Dict[str, List[List[float]]], 
                                experiment_name: str = None) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Step 4: Merge semantically similar sentences using semantic_merger.py.
+        Step 4: Merge semantically similar text units using semantic_merger.py.
         
         Uses configuration values from chunking_config.toml. No parameter overrides allowed.
         
         Args:
-            doc_sentences: Dictionary mapping document_id to list of sentences
+            doc_text_units: Dictionary mapping document_id to list of text units
             doc_embeddings: Dictionary mapping document_id to list of embeddings
             
         Returns:
@@ -699,30 +699,30 @@ class ChunkingOrchestrator:
         
         doc_chunks = {}
         total_chunks = 0
-        aggregate_stats = {'total_chunks': 0, 'single_sentence_chunks': 0, 'stopped_by_similarity': 0, 'stopped_by_token_limit': 0, 'stopped_by_distance_limit': 0, 'stopped_by_end_of_sentences': 0}
+        aggregate_stats = {'total_chunks': 0, 'single_text_unit_chunks': 0, 'stopped_by_similarity': 0, 'stopped_by_token_limit': 0, 'stopped_by_distance_limit': 0, 'stopped_by_end_of_text_units': 0}
         
-        for doc_id in doc_sentences.keys():
+        for doc_id in doc_text_units.keys():
             if doc_id not in doc_embeddings:
                 logger.warning(f"Skipping document without embeddings: {doc_id}")
                 continue
             
-            sentences = doc_sentences[doc_id]
+            text_units = doc_text_units[doc_id]
             embeddings = doc_embeddings[doc_id]
             
-            if len(sentences) != len(embeddings):
-                logger.error(f"Mismatch in document {doc_id}: {len(sentences)} sentences vs {len(embeddings)} embeddings")
+            if len(text_units) != len(embeddings):
+                logger.error(f"Mismatch in document {doc_id}: {len(text_units)} text units vs {len(embeddings)} embeddings")
                 continue
             
-            # Merge sentences into chunks
-            chunk_results, doc_stats = self.semantic_merger.merge_sentences(sentences, embeddings)
+            # Merge text units into chunks
+            chunk_results, doc_stats = self.semantic_merger.merge_sentences(text_units, embeddings)
             
             # Aggregate statistics across all documents
             aggregate_stats['total_chunks'] += doc_stats.total_chunks
-            aggregate_stats['single_sentence_chunks'] += doc_stats.single_sentence_chunks
+            aggregate_stats['single_text_unit_chunks'] += doc_stats.single_sentence_chunks
             aggregate_stats['stopped_by_similarity'] += doc_stats.stopped_by_similarity
             aggregate_stats['stopped_by_token_limit'] += doc_stats.stopped_by_token_limit
             aggregate_stats['stopped_by_distance_limit'] += doc_stats.stopped_by_distance_limit
-            aggregate_stats['stopped_by_end_of_sentences'] += doc_stats.stopped_by_end_of_sentences
+            aggregate_stats['stopped_by_end_of_text_units'] += doc_stats.stopped_by_end_of_sentences
             
             # Convert to dictionary format for JSON serialization
             chunks = []
@@ -732,14 +732,14 @@ class ChunkingOrchestrator:
                     'start_sentence': chunk_result.start_sentence,
                     'end_sentence': chunk_result.end_sentence,
                     'token_count': len(self.tokenizer.encode(chunk_result.content)),
-                    'sentence_count': chunk_result.end_sentence - chunk_result.start_sentence + 1
+                    'text_unit_count': chunk_result.end_sentence - chunk_result.start_sentence + 1
                 }
                 chunks.append(chunk_dict)
             
             doc_chunks[doc_id] = chunks
             total_chunks += len(chunks)
             
-            logger.debug(f"Document {doc_id}: {len(sentences)} sentences → {len(chunks)} chunks")
+            logger.debug(f"Document {doc_id}: {len(text_units)} text units → {len(chunks)} chunks")
         
         # Save step data with unified caching
         chunk_hashes = {}
@@ -750,7 +750,7 @@ class ChunkingOrchestrator:
                 doc_chunk_hashes[i] = {
                     'chunk_hash': chunk_hash,
                     'token_count': chunk['token_count'],
-                    'sentence_count': chunk['sentence_count'],
+                    'text_unit_count': chunk['text_unit_count'],
                     'start_sentence': chunk['start_sentence'],
                     'end_sentence': chunk['end_sentence']
                 }
@@ -760,11 +760,11 @@ class ChunkingOrchestrator:
         stopping_percentages = {}
         if aggregate_stats['total_chunks'] > 0:
             stopping_percentages = {
-                'single_sentence': (aggregate_stats['single_sentence_chunks'] / aggregate_stats['total_chunks']) * 100,
+                'single_text_unit': (aggregate_stats['single_text_unit_chunks'] / aggregate_stats['total_chunks']) * 100,
                 'similarity_threshold': (aggregate_stats['stopped_by_similarity'] / aggregate_stats['total_chunks']) * 100,
                 'token_limit': (aggregate_stats['stopped_by_token_limit'] / aggregate_stats['total_chunks']) * 100,
                 'distance_limit': (aggregate_stats['stopped_by_distance_limit'] / aggregate_stats['total_chunks']) * 100,
-                'end_of_sentences': (aggregate_stats['stopped_by_end_of_sentences'] / aggregate_stats['total_chunks']) * 100
+                'end_of_text_units': (aggregate_stats['stopped_by_end_of_text_units'] / aggregate_stats['total_chunks']) * 100
             }
         
         step_data = {
@@ -774,8 +774,8 @@ class ChunkingOrchestrator:
                 'total_documents': len(doc_chunks),
                 'total_chunks': total_chunks,
                 'avg_chunks_per_doc': total_chunks / len(doc_chunks) if doc_chunks else 0,
-                'total_input_sentences': sum(len(sentences) for sentences in doc_sentences.values()),
-                'merge_reduction_rate': 1 - (total_chunks / sum(len(sentences) for sentences in doc_sentences.values())) if doc_sentences else 0,
+                'total_input_text_units': sum(len(text_units) for text_units in doc_text_units.values()),
+                'merge_reduction_rate': 1 - (total_chunks / sum(len(text_units) for text_units in doc_text_units.values())) if doc_text_units else 0,
                 'merge_stopping_statistics': aggregate_stats,
                 'merge_stopping_percentages': stopping_percentages,
                 'config_used': {
@@ -791,11 +791,11 @@ class ChunkingOrchestrator:
         # Log merge stopping statistics
         if aggregate_stats['total_chunks'] > 0:
             logger.info(f"📊 Chunk stopping reasons (out of {aggregate_stats['total_chunks']} chunks):")
-            logger.info(f"   • Single sentence: {stopping_percentages['single_sentence']:.1f}% ({aggregate_stats['single_sentence_chunks']} chunks)")
+            logger.info(f"   • Single text unit: {stopping_percentages['single_text_unit']:.1f}% ({aggregate_stats['single_text_unit_chunks']} chunks)")
             logger.info(f"   • Similarity threshold: {stopping_percentages['similarity_threshold']:.1f}% ({aggregate_stats['stopped_by_similarity']} chunks)")
             logger.info(f"   • Token limit: {stopping_percentages['token_limit']:.1f}% ({aggregate_stats['stopped_by_token_limit']} chunks)")
             logger.info(f"   • Distance limit: {stopping_percentages['distance_limit']:.1f}% ({aggregate_stats['stopped_by_distance_limit']} chunks)")
-            logger.info(f"   • End of sentences: {stopping_percentages['end_of_sentences']:.1f}% ({aggregate_stats['stopped_by_end_of_sentences']} chunks)")
+            logger.info(f"   • End of text units: {stopping_percentages['end_of_text_units']:.1f}% ({aggregate_stats['stopped_by_end_of_text_units']} chunks)")
         
         logger.info(f"✅ Merged {len(doc_chunks)} documents into {total_chunks} chunks")
         return doc_chunks
@@ -837,33 +837,33 @@ class ChunkingOrchestrator:
                 logger.info("♻️ Using cached data for Steps 2-4 (config matched)")
                 
                 # Extract data from cached steps
-                doc_sentences = {}
+                doc_text_units = {}
                 if 'document_sentences' in step2_data:
-                    # Convert indexed sentences back to simple lists
-                    for doc_id, indexed_sentences in step2_data['document_sentences'].items():
-                        doc_sentences[doc_id] = [sent_info['content'] for sent_info in indexed_sentences.values()]
+                    # Convert indexed text units back to simple lists
+                    for doc_id, indexed_text_units in step2_data['document_sentences'].items():
+                        doc_text_units[doc_id] = [unit_info['content'] for unit_info in indexed_text_units.values()]
                 
                 doc_embeddings = step3_data.get('document_embeddings', {})
                 similarity_stats = step4_data.get('similarity_analysis', {})
                 
-                logger.info(f"♻️ Loaded: {len(doc_sentences)} documents, {sum(len(s) for s in doc_sentences.values())} sentences, {len(doc_embeddings)} embedding sets")
+                logger.info(f"♻️ Loaded: {len(doc_text_units)} documents, {sum(len(s) for s in doc_text_units.values())} text units, {len(doc_embeddings)} embedding sets")
                 
             else:
                 # Run Steps 2-4 from scratch (bypassing individual step caching)
                 logger.info("🔄 Running Steps 2-4 from scratch (no matching cache)")
                 
                 # Step 2: Split into sentences
-                doc_sentences = self.split_documents_into_sentences(documents, experiment_name, input_file)
+                doc_text_units = self.split_documents_into_text_units(documents, experiment_name, input_file)
                 
                 # Step 3: Generate embeddings
-                doc_embeddings = await self.generate_sentence_embeddings(doc_sentences, experiment_name, input_file)
+                doc_embeddings = await self.generate_text_unit_embeddings(doc_text_units, experiment_name, input_file)
                 
                 # Step 4: Analyze similarity distribution
-                similarity_stats = self.analyze_similarity_distribution(doc_sentences, doc_embeddings, experiment_name)
+                similarity_stats = self.analyze_similarity_distribution(doc_text_units, doc_embeddings, experiment_name)
             
             # Step 5: Always run semantic merging (fast and shows current results)
             logger.info("🔄 Running Step 5: Semantic merging (always executed)")
-            doc_chunks = self.merge_semantic_sentences(doc_sentences, doc_embeddings, experiment_name)
+            doc_chunks = self.merge_semantic_text_units(doc_text_units, doc_embeddings, experiment_name)
             
             # Load step 5 data to get merge stopping statistics
             try:
@@ -877,30 +877,30 @@ class ChunkingOrchestrator:
             cache_summary = self.cache_manager.get_cache_summary()
             
             # Calculate overall merging statistics
-            total_input_sentences = sum(len(sentences) for sentences in doc_sentences.values())
+            total_input_text_units = sum(len(text_units) for text_units in doc_text_units.values())
             total_output_chunks = sum(len(chunks) for chunks in doc_chunks.values())
-            reduction_rate = 1 - (total_output_chunks / total_input_sentences) if total_input_sentences > 0 else 0
+            reduction_rate = 1 - (total_output_chunks / total_input_text_units) if total_input_text_units > 0 else 0
             
             # Calculate chunk size statistics
             all_chunk_tokens = []
-            all_chunk_sentence_counts = []
+            all_chunk_text_unit_counts = []
             for chunks in doc_chunks.values():
                 for chunk in chunks:
                     all_chunk_tokens.append(chunk['token_count'])
-                    all_chunk_sentence_counts.append(chunk['sentence_count'])
+                    all_chunk_text_unit_counts.append(chunk['text_unit_count'])
             
             # Add merging statistics to cache summary
             cache_summary['merging_statistics'] = {
-                'total_input_sentences': total_input_sentences,
+                'total_input_text_units': total_input_text_units,
                 'total_output_chunks': total_output_chunks,
                 'reduction_rate': reduction_rate,
                 'reduction_percentage': reduction_rate * 100,
                 'avg_chunk_tokens': sum(all_chunk_tokens) / len(all_chunk_tokens) if all_chunk_tokens else 0,
                 'max_chunk_tokens': max(all_chunk_tokens) if all_chunk_tokens else 0,
                 'min_chunk_tokens': min(all_chunk_tokens) if all_chunk_tokens else 0,
-                'avg_sentences_per_chunk': sum(all_chunk_sentence_counts) / len(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
-                'max_sentences_per_chunk': max(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
-                'min_sentences_per_chunk': min(all_chunk_sentence_counts) if all_chunk_sentence_counts else 0,
+                'avg_text_units_per_chunk': sum(all_chunk_text_unit_counts) / len(all_chunk_text_unit_counts) if all_chunk_text_unit_counts else 0,
+                'max_text_units_per_chunk': max(all_chunk_text_unit_counts) if all_chunk_text_unit_counts else 0,
+                'min_text_units_per_chunk': min(all_chunk_text_unit_counts) if all_chunk_text_unit_counts else 0,
                 'merge_stopping_statistics': step5_data['merging_statistics']['merge_stopping_statistics'] if step5_data else {},
                 'merge_stopping_percentages': step5_data['merging_statistics']['merge_stopping_percentages'] if step5_data else {},
                 'config_used': {
@@ -1026,20 +1026,20 @@ async def main():
             merging_stats = cache_summary['merging_statistics']
             try:
                 print(f"\n🔄 Semantic Merging Results:")
-                print(f"  📊 Reduction: {merging_stats['total_input_sentences']} sentences → {merging_stats['total_output_chunks']} chunks ({merging_stats['reduction_percentage']:.1f}% reduction)")
+                print(f"  📊 Reduction: {merging_stats['total_input_text_units']} text units → {merging_stats['total_output_chunks']} chunks ({merging_stats['reduction_percentage']:.1f}% reduction)")
                 print(f"  📏 Chunk sizes: {merging_stats['min_chunk_tokens']}-{merging_stats['max_chunk_tokens']} tokens (avg: {merging_stats['avg_chunk_tokens']:.1f})")
-                print(f"  📝 Sentences per chunk: {merging_stats['min_sentences_per_chunk']}-{merging_stats['max_sentences_per_chunk']} (avg: {merging_stats['avg_sentences_per_chunk']:.1f})")
+                print(f"  📝 Text units per chunk: {merging_stats['min_text_units_per_chunk']}-{merging_stats['max_text_units_per_chunk']} (avg: {merging_stats['avg_text_units_per_chunk']:.1f})")
                 print(f"  ⚙️  Config: threshold={merging_stats['config_used']['similarity_threshold']}, max_distance={merging_stats['config_used']['max_merge_distance']}, max_size={merging_stats['config_used']['max_chunk_size']}")
                 
                 # Show merge stopping statistics if available
                 if 'merge_stopping_percentages' in merging_stats:
                     stopping_percentages = merging_stats['merge_stopping_percentages']
                     print(f"\n📊 Why chunks stopped growing:")
-                    print(f"  • Single sentence: {stopping_percentages['single_sentence']:.1f}%")
+                    print(f"  • Single text unit: {stopping_percentages['single_text_unit']:.1f}%")
                     print(f"  • Similarity threshold: {stopping_percentages['similarity_threshold']:.1f}%") 
                     print(f"  • Token limit: {stopping_percentages['token_limit']:.1f}%")
                     print(f"  • Distance limit: {stopping_percentages['distance_limit']:.1f}%")
-                    print(f"  • End of sentences: {stopping_percentages['end_of_sentences']:.1f}%")
+                    print(f"  • End of text units: {stopping_percentages['end_of_text_units']:.1f}%")
             except Exception as e:
                 logger.error(f"Error displaying merging statistics: {e}")
                 print(f"  ❌ Error displaying merging statistics: {e}")
