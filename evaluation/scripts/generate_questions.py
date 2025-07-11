@@ -105,7 +105,11 @@ def format_results(generation_result, input_metadata: Dict[str, Any], config: Di
                 "failed_chunks": generation_result.failed_chunks,
                 "total_questions_generated": len(generation_result.questions),
                 "generation_time_seconds": generation_result.generation_time,
-                "errors": generation_result.errors
+                "errors": generation_result.errors,
+                # Include heuristics configuration for display
+                "question_heuristics": generation_result.metadata.get("question_heuristics", {}),
+                # Include comprehensive stats from new implementation
+                **generation_result.metadata.get("generation_stats", {})
             }
         },
         "data": {
@@ -170,12 +174,12 @@ async def main():
         # Save results
         save_results(results, args.output_file)
         
-        # Print summary
+        # Print comprehensive summary
         stats = results["metadata"]["generation_stats"]
         logger.info("Question generation completed successfully!")
-        logger.info(f"Processed {stats['successful_chunks']}/{stats['total_chunks_processed']} chunks")
-        logger.info(f"Generated {stats['total_questions_generated']} questions")
-        logger.info(f"Generation time: {stats['generation_time_seconds']:.2f} seconds")
+        
+        # Print detailed statistics
+        print_comprehensive_stats(stats)
         
         if stats['failed_chunks'] > 0:
             logger.warning(f"Failed to process {stats['failed_chunks']} chunks")
@@ -183,13 +187,73 @@ async def main():
                 logger.warning(f"Error: {error}")
         
         print(f"\n✅ Question generation completed!")
-        print(f"📊 Results: {stats['total_questions_generated']} questions from {stats['successful_chunks']} chunks")
         print(f"💾 Output saved to: {args.output_file}")
         
     except Exception as e:
         logger.error(f"Question generation failed: {str(e)}")
         print(f"\n❌ Question generation failed: {str(e)}")
         sys.exit(1)
+
+
+def print_comprehensive_stats(stats: Dict[str, Any]):
+    """Print comprehensive statistics about the question generation process."""
+    print("\n" + "="*80)
+    print("📊 COMPREHENSIVE QUESTION GENERATION STATISTICS")
+    print("="*80)
+    
+    # Basic stats
+    print(f"\n🎯 GENERATION RESULTS:")
+    print(f"  • Total questions generated: {stats['total_questions_generated']}")
+    print(f"  • Chunks processed: {stats['successful_chunks']}/{stats['total_chunks_processed']}")
+    print(f"  • Success rate: {stats['successful_chunks']/stats['total_chunks_processed']*100:.1f}%")
+    print(f"  • Generation time: {stats['generation_time_seconds']:.2f} seconds")
+    
+    # Qualification stats
+    if 'qualification_stats' in stats:
+        qual_stats = stats['qualification_stats']
+        print(f"\n🔍 CHUNK QUALIFICATION ANALYSIS:")
+        print(f"  • Total chunks analyzed: {qual_stats['total_chunks_analyzed']}")
+        print(f"  • Qualified chunks: {qual_stats['qualified_chunks']}")
+        print(f"  • Qualification rate: {qual_stats['qualified_chunks']/qual_stats['total_chunks_analyzed']*100:.1f}%")
+        print(f"  • Average token count: {qual_stats['average_token_count']:.1f}")
+        
+        print(f"\n  📈 Skipping Breakdown:")
+        print(f"    - Too short: {qual_stats['skipped_too_short']}")
+        print(f"    - Too long: {qual_stats['skipped_too_long']}")
+        print(f"    - Headers: {qual_stats['skipped_headers']}")
+        print(f"    - Short questions: {qual_stats['skipped_short_questions']}")
+        
+        if qual_stats['token_distribution']:
+            print(f"\n  📊 Token Distribution:")
+            for bucket, count in qual_stats['token_distribution'].items():
+                print(f"    - {bucket} tokens: {count} chunks")
+    
+    # Sampling stats
+    if 'sampling_stats' in stats:
+        sampling = stats['sampling_stats']
+        print(f"\n🎲 RANDOM SAMPLING:")
+        print(f"  • Total qualified: {sampling['total_qualified']}")
+        print(f"  • Sample size: {sampling['sample_size']}")
+        print(f"  • Sampling rate: {sampling['sampling_rate']*100:.1f}%")
+        print(f"  • Method: {sampling['sampling_method']}")
+    
+    # Show configured heuristics
+    if 'question_heuristics' in stats:
+        heuristics = stats['question_heuristics']
+        print(f"\n⚙️  CONFIGURED HEURISTICS:")
+        for token_range, question_count in sorted(heuristics.items()):
+            print(f"  • {token_range} tokens → {question_count} questions")
+    
+    # Heuristic breakdown (actual results)
+    if 'heuristic_breakdown' in stats:
+        heuristic = stats['heuristic_breakdown']
+        print(f"\n🤖 APPLIED HEURISTIC RESULTS:")
+        total_processed = sum(heuristic.values())
+        for question_count, chunk_count in sorted(heuristic.items()):
+            percentage = chunk_count / total_processed * 100 if total_processed > 0 else 0
+            print(f"  • {question_count}: {chunk_count} chunks ({percentage:.1f}%)")
+    
+    print("="*80)
 
 
 if __name__ == "__main__":

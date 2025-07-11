@@ -35,6 +35,19 @@ class QuestionAnswerPair(BaseModel):
     chunk_metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class ChunkQualificationStats(BaseModel):
+    """Statistics for chunk qualification process."""
+    total_chunks_analyzed: int = 0
+    qualified_chunks: int = 0
+    skipped_too_short: int = 0
+    skipped_too_long: int = 0
+    skipped_headers: int = 0
+    skipped_short_questions: int = 0
+    headers_trimmed: int = 0
+    average_token_count: float = 0.0
+    token_distribution: Dict[str, int] = Field(default_factory=dict)  # e.g., {"0-200": 5, "200-500": 10}
+
+
 class QuestionGenerationStats(BaseModel):
     """Statistics for question generation process."""
     total_chunks_processed: int
@@ -42,4 +55,7 @@ class QuestionGenerationStats(BaseModel):
     failed_chunks: int
     total_questions_generated: int
     generation_time_seconds: float
+    qualification_stats: Optional[ChunkQualificationStats] = None
+    heuristic_breakdown: Dict[str, int] = Field(default_factory=dict)  # e.g., {"1_question": 20, "2_questions": 30}
+    sampling_stats: Dict[str, Any] = Field(default_factory=dict)  # Random sampling statistics
     errors: List[str] = Field(default_factory=list) 

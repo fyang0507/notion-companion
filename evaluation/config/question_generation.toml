@@ -8,10 +8,8 @@ max_tokens = 2000
 timeout = 30.0
 
 [generation]
-# Number of questions to generate per chunk
-questions_per_chunk = 2
-min_questions_per_chunk = 1
-max_questions_per_chunk = 3
+# Total question generation control
+total_questions_to_generate = 3  # Total number of questions to generate (random sampling)
 
 # Content filtering criteria
 min_token_count = 100          # Minimum tokens for meaningful content
@@ -19,11 +17,21 @@ max_token_count = 1000        # Maximum tokens to avoid overwhelming context
 exclude_headers = true        # Skip chunks that start with # or ##
 exclude_short_questions = true # Skip chunks that are just questions
 
+# Observability settings
+enable_qualification_stats = true  # Track chunk qualification statistics
+
 # Output configuration
 output_format = "json"
 include_metadata = true
 batch_size = 32               # Process chunks in batches to avoid rate limits
 delay_between_batches = 1.0  # Seconds to wait between batches
+
+# Heuristic-based question count per chunk based on token length
+# Dictionary mapping token ranges to number of questions
+[generation.question_heuristics]
+"0-200" = 1        # <= 200 tokens: 1 question
+"201-500" = 2      # 201-500 tokens: 2 questions  
+"501-1000" = 3     # 501+ tokens: 3 questions
 
 [prompts]
 # System prompt for question generation
