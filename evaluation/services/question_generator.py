@@ -17,7 +17,7 @@ from datetime import datetime
 import re
 from pathlib import Path
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
@@ -51,7 +51,7 @@ class QuestionGenerator:
     def __init__(self, config: Dict[str, Any]):
         """Initialize the question generator with configuration."""
         self.config = config
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         # Model configuration (fail hard if required config is missing)
         try:
@@ -267,8 +267,8 @@ class QuestionGenerator:
             elif self.max_tokens is not None:
                 api_params["max_tokens"] = self.max_tokens
             
-            # Make API call
-            response = self.client.chat.completions.create(**api_params)
+            # Make API call (now async)
+            response = await self.client.chat.completions.create(**api_params)
             
             # Parse response
             response_content = response.choices[0].message.content
@@ -442,37 +442,62 @@ class QuestionGenerator:
         # Extract database_id from the step 5 data structure
         database_id = chunks_data.get("data", {}).get("database_id", "unknown")
         
-        # Process in batches
+        # Process in batches with parallel processing within each batch
         for i in range(0, len(sampled_chunks), self.batch_size):
             batch = sampled_chunks[i:i + self.batch_size]
-            logger.info(f"Processing batch {i // self.batch_size + 1} with {len(batch)} chunks")
+            batch_num = i // self.batch_size + 1
+            logger.info(f"Processing batch {batch_num}/{(len(sampled_chunks) + self.batch_size - 1) // self.batch_size} with {len(batch)} chunks in parallel")
             
-            # Process each chunk in the batch
+            # Create parallel tasks for all chunks in this batch
+            batch_tasks = []
+            batch_chunk_ids = []
+            
             for chunk_id, chunk_idx, chunk, doc_id in batch:
-                try:
-                    # Track heuristic breakdown
-                    token_count = chunk.get("token_count", 0)
-                    num_questions = self.get_questions_count_for_chunk(token_count)
-                    heuristic_key = f"{num_questions}_questions"
-                    heuristic_breakdown[heuristic_key] = heuristic_breakdown.get(heuristic_key, 0) + 1
-                    
-                    questions = await self.generate_questions_for_chunk(chunk, chunk_id, database_id)
-                    if questions:
-                        all_questions.extend(questions)
+                # Track heuristic breakdown for this chunk
+                token_count = chunk.get("token_count", 0)
+                num_questions = self.get_questions_count_for_chunk(token_count)
+                heuristic_key = f"{num_questions}_questions"
+                heuristic_breakdown[heuristic_key] = heuristic_breakdown.get(heuristic_key, 0) + 1
+                
+                # Create async task for this chunk (proper task creation)
+                task = asyncio.create_task(self.generate_questions_for_chunk(chunk, chunk_id, database_id))
+                batch_tasks.append(task)
+                batch_chunk_ids.append(chunk_id)
+            
+            # Execute all tasks in parallel for this batch
+            batch_start_time = datetime.now()
+            try:
+                # Wait for all tasks in this batch to complete in parallel
+                batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+                
+                # Process results
+                for chunk_id, result in zip(batch_chunk_ids, batch_results):
+                    if isinstance(result, Exception):
+                        failed_chunks += 1
+                        error_msg = f"Error processing chunk {chunk_id}: {str(result)}"
+                        errors.append(error_msg)
+                        logger.error(error_msg)
+                    elif result:
+                        all_questions.extend(result)
                         successful_chunks += 1
-                        logger.debug(f"✅ Generated {len(questions)} questions for chunk {chunk_id}")
+                        logger.debug(f"✅ Generated {len(result)} questions for chunk {chunk_id}")
                     else:
                         failed_chunks += 1
                         errors.append(f"No questions generated for chunk {chunk_id}")
-                        
-                except Exception as e:
+                
+                batch_time = (datetime.now() - batch_start_time).total_seconds()
+                logger.info(f"✅ Batch {batch_num} completed in {batch_time:.2f}s - {len(batch)} chunks processed in parallel")
+                
+            except Exception as e:
+                # If the entire batch fails, mark all chunks as failed
+                logger.error(f"❌ Batch {batch_num} failed entirely: {str(e)}")
+                for chunk_id in batch_chunk_ids:
                     failed_chunks += 1
-                    error_msg = f"Error processing chunk {chunk_id}: {str(e)}"
-                    errors.append(error_msg)
-                    logger.error(error_msg)
+                    errors.append(f"Batch failure for chunk {chunk_id}: {str(e)}")
             
             # Delay between batches to avoid rate limits
             if i + self.batch_size < len(sampled_chunks):
+                logger.info(f"⏳ Waiting {self.delay_between_batches}s before next batch...")
                 await asyncio.sleep(self.delay_between_batches)
         
         end_time = datetime.now()
