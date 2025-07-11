@@ -56,9 +56,31 @@ class QuestionGenerator:
         # Model configuration (fail hard if required config is missing)
         try:
             self.model = config["models"]["model"]
-            self.temperature = config["models"]["temperature"]
-            self.max_tokens = config["models"]["max_tokens"]
             self.timeout = config["models"]["timeout"]
+            
+            # Handle temperature (reasoning models don't support custom temperature)
+            if "temperature" in config["models"]:
+                self.temperature = config["models"]["temperature"]
+                self.use_temperature = True
+                logger.info(f"Using temperature: {self.temperature}")
+            else:
+                self.temperature = None
+                self.use_temperature = False
+                logger.info("No temperature specified, using model default")
+            
+            # Handle both max_tokens (regular models) and max_completion_tokens (reasoning models)
+            if "max_completion_tokens" in config["models"]:
+                self.max_completion_tokens = config["models"]["max_completion_tokens"]
+                self.max_tokens = None
+                self.use_temperature = False  # Reasoning models don't support temperature
+                logger.info(f"Using max_completion_tokens: {self.max_completion_tokens} (reasoning model - temperature disabled)")
+            elif "max_tokens" in config["models"]:
+                self.max_tokens = config["models"]["max_tokens"]
+                self.max_completion_tokens = None
+                logger.info(f"Using max_tokens: {self.max_tokens} (regular model)")
+            else:
+                raise RuntimeError("Either 'max_tokens' or 'max_completion_tokens' must be specified in models config")
+                
         except KeyError as e:
             raise RuntimeError(f"Missing required model configuration: {e}")
 
@@ -225,17 +247,28 @@ class QuestionGenerator:
                 content=content
             )
             
-            # Make API call
-            response = self.client.chat.completions.create(
-                model=self.model,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-                timeout=self.timeout,
-                messages=[
+            # Prepare API call parameters
+            api_params = {
+                "model": self.model,
+                "timeout": self.timeout,
+                "messages": [
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": user_prompt}
                 ]
-            )
+            }
+            
+            # Add temperature if supported by model
+            if self.use_temperature and self.temperature is not None:
+                api_params["temperature"] = self.temperature
+            
+            # Add the appropriate token limit parameter based on model type
+            if self.max_completion_tokens is not None:
+                api_params["max_completion_tokens"] = self.max_completion_tokens
+            elif self.max_tokens is not None:
+                api_params["max_tokens"] = self.max_tokens
+            
+            # Make API call
+            response = self.client.chat.completions.create(**api_params)
             
             # Parse response
             response_content = response.choices[0].message.content
