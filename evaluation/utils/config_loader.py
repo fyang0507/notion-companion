@@ -21,19 +21,12 @@ logger = logging.getLogger(__name__)
 class ConfigLoader:
     """Load and manage configuration files"""
     
-    def __init__(self, config_dir: str = None):
-        if config_dir is None:
-            # Default to config directory relative to this file
-            config_dir = Path(__file__).parent.parent / "config"
-        
-        self.config_dir = Path(config_dir)
+    def __init__(self):
         self._config_cache = {}
-        
-        logger.info(f"ConfigLoader initialized with config directory: {self.config_dir}")
     
     def load_chunking_config(self, config_file: str = "chunking_config.toml") -> Dict[str, Any]:
         """Load chunking configuration from TOML file"""
-        config_path = self.config_dir / config_file
+        config_path = Path(config_file)
         
         if not config_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
@@ -71,7 +64,7 @@ class ConfigLoader:
     
     def reload_config(self, config_file: str = "chunking_config.toml") -> Dict[str, Any]:
         """Force reload configuration from file (bypass cache)"""
-        config_path = self.config_dir / config_file
+        config_path = Path(config_file)
         cache_key = str(config_path)
         
         # Clear cache entry

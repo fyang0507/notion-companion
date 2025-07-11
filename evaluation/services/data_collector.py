@@ -124,4 +124,4 @@ class DataCollector:
             documents, stats = await self.collect_database(database_id, min_content_length)
             results[database_id] = (documents, stats)
         
-        return results 
+        return results

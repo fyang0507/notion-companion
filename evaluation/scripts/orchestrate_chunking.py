@@ -844,7 +844,7 @@ class ChunkingOrchestrator:
         return doc_chunks
     
     
-    async def run_full_pipeline(self, input_file: str, experiment_name: Optional[str] = None) -> Dict[str, Any]:
+    async def run_full_pipeline(self, input_file: str, experiment_name: Optional[str] = None, config_file: str = "config/chunking_config.toml") -> Dict[str, Any]:
         """
         Run the complete 4-step chunking pipeline.
         
@@ -859,7 +859,7 @@ class ChunkingOrchestrator:
         """
         start_time = time.time()
         logger.info(f"🚀 Starting full chunking pipeline for {input_file}")
-        logger.info(f"📋 Using configuration: {self.config_loader.config_dir}/chunking_config.toml")
+        logger.info(f"📋 Using configuration: {config_file}")
         
         # Log active configuration parameters
         config_params = self.config['semantic_merging']
@@ -1045,7 +1045,8 @@ async def main():
         # Run pipeline
         cache_summary = await orchestrator.run_full_pipeline(
             input_file=args.input_file,
-            experiment_name=args.experiment_name
+            experiment_name=args.experiment_name,
+            config_file=args.config
         )
         
         # Print results
