@@ -2,9 +2,10 @@
 
 [models]
 # LLM model for question generation
-model = "gpt-4.1-nano"
+model = "o4-mini"
 temperature = 0.2
-max_tokens = 2000
+# max_tokens = 2000 # for non-reasoning models, the parameter is called max_tokens
+max_completion_tokens = 2000 # for reasoning models, the parameter is called max_completion_tokens
 timeout = 30.0
 
 [generation]
@@ -23,7 +24,7 @@ enable_qualification_stats = true  # Track chunk qualification statistics
 # Output configuration
 output_format = "json"
 include_metadata = true
-batch_size = 32               # Process chunks in batches to avoid rate limits
+batch_size = 5                # Process chunks in parallel batches (balance between speed and rate limits)
 delay_between_batches = 1.0  # Seconds to wait between batches
 
 # Heuristic-based question count per chunk based on token length
@@ -43,6 +44,7 @@ Your task is to create factual or explanatory questions that a user might natura
 - Be naturally phrased as a human would ask
 - Have clear, specific answers contained in the text
 - Questions should be in the same language as the provided text
+
 Always respond in JSON format with this exact structure:
 {
   "questions": [
@@ -56,7 +58,13 @@ Always respond in JSON format with this exact structure:
 # User prompt template
 user_prompt_template = """Based on the following text content, generate {num_questions} factual or explanatory questions that someone might ask about this content.
 
-Text content:
+Text content metadata:
+{document_metadata}
+
+Previous text chunk (for context):
+{previous_chunk}
+
+Current text content:
 {content}
 
 Remember to respond in JSON format with the questions and their answers."""

@@ -255,7 +255,33 @@ class QuestionGenerator:
         else:
             return "Minimal metadata available."
     
-    async def generate_questions_for_chunk(self, chunk: Dict[str, Any], chunk_id: str, database_id: str) -> List[QuestionAnswerPair]:
+    def _get_previous_chunk_content(self, chunks_data: Dict[str, Any], doc_id: str, chunk_idx: int) -> str:
+        """Extract the previous chunk content for context."""
+        if not chunks_data or not doc_id or chunk_idx <= 0:
+            return "This is the beginning of the document, no previous texts available."
+        
+        try:
+            # Extract chunks from data structure
+            document_chunks = chunks_data.get("data", {}).get("document_chunks", {})
+            chunks = document_chunks.get(doc_id, [])
+            
+            if chunk_idx > 0 and chunk_idx <= len(chunks):
+                previous_chunk = chunks[chunk_idx - 1]
+                previous_content = previous_chunk.get("content", "").strip()
+                
+                # Truncate if too long to avoid overwhelming the prompt
+                if len(previous_content) > 500:
+                    previous_content = previous_content[:500] + "..."
+                
+                return previous_content if previous_content else "No previous chunk content available."
+            else:
+                return "This is the beginning of the document, no previous texts available."
+                
+        except Exception as e:
+            logger.debug(f"Error extracting previous chunk: {e}")
+            return "This is the beginning of the document, no previous texts available."
+    
+    async def generate_questions_for_chunk(self, chunk: Dict[str, Any], chunk_id: str, database_id: str, chunks_data: Dict[str, Any] = None, chunk_idx: int = 0, doc_id: str = None) -> List[QuestionAnswerPair]:
         """Generate questions for a single chunk."""
         content = chunk.get("content", "").strip()
         token_count = chunk.get("token_count", 0)
@@ -266,12 +292,16 @@ class QuestionGenerator:
         # Extract and format document metadata for the prompt
         document_metadata = self._format_document_metadata(chunk.get("document_metadata", {}))
         
+        # Extract previous chunk content for context
+        previous_chunk_content = self._get_previous_chunk_content(chunks_data, doc_id, chunk_idx)
+        
         try:
             # Prepare the prompt
             user_prompt = self.user_prompt_template.format(
                 num_questions=num_questions,
                 content=content,
-                document_metadata=document_metadata
+                document_metadata=document_metadata,
+                previous_chunk=previous_chunk_content
             )
             
             # Prepare API call parameters
@@ -488,7 +518,7 @@ class QuestionGenerator:
                 heuristic_breakdown[heuristic_key] = heuristic_breakdown.get(heuristic_key, 0) + 1
                 
                 # Create async task for this chunk (proper task creation)
-                task = asyncio.create_task(self.generate_questions_for_chunk(chunk, chunk_id, database_id))
+                task = asyncio.create_task(self.generate_questions_for_chunk(chunk, chunk_id, database_id, chunks_data, chunk_idx, doc_id))
                 batch_tasks.append(task)
                 batch_chunk_ids.append(chunk_id)
             
