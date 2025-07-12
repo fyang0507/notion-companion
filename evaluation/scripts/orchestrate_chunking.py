@@ -354,7 +354,7 @@ class ChunkingOrchestrator:
             logger.warning(f"⚠️  Error reading Step 3 cache {latest_cache}: {e}")
             return False, {}, {}, {}
 
-    def load_collected_documents(self, input_file: str) -> Tuple[List[Dict[str, Any]], str]:
+    def load_collected_documents(self, input_file: str) -> Tuple[List[Dict[str, Any]], str, Dict[str, Dict[str, Any]]]:
         """
         Step 1: Load documents from data_collector.py output.
         
@@ -362,7 +362,7 @@ class ChunkingOrchestrator:
             input_file: Path to JSON file containing collected documents
             
         Returns:
-            Tuple of (List of document dictionaries, database_id)
+            Tuple of (List of document dictionaries, database_id, document_metadata_map)
         """
         logger.info(f"📖 Step 1: Loading collected documents from {input_file}")
         
@@ -376,16 +376,34 @@ class ChunkingOrchestrator:
         documents = data.get('documents', [])
         database_id = data.get('database_id', 'unknown')
         
-        logger.info(f"✅ Loaded {len(documents)} documents from database {database_id}")
+        # Create document metadata map for easy lookup
+        document_metadata_map = {}
+        for doc in documents:
+            doc_id = doc['id']
+            document_metadata_map[doc_id] = {
+                'title': doc.get('title', 'Untitled'),
+                'url': doc.get('url'),
+                'created_time': doc.get('created_time'),
+                'last_edited_time': doc.get('last_edited_time'),
+                'extracted_metadata': doc.get('extracted_metadata', {}),
+                'content_length': doc.get('content_length'),
+                'has_multimedia': doc.get('has_multimedia', False),
+                'multimedia_refs': doc.get('multimedia_refs', []),
+                'database_id': doc.get('database_id', database_id)
+            }
         
-        return documents, database_id
+        logger.info(f"✅ Loaded {len(documents)} documents from database {database_id}")
+        logger.info(f"📋 Document metadata preserved for {len(document_metadata_map)} documents")
+        
+        return documents, database_id, document_metadata_map
     
-    def split_documents_into_text_units(self, documents: List[Dict[str, Any]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[str]]:
+    def split_documents_into_text_units(self, documents: List[Dict[str, Any]], document_metadata_map: Dict[str, Dict[str, Any]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[str]]:
         """
         Step 2: Split documents into text chunks using configured splitter.
         
         Args:
             documents: List of document dictionaries
+            document_metadata_map: Mapping of document_id to metadata
             experiment_name: Optional experiment name for saving
             input_file: Input file path for metadata
             
@@ -424,7 +442,8 @@ class ChunkingOrchestrator:
                     'content': text_unit,
                     'hash': text_unit_hash,
                     'char_length': len(text_unit),
-                    'word_count': len(text_unit.split())
+                    'word_count': len(text_unit.split()),
+                    'document_metadata': document_metadata_map.get(doc_id, {})  # Include document metadata
                 }
                 doc_indexed_text_units[i] = text_unit_info
                 
@@ -432,16 +451,18 @@ class ChunkingOrchestrator:
                 text_unit_lookup[text_unit_hash] = {
                     'document_id': doc_id,
                     'text_unit_index': i,
-                    'content': text_unit
+                    'content': text_unit,
+                    'document_metadata': document_metadata_map.get(doc_id, {})
                 }
             
             indexed_text_units[doc_id] = doc_indexed_text_units
         
-        # Save step data with enhanced indexing
+        # Save step data with enhanced indexing and document metadata
         step_data = {
             'document_sentences': indexed_text_units,
             'sentence_lookup': text_unit_lookup,  # Global hash -> text unit mapping
             'input_documents': {doc['id']: {'title': doc.get('title', 'Untitled'), 'content_length': len(doc['content'])} for doc in documents},
+            'document_metadata_map': document_metadata_map,  # Preserve full metadata
             'statistics': {
                 'total_documents': len(doc_text_units),
                 'total_text_units': total_text_units,
@@ -455,12 +476,13 @@ class ChunkingOrchestrator:
         logger.info(f"✅ Split {len(doc_text_units)} documents into {total_text_units} text chunks")
         return doc_text_units
     
-    async def generate_text_unit_embeddings(self, doc_text_units: Dict[str, List[str]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[List[float]]]:
+    async def generate_text_unit_embeddings(self, doc_text_units: Dict[str, List[str]], document_metadata_map: Dict[str, Dict[str, Any]], experiment_name: str = None, input_file: str = None) -> Dict[str, List[List[float]]]:
         """
         Step 3: Generate embeddings for text units using sentence_embedding.py.
         
         Args:
             doc_text_units: Dictionary mapping document_id to list of text units
+            document_metadata_map: Mapping of document_id to metadata
             experiment_name: Optional experiment name for saving
             input_file: Input file path for metadata
             
@@ -502,7 +524,8 @@ class ChunkingOrchestrator:
                     'embedding': embedding,
                     'embedding_dimensions': len(embedding) if embedding else 0,
                     'char_length': len(text_unit),
-                    'word_count': len(text_unit.split())
+                    'word_count': len(text_unit.split()),
+                    'document_metadata': document_metadata_map.get(doc_id, {})  # Include document metadata
                 }
             text_unit_hashes[doc_id] = doc_text_unit_metadata
             
@@ -519,7 +542,8 @@ class ChunkingOrchestrator:
                     'content': text_unit_info['content'],
                     'embedding': text_unit_info['embedding'],
                     'char_length': text_unit_info['char_length'],
-                    'word_count': text_unit_info['word_count']
+                    'word_count': text_unit_info['word_count'],
+                    'document_metadata': text_unit_info['document_metadata']
                 }
         
         # Save step data with unified caching including text unit hashes
@@ -527,6 +551,7 @@ class ChunkingOrchestrator:
             'document_embeddings': doc_embeddings,
             'sentence_metadata': text_unit_hashes,
             'global_sentence_lookup': global_text_unit_lookup,  # Easy hash-based lookup
+            'document_metadata_map': document_metadata_map,  # Preserve metadata
             'embedding_statistics': {
                 'total_documents': len(doc_embeddings),
                 'total_embeddings': sum(len(embs) for embs in doc_embeddings.values()),
@@ -547,7 +572,7 @@ class ChunkingOrchestrator:
     
     def analyze_similarity_distribution(self, doc_text_units: Dict[str, List[str]], 
                                       doc_embeddings: Dict[str, List[List[float]]], 
-                                      experiment_name: str = None) -> Dict[str, Any]:
+                                      experiment_name: str = None, document_metadata_map: Dict[str, Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Analyze similarity distribution of adjacent text units to inform threshold tuning.
         
@@ -678,6 +703,7 @@ class ChunkingOrchestrator:
     
     def merge_semantic_text_units(self, doc_text_units: Dict[str, List[str]], 
                                doc_embeddings: Dict[str, List[List[float]]], 
+                               document_metadata_map: Dict[str, Dict[str, Any]],
                                experiment_name: str = None, database_id: str = None) -> Dict[str, List[Dict[str, Any]]]:
         """
         Step 4: Merge semantically similar text units using semantic_merger.py.
@@ -687,6 +713,7 @@ class ChunkingOrchestrator:
         Args:
             doc_text_units: Dictionary mapping document_id to list of text units
             doc_embeddings: Dictionary mapping document_id to list of embeddings
+            document_metadata_map: Mapping of document_id to metadata
             
         Returns:
             Dictionary mapping document_id to list of chunk dictionaries
@@ -726,7 +753,7 @@ class ChunkingOrchestrator:
             aggregate_stats['stopped_by_distance_limit'] += doc_stats.stopped_by_distance_limit
             aggregate_stats['stopped_by_end_of_text_units'] += doc_stats.stopped_by_end_of_sentences
             
-            # Convert to dictionary format for JSON serialization
+            # Convert to dictionary format for JSON serialization WITH METADATA
             chunks = []
             for chunk_result in chunk_results:
                 chunk_dict = {
@@ -734,7 +761,9 @@ class ChunkingOrchestrator:
                     'start_sentence': chunk_result.start_sentence,
                     'end_sentence': chunk_result.end_sentence,
                     'token_count': len(self.tokenizer.encode(chunk_result.content)),
-                    'text_unit_count': chunk_result.end_sentence - chunk_result.start_sentence + 1
+                    'text_unit_count': chunk_result.end_sentence - chunk_result.start_sentence + 1,
+                    'document_metadata': document_metadata_map.get(doc_id, {}),  # Include document metadata
+                    'document_id': doc_id  # Add document ID for reference
                 }
                 chunks.append(chunk_dict)
             
@@ -754,7 +783,8 @@ class ChunkingOrchestrator:
                     'token_count': chunk['token_count'],
                     'text_unit_count': chunk['text_unit_count'],
                     'start_sentence': chunk['start_sentence'],
-                    'end_sentence': chunk['end_sentence']
+                    'end_sentence': chunk['end_sentence'],
+                    'document_metadata': chunk['document_metadata']
                 }
             chunk_hashes[doc_id] = doc_chunk_hashes
         
@@ -810,6 +840,7 @@ class ChunkingOrchestrator:
             'document_chunks': doc_chunks,
             'chunk_metadata': chunk_hashes,
             'database_id': database_id,
+            'document_metadata_map': document_metadata_map,  # Preserve metadata
             'merging_statistics': {
                 'total_documents': len(doc_chunks),
                 'total_chunks': total_chunks,
@@ -870,7 +901,7 @@ class ChunkingOrchestrator:
         
         try:
             # Step 1: Load documents
-            documents, database_id = self.load_collected_documents(input_file)
+            documents, database_id, document_metadata_map = self.load_collected_documents(input_file)
             
             # Check for Step 3 cache with matching config (simplified two-stage approach)
             cache_matched, step2_data, step3_data, step4_data = self._check_cached_pipeline_stage(experiment_name, input_file)
@@ -889,6 +920,11 @@ class ChunkingOrchestrator:
                 doc_embeddings = step3_data.get('document_embeddings', {})
                 similarity_stats = step4_data.get('similarity_analysis', {})
                 
+                # Get metadata from cached data if available
+                cached_metadata = step2_data.get('document_metadata_map', {})
+                if cached_metadata:
+                    document_metadata_map = cached_metadata
+                
                 logger.info(f"♻️ Loaded: {len(doc_text_units)} documents, {sum(len(s) for s in doc_text_units.values())} text units, {len(doc_embeddings)} embedding sets")
                 
             else:
@@ -896,17 +932,17 @@ class ChunkingOrchestrator:
                 logger.info("🔄 Running Steps 2-4 from scratch (no matching cache)")
                 
                 # Step 2: Split into sentences
-                doc_text_units = self.split_documents_into_text_units(documents, experiment_name, input_file)
+                doc_text_units = self.split_documents_into_text_units(documents, document_metadata_map, experiment_name, input_file)
                 
                 # Step 3: Generate embeddings
-                doc_embeddings = await self.generate_text_unit_embeddings(doc_text_units, experiment_name, input_file)
+                doc_embeddings = await self.generate_text_unit_embeddings(doc_text_units, document_metadata_map, experiment_name, input_file)
                 
                 # Step 4: Analyze similarity distribution
-                similarity_stats = self.analyze_similarity_distribution(doc_text_units, doc_embeddings, experiment_name)
+                similarity_stats = self.analyze_similarity_distribution(doc_text_units, doc_embeddings, experiment_name, document_metadata_map)
             
             # Step 5: Always run semantic merging (fast and shows current results)
             logger.info("🔄 Running Step 5: Semantic merging (always executed)")
-            doc_chunks = self.merge_semantic_text_units(doc_text_units, doc_embeddings, experiment_name, database_id)
+            doc_chunks = self.merge_semantic_text_units(doc_text_units, doc_embeddings, document_metadata_map, experiment_name, database_id)
             
             # Load step 5 data to get merge stopping statistics
             try:
