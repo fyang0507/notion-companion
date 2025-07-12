@@ -4,7 +4,7 @@ from datetime import datetime
 
 
 class Document(BaseModel):
-    """Simple document model for evaluation."""
+    """Document model for evaluation with metadata support."""
     id: str
     title: str
     content: str
@@ -12,15 +12,32 @@ class Document(BaseModel):
     created_time: Optional[datetime] = None
     last_edited_time: Optional[datetime] = None
     url: Optional[str] = None
+    
+    # Metadata fields
+    extracted_metadata: Dict[str, Any] = Field(default_factory=dict)  # Processed metadata
+    content_length: Optional[int] = None
+    has_multimedia: bool = False
+    multimedia_refs: List[str] = Field(default_factory=list)  # URLs/references to multimedia
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 
 class CollectionStats(BaseModel):
-    """Simple collection statistics."""
+    """Statistics about the collected data."""
     total_documents: int
-    successful: int
-    failed: int
-    skipped: int
-    errors: List[str] = Field(default_factory=list)
+    total_databases: int
+    collection_time: datetime
+    avg_content_length: Optional[float] = None
+    content_length_distribution: Dict[str, int] = Field(default_factory=dict)
+    metadata_field_coverage: Dict[str, int] = Field(default_factory=dict)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
 
 
 class QuestionAnswerPair(BaseModel):

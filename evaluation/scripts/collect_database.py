@@ -72,10 +72,10 @@ class MultiDatabaseCollector:
         
         try:
             # Collect documents using the existing DataCollector
-            documents, collection_stats = await collector.collect_database(
-                database_id=database_id,
-                min_content_length=self.min_content_length
-            )
+            documents = await collector.collect_database(database_id=database_id)
+            
+            # Get collection stats
+            collection_stats = collector.get_collection_stats()
             
             # Save the collection result directly
             timestamp = datetime.now().strftime("%Y%m%d_%H%M")
@@ -93,13 +93,7 @@ class MultiDatabaseCollector:
                     "min_content_length": self.min_content_length,
                     "collection_timestamp": timestamp
                 },
-                "collection_stats": {
-                    "total_documents": collection_stats.total_documents,
-                    "successful": collection_stats.successful,
-                    "failed": collection_stats.failed,
-                    "skipped": collection_stats.skipped,
-                    "errors": collection_stats.errors
-                }
+                "collection_stats": collection_stats.model_dump()
             }
             
             # Save in our format
