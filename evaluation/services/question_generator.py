@@ -232,6 +232,29 @@ class QuestionGenerator:
         # Use character count instead of word count to handle Chinese text
         return len(content) < 30  # Very short phrases
     
+    def _format_document_metadata(self, metadata: Dict[str, Any]) -> str:
+        """Format document metadata into a readable string for the prompt."""
+        if not metadata:
+            return "No document metadata available."
+        
+        formatted_parts = []
+        
+        # Process all metadata fields generically
+        for key, value in metadata.items():
+            if key == "extracted_metadata" and isinstance(value, dict):
+                # Handle extracted_metadata as a nested dict
+                for nested_key, nested_value in value.items():
+                    if nested_value:  # Only include non-empty values
+                        formatted_parts.append(f"- {nested_key}: {str(nested_value)}")
+            elif value:  # Only include non-empty values
+                formatted_parts.append(f"- {key}: {str(value)}")
+        
+        # Join all parts with newlines
+        if formatted_parts:
+            return "\n".join(formatted_parts)
+        else:
+            return "Minimal metadata available."
+    
     async def generate_questions_for_chunk(self, chunk: Dict[str, Any], chunk_id: str, database_id: str) -> List[QuestionAnswerPair]:
         """Generate questions for a single chunk."""
         content = chunk.get("content", "").strip()
@@ -240,11 +263,15 @@ class QuestionGenerator:
         # Determine number of questions to generate based on heuristics
         num_questions = self.get_questions_count_for_chunk(token_count)
         
+        # Extract and format document metadata for the prompt
+        document_metadata = self._format_document_metadata(chunk.get("document_metadata", {}))
+        
         try:
             # Prepare the prompt
             user_prompt = self.user_prompt_template.format(
                 num_questions=num_questions,
-                content=content
+                content=content,
+                document_metadata=document_metadata
             )
             
             # Prepare API call parameters
@@ -291,6 +318,7 @@ class QuestionGenerator:
                         "text_unit_count": chunk.get("text_unit_count", 0),
                         "start_sentence": chunk.get("start_sentence", 0),
                         "end_sentence": chunk.get("end_sentence", 0),
+                        "document_metadata": chunk.get("document_metadata", {}),  # Include full document metadata
                         "generated_at": datetime.now().isoformat()
                     }
                 )
