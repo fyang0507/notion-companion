@@ -333,7 +333,7 @@ class QuestionGenerator:
             model_settings = ModelSettings(**model_settings_params)
             
             # Make API call within trace context for proper span capture
-            with trace(f"question_generation_{chunk_id}"):
+            with trace(f"question_generation_{datetime.now().strftime('%Y%m%d_%H%M')}"):
                 response = await self.openai_model.get_response(
                     system_instructions=self.system_prompt,
                     input=user_prompt,
