@@ -3,6 +3,9 @@ Question Generation Service for Evaluation Dataset Creation
 
 Generates factual and explanatory questions from text chunks using LLM.
 Part of the evaluation pipeline for RAG system testing.
+
+NOTE: This service uses OpenAIChatCompletionsModel (not the simpler chat completion API)
+to enable OpenAI's built-in tracing.
 """
 
 import json
@@ -11,13 +14,14 @@ import asyncio
 import os
 import sys
 import random
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 import re
 from pathlib import Path
 
-from openai import AsyncOpenAI
+from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
+from agents import AsyncOpenAI, set_default_openai_client, set_default_openai_api, trace, enable_verbose_stdout_logging, ModelSettings, ModelTracing
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
@@ -26,8 +30,12 @@ from models.evaluation_models import QuestionAnswerPair, QuestionGenerationStats
 
 logger = logging.getLogger(__name__)
 
+# Create global client for tracing
 load_dotenv()
-
+set_default_openai_api("chat_completions")
+enable_verbose_stdout_logging()
+openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+set_default_openai_client(openai_client)
 
 @dataclass
 class GenerationResult:
@@ -51,12 +59,17 @@ class QuestionGenerator:
     def __init__(self, config: Dict[str, Any]):
         """Initialize the question generator with configuration."""
         self.config = config
-        self.client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         # Model configuration (fail hard if required config is missing)
         try:
             self.model = config["models"]["model"]
             self.timeout = config["models"]["timeout"]
+            
+            # Create model instance with configured model name
+            self.openai_model = OpenAIChatCompletionsModel(
+                openai_client=openai_client,
+                model=self.model
+            )
             
             # Handle temperature (reasoning models don't support custom temperature)
             if "temperature" in config["models"]:
@@ -304,35 +317,54 @@ class QuestionGenerator:
                 previous_chunk=previous_chunk_content
             )
             
-            # Prepare API call parameters
-            api_params = {
-                "model": self.model,
-                "timeout": self.timeout,
-                "messages": [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ]
-            }
+            # Prepare API call parameters for Response API
+            model_settings_params = {}
             
             # Add temperature if supported by model
             if self.use_temperature and self.temperature is not None:
-                api_params["temperature"] = self.temperature
+                model_settings_params["temperature"] = self.temperature
             
-            # Add the appropriate token limit parameter based on model type
+            # Add the appropriate token limit parameter - ModelSettings uses max_tokens
             if self.max_completion_tokens is not None:
-                api_params["max_completion_tokens"] = self.max_completion_tokens
+                model_settings_params["max_tokens"] = self.max_completion_tokens
             elif self.max_tokens is not None:
-                api_params["max_tokens"] = self.max_tokens
+                model_settings_params["max_tokens"] = self.max_tokens
             
-            # Make API call (now async)
-            response = await self.client.chat.completions.create(**api_params)
+            model_settings = ModelSettings(**model_settings_params)
             
-            # Parse response
-            response_content = response.choices[0].message.content
-            logger.debug(f"Raw LLM response: {response_content}")
+            # Make API call within trace context for proper span capture
+            with trace(f"question_generation_{chunk_id}"):
+                response = await self.openai_model.get_response(
+                    system_instructions=self.system_prompt,
+                    input=user_prompt,
+                    model_settings=model_settings,
+                    tools=[],
+                    output_schema=None,
+                    handoffs=[],
+                    tracing=ModelTracing.ENABLED,
+                    previous_response_id=None,
+                )
+            
+            # Parse response - adapt for Response API format
+            response_content = response.output[0].content
+            
+            # Handle different Response API formats
+            if isinstance(response_content, list) and response_content:
+                # If it's a list, get the first item
+                first_item = response_content[0]
+                if hasattr(first_item, 'text'):
+                    actual_content = first_item.text
+                else:
+                    actual_content = str(first_item)
+            elif hasattr(response_content, 'text'):
+                actual_content = response_content.text
+            elif isinstance(response_content, str):
+                actual_content = response_content
+            else:
+                actual_content = str(response_content)
             
             # Extract JSON from response
-            qa_pairs = self._parse_questions_response(response_content)
+            qa_pairs = self._parse_questions_response(actual_content)
             
             # Convert to QuestionAnswerPair objects
             questions = []
@@ -363,17 +395,24 @@ class QuestionGenerator:
     
     def _parse_questions_response(self, response_content: str) -> List[Dict[str, str]]:
         """Parse the LLM response to extract questions and answers."""
+        
         try:
+            # Handle ResponseOutputText object if it wasn't properly converted
+            if hasattr(response_content, 'text'):
+                actual_content = response_content.text
+            else:
+                actual_content = str(response_content)
+                
             # Try to parse as JSON directly
-            parsed = json.loads(response_content)
+            parsed = json.loads(actual_content)
             if "questions" in parsed:
                 return parsed["questions"]
             else:
                 return parsed
                 
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             # Try to extract JSON from markdown code blocks
-            json_match = re.search(r'```json\n(.*?)\n```', response_content, re.DOTALL)
+            json_match = re.search(r'```json\n(.*?)\n```', actual_content, re.DOTALL)
             if json_match:
                 try:
                     parsed = json.loads(json_match.group(1))
@@ -386,14 +425,18 @@ class QuestionGenerator:
             
             # If all else fails, try to parse the entire response
             try:
-                parsed = json.loads(response_content)
+                parsed = json.loads(actual_content)
                 if "questions" in parsed:
                     return parsed["questions"]
                 else:
                     return parsed
             except json.JSONDecodeError:
-                logger.error(f"Failed to parse LLM response: {response_content}")
+                logger.error(f"Failed to parse LLM response: {actual_content}")
                 return []
+        
+        except Exception as e:
+            logger.error(f"[JSON Parse] Unexpected error: {e}")
+            return []
     
     def _analyze_all_chunks(self, chunks_data: Dict[str, Any]) -> Tuple[List[Tuple[str, int, Dict[str, Any]]], ChunkQualificationStats]:
         """First pass: Analyze all chunks for qualification and build statistics."""
@@ -467,7 +510,7 @@ class QuestionGenerator:
     async def generate_questions(self, chunks_data: Dict[str, Any]) -> GenerationResult:
         """Generate questions with two-pass approach: qualification then random sampling."""
         start_time = datetime.now()
-        
+
         # Phase 1: Analyze all chunks for qualification
         logger.info("🔍 Phase 1: Analyzing chunk qualification...")
         qualified_chunks, qualification_stats = self._analyze_all_chunks(chunks_data)
