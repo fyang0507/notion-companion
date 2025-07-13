@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
-from agents import AsyncOpenAI, set_default_openai_client, set_default_openai_api, trace, enable_verbose_stdout_logging, ModelSettings, ModelTracing
+from agents import AsyncOpenAI, ModelSettings, set_default_openai_client, set_default_openai_api, trace, enable_verbose_stdout_logging, ModelTracing
 from dotenv import load_dotenv
 
 # Add parent directory to path for imports
@@ -63,37 +63,12 @@ class QuestionGenerator:
         # Model configuration (fail hard if required config is missing)
         try:
             self.model = config["models"]["model"]
-            self.timeout = config["models"]["timeout"]
-            
             # Create model instance with configured model name
             self.openai_model = OpenAIChatCompletionsModel(
                 openai_client=openai_client,
                 model=self.model
             )
-            
-            # Handle temperature (reasoning models don't support custom temperature)
-            if "temperature" in config["models"]:
-                self.temperature = config["models"]["temperature"]
-                self.use_temperature = True
-                logger.info(f"Using temperature: {self.temperature}")
-            else:
-                self.temperature = None
-                self.use_temperature = False
-                logger.info("No temperature specified, using model default")
-            
-            # Handle both max_tokens (regular models) and max_completion_tokens (reasoning models)
-            if "max_completion_tokens" in config["models"]:
-                self.max_completion_tokens = config["models"]["max_completion_tokens"]
-                self.max_tokens = None
-                self.use_temperature = False  # Reasoning models don't support temperature
-                logger.info(f"Using max_completion_tokens: {self.max_completion_tokens} (reasoning model - temperature disabled)")
-            elif "max_tokens" in config["models"]:
-                self.max_tokens = config["models"]["max_tokens"]
-                self.max_completion_tokens = None
-                logger.info(f"Using max_tokens: {self.max_tokens} (regular model)")
-            else:
-                raise RuntimeError("Either 'max_tokens' or 'max_completion_tokens' must be specified in models config")
-                
+
         except KeyError as e:
             raise RuntimeError(f"Missing required model configuration: {e}")
 
@@ -316,28 +291,12 @@ class QuestionGenerator:
                 document_metadata=document_metadata,
                 previous_chunk=previous_chunk_content
             )
-            
-            # Prepare API call parameters for Response API
-            model_settings_params = {}
-            
-            # Add temperature if supported by model
-            if self.use_temperature and self.temperature is not None:
-                model_settings_params["temperature"] = self.temperature
-            
-            # Add the appropriate token limit parameter - ModelSettings uses max_tokens
-            if self.max_completion_tokens is not None:
-                model_settings_params["max_tokens"] = self.max_completion_tokens
-            elif self.max_tokens is not None:
-                model_settings_params["max_tokens"] = self.max_tokens
-            
-            model_settings = ModelSettings(**model_settings_params)
-            
             # Make API call within trace context for proper span capture
             with trace(f"question_generation_{datetime.now().strftime('%Y%m%d_%H%M')}"):
                 response = await self.openai_model.get_response(
                     system_instructions=self.system_prompt,
                     input=user_prompt,
-                    model_settings=model_settings,
+                    model_settings=ModelSettings(),
                     tools=[],
                     output_schema=None,
                     handoffs=[],
@@ -372,6 +331,8 @@ class QuestionGenerator:
                 question_obj = QuestionAnswerPair(
                     question=qa["question"],
                     answer=qa["answer"],
+                    question_type=qa["question_type"],
+                    difficulty=qa["difficulty"],
                     chunk_id=chunk_id,
                     chunk_content=content,
                     database_id=database_id,
@@ -626,7 +587,6 @@ class QuestionGenerator:
             generation_time=generation_time,
             metadata={
                 "model": self.model,
-                "temperature": self.temperature,
                 "question_heuristics": self.question_heuristics,
                 "parsed_heuristics": [f"{min_t}-{max_t}: {q}q" for min_t, max_t, q in self.parsed_heuristics],
                 "min_token_count": self.min_token_count,

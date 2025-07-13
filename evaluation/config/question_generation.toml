@@ -2,15 +2,11 @@
 
 [models]
 # LLM model for question generation
-model = "o4-mini"
-temperature = 0.2
-# max_tokens = 2000 # for non-reasoning models, the parameter is called max_tokens
-max_completion_tokens = 2000 # for reasoning models, the parameter is called max_completion_tokens
-timeout = 30.0
+model = "gpt-4.1"
 
 [generation]
 # Total question generation control
-total_questions_to_generate = 3  # Total number of questions to generate (random sampling)
+total_questions_to_generate = 10  # Total number of questions to generate (random sampling)
 
 # Content filtering criteria
 min_token_count = 100          # Minimum tokens for meaningful content
@@ -24,7 +20,7 @@ enable_qualification_stats = true  # Track chunk qualification statistics
 # Output configuration
 output_format = "json"
 include_metadata = true
-batch_size = 5                # Process chunks in parallel batches (balance between speed and rate limits)
+batch_size = 10              # Process chunks in parallel batches (balance between speed and rate limits)
 delay_between_batches = 1.0  # Seconds to wait between batches
 
 # Heuristic-based question count per chunk based on token length
@@ -36,35 +32,64 @@ delay_between_batches = 1.0  # Seconds to wait between batches
 
 [prompts]
 # System prompt for question generation
-system_prompt = """You are an expert at generating high-quality factual questions from text content.
+system_prompt = """你是一位专业的问答对生成专家，专门为用户的文档创建高质量的评估数据集。
 
-Your task is to create factual or explanatory questions that a user might naturally ask about the given text content. The questions should:
-- Be specific and answerable from the text
-- Focus on key facts, explanations, or insights
-- Be naturally phrased as a human would ask
-- Have clear, specific answers contained in the text
-- Questions should be in the same language as the provided text
+你需要首先检测输入文本的语言（主要为中文或英文），并使用相同语言生成问题和答案。如果检测为英文，则请用英文输出问题和答案，并将下面的指导原则等价地应用到英文场景。
 
-Always respond in JSON format with this exact structure:
+你的任务是生成用户真实可能会问的、具体且自包含的问题。生成的问题应该：
+1. 自包含性：问题本身包含足够的背景信息，不依赖外部上下文
+2. 具体性：针对文本中的具体观点、数据或论述
+3. 真实性：模拟真实用户的提问方式和关注点
+4. 可回答性：答案明确存在于给定文本中
+5. 多样性：涵盖不同类型（事实性、解释性、分析性）
+
+问题类型包括：
+- 事实查询："高善文认为2025年中国经济的核心问题是什么？"
+- 数据询问："根据付鹏的演讲，日本从哪一年开始死亡率突破10？"
+- 观点解释："作者为什么认为明朝进入了'历史的垃圾时间'？"
+- 概念澄清："文中提到的'有效需求不足'具体指什么现象？"
+- 因果关系："付鹏认为中国内需不足的主要原因是什么？"
+
+输出格式：
 {
   "questions": [
     {
-      "question": "What specific question would someone ask?",
-      "answer": "The exact quote from the text where the answer can be found or inferred"
+      "question": "具体、自包含的问题",
+      "answer": "从文本中提取的准确答案，必须是原文中原话的准确引用",
+      "question_type": "factual|explanatory|analytical",
+      "difficulty": "easy|medium|hard"
     }
   ]
 }"""
 
 # User prompt template
-user_prompt_template = """Based on the following text content, generate {num_questions} factual or explanatory questions that someone might ask about this content.
+user_prompt_template = """基于以下文本内容，生成{num_questions}个高质量的问答对。
 
-Text content metadata:
+要求：
+1. 问题必须具体且自包含，即使没有看过原文的人也能理解问题在问什么
+2. 避免使用"这个"、"那个"、"上述"等指代词
+3. 如果涉及人物观点，在问题中明确指出人物姓名
+4. 如果涉及专业概念，在问题中给出必要的背景
+5. 所有问题和答案必须使用与输入文本一致的语言（中文或英文）
+
+文本内容元数据：
 {document_metadata}
 
-Previous text chunk (for context):
+前文内容（用于上下文理解）：
 {previous_chunk}
 
-Current text content:
+当前文本内容：
 {content}
 
-Remember to respond in JSON format with the questions and their answers."""
+示例输入输出：
+
+输入文本：
+"高善文认为，2018年前后，中国经济增长模式逐步摆脱依靠债务基建和房地产驱动的增长形式，转向依靠技术进步和产业升级。他将上市公司分为三类：支持类2500家、限制类500家、中性类2600家。"
+
+良好的问题示例：
+- "高善文如何对中国上市公司进行分类，各类别分别有多少家公司？"
+- "根据高善文的分析，中国经济增长模式在2018年前后发生了什么转变？"
+
+避免的问题示例：
+- "他是如何分类的？"（缺少主语）
+- "这个转变是什么时候开始的？"（"这个转变"不明确）"""

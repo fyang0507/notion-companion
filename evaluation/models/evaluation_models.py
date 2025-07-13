@@ -44,6 +44,9 @@ class QuestionAnswerPair(BaseModel):
     """Question-answer pair for evaluation dataset."""
     question: str
     answer: str
+    # Optional metadata about the question for richer evaluation
+    question_type: str | None = None  # e.g., factual, explanatory, analytical
+    difficulty: str | None = None     # e.g., easy, medium, hard
     chunk_id: str
     chunk_content: str
     database_id: str

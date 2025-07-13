@@ -82,6 +82,8 @@ def format_results(generation_result, input_metadata: Dict[str, Any], config: Di
         questions_data.append({
             "question": qa.question,
             "answer": qa.answer,
+            "question_type": qa.question_type,
+            "difficulty": qa.difficulty,
             "chunk_id": qa.chunk_id,
             "chunk_content": qa.chunk_content,
             "database_id": qa.database_id,
