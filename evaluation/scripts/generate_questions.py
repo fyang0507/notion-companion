@@ -25,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from services.question_generator import QuestionGenerator
 from utils.config_loader import load_config
 
-
 def setup_logging(log_level: str = "INFO") -> None:
     """Setup logging configuration."""
     logging.basicConfig(
