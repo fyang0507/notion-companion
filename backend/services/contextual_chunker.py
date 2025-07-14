@@ -9,12 +9,7 @@ import asyncio
 from typing import List, Dict, Any
 import logging
 from services.openai_service import OpenAIService
-from services.content_type_detector import ContentTypeDetector
-from services.chunking_strategies import (
-    ArticleChunkingStrategy, 
-    ReadingNotesChunkingStrategy, 
-    DocumentationChunkingStrategy
-)
+from services.chunking_strategies import ArticleChunkingStrategy
 
 class ContextualChunker:
     """Anthropic-style contextual retrieval chunking."""
@@ -23,16 +18,10 @@ class ContextualChunker:
         self.openai_service = openai_service
         self.max_tokens = max_tokens
         self.overlap_tokens = overlap_tokens
-        self.content_detector = ContentTypeDetector()
         self.logger = logging.getLogger(__name__)
         
-        # Initialize chunking strategies
-        self.strategies = {
-            'article_chunking': ArticleChunkingStrategy(max_tokens, overlap_tokens),
-            'reading_notes_chunking': ReadingNotesChunkingStrategy(max_tokens, overlap_tokens),
-            'documentation_chunking': DocumentationChunkingStrategy(max_tokens, overlap_tokens),
-            'meeting_notes_chunking': ReadingNotesChunkingStrategy(max_tokens, overlap_tokens)  # Use reading notes for meetings
-        }
+        # Use ArticleChunkingStrategy as the universal chunking strategy
+        self.chunking_strategy = ArticleChunkingStrategy(max_tokens, overlap_tokens)
     
     async def chunk_with_context(self, content: str, title: str, page_data: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         """
@@ -49,31 +38,24 @@ class ContextualChunker:
         page_data = page_data or {}
         
         try:
-            # 1. Detect content type for appropriate chunking strategy
-            content_type = self.content_detector.detect_content_type(title, content, page_data)
-            chunking_strategy_name = self.content_detector.get_chunking_strategy_for_type(content_type)
+            self.logger.info(f"Processing document with ArticleChunkingStrategy")
             
-            self.logger.info(f"Detected content type: {content_type}, using strategy: {chunking_strategy_name}")
-            
-            # 2. Get appropriate chunking strategy
-            strategy = self.strategies.get(chunking_strategy_name, self.strategies['article_chunking'])
-            
-            # 3. Generate base chunks using content-aware strategy
-            base_chunks = await strategy.create_semantic_chunks(content, title)
+            # Generate base chunks using ArticleChunkingStrategy
+            base_chunks = await self.chunking_strategy.create_semantic_chunks(content, title)
             
             if not base_chunks:
                 self.logger.warning(f"No chunks generated for document: {title}")
                 return []
             
-            # 4. Generate document summary for context generation
+            # Generate document summary for context generation
             document_summary = await self._generate_document_summary(title, content)
             
-            # 5. Generate contextual information for each chunk
+            # Generate contextual information for each chunk
             contextual_chunks = await self._add_contextual_information(
-                base_chunks, title, document_summary, content_type
+                base_chunks, title, document_summary
             )
             
-            # 6. Link adjacent chunks for context enrichment
+            # Link adjacent chunks for context enrichment
             linked_chunks = self._link_adjacent_chunks(contextual_chunks)
             
             self.logger.info(f"Generated {len(linked_chunks)} contextual chunks for '{title}'")
@@ -113,7 +95,7 @@ Summary:"""
             return f"Document about {title}"
     
     async def _add_contextual_information(self, chunks: List[Dict[str, Any]], title: str, 
-                                        document_summary: str, content_type: str) -> List[Dict[str, Any]]:
+                                        document_summary: str) -> List[Dict[str, Any]]:
         """Add contextual information to each chunk."""
         contextual_chunks = []
         
@@ -126,7 +108,7 @@ Summary:"""
             batch_tasks = []
             for chunk in batch:
                 task = self._generate_chunk_contextual_info(
-                    chunk, title, document_summary, content_type
+                    chunk, title, document_summary
                 )
                 batch_tasks.append(task)
             
@@ -154,12 +136,12 @@ Summary:"""
         return contextual_chunks
     
     async def _generate_chunk_contextual_info(self, chunk: Dict[str, Any], title: str, 
-                                            document_summary: str, content_type: str) -> Dict[str, Any]:
+                                            document_summary: str) -> Dict[str, Any]:
         """Generate Anthropic-style contextual information for a single chunk."""
         try:
             # 1. Generate chunk context (how this chunk relates to the document)
             chunk_context = await self._generate_chunk_context(
-                chunk, title, document_summary, content_type
+                chunk, title, document_summary
             )
             
             # 2. Generate chunk summary (what this chunk is about)
@@ -173,7 +155,7 @@ Summary:"""
                 'chunk_context': chunk_context,
                 'chunk_summary': chunk_summary,
                 'contextual_content': contextual_content,
-                'content_type': content_type
+                'content_type': 'content' # Universal content type
             }
             
         except Exception as e:
@@ -187,10 +169,10 @@ Summary:"""
             }
     
     async def _generate_chunk_context(self, chunk: Dict[str, Any], title: str, 
-                                    document_summary: str, content_type: str) -> str:
+                                     document_summary: str) -> str:
         """Generate contextual description of how this chunk relates to the document."""
         
-        # Build context prompt based on content type
+        # Build context prompt based on available information
         section_info = ""
         if chunk.get('section_title'):
             section_info = f"Section: {chunk['section_title']}\n"
@@ -200,33 +182,8 @@ Summary:"""
             hierarchy_path = " > ".join(chunk['hierarchy'])
             hierarchy_info = f"Document path: {hierarchy_path}\n"
         
-        # Content-type specific context prompts
-        if content_type == 'reading_notes':
-            context_prompt = f"""Document: {title}
-{hierarchy_info}{section_info}Document Summary: {document_summary}
-
-This is from reading notes. Generate a brief 1-2 sentence context explaining:
-1. What aspect of the source material this note covers
-2. How it relates to the overall notes theme
-
-Chunk Content: {chunk['content'][:500]}...
-
-Context:"""
-        
-        elif content_type == 'article':
-            context_prompt = f"""Document: {title}
-{hierarchy_info}{section_info}Document Summary: {document_summary}
-
-This is from an article. Generate a brief 1-2 sentence context explaining:
-1. How this section contributes to the article's argument or flow
-2. What specific topic or subtopic this section addresses
-
-Chunk Content: {chunk['content'][:500]}...
-
-Context:"""
-        
-        else:  # Default context prompt
-            context_prompt = f"""Document: {title}
+        # Universal context prompt for all content types
+        context_prompt = f"""Document: {title}
 {hierarchy_info}{section_info}Document Summary: {document_summary}
 
 Generate a brief 1-2 sentence context explaining:

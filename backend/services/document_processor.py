@@ -49,217 +49,63 @@ class DocumentProcessor:
         """Count tokens in text using tiktoken."""
         return len(self.encoding.encode(text))
     
-    async def chunk_document(self, content: str, title: str = "") -> List[str]:
-        """
-        Legacy method for backward compatibility with sync script.
-        Uses contextual chunking but returns simple content list.
-        """
-        try:
-            # Use contextual chunking
-            contextual_chunks = await self.contextual_chunker.chunk_with_context(
-                content=content,
-                title=title,
-                page_data={}
-            )
-            
-            # Extract just the content for legacy compatibility
-            return [chunk['content'] for chunk in contextual_chunks]
-            
-        except Exception as e:
-            self.logger.warning(f"Contextual chunking failed, falling back to basic chunking: {str(e)}")
-            # Fallback to basic chunking
-            return self._basic_chunk_fallback(content, title)
+
     
-    def _basic_chunk_fallback(self, text: str, title: str = "") -> List[str]:
+    async def _basic_chunk_fallback(self, text: str, title: str = "") -> List[str]:
         """Basic chunking fallback if contextual chunking fails."""
         if not text.strip():
             return []
         
-        # Simple chunking by paragraphs and token limits
-        sections = re.split(r'\n\s*\n', text)
-        chunks = []
-        current_chunk = ""
-        
-        # Add title context to first chunk if provided
-        title_context = f"# {title}\n\n" if title else ""
-        title_tokens = self.count_tokens(title_context)
-        
-        for section in sections:
-            section = section.strip()
-            if not section:
-                continue
+        try:
+            # Use existing chunking strategy without contextual processing
+            from services.chunking_strategies import ArticleChunkingStrategy
+            basic_chunker = ArticleChunkingStrategy(self.max_chunk_tokens, self.chunk_overlap_tokens)
+            chunks = await basic_chunker.create_semantic_chunks(text, title)
             
-            section_tokens = self.count_tokens(section)
+            # Extract just the content for fallback compatibility
+            return [chunk['content'] for chunk in chunks]
             
-            # Check if adding this section would exceed chunk size
-            if current_chunk and self.count_tokens(current_chunk + "\n\n" + section) > self.max_chunk_tokens - title_tokens:
-                # Save current chunk
-                if current_chunk.strip():
-                    chunk_content = title_context + current_chunk if len(chunks) == 0 else current_chunk
-                    chunks.append(chunk_content.strip())
-                    title_context = ""  # Only add title to first chunk
+        except Exception as e:
+            self.logger.error(f"Basic chunking strategy failed: {str(e)}")
+            
+            # Ultra-simple fallback: split by paragraphs with token limits
+            sections = re.split(r'\n\s*\n', text)
+            chunks = []
+            current_chunk = ""
+            
+            # Add title context to first chunk if provided
+            title_context = f"# {title}\n\n" if title else ""
+            title_tokens = self.count_tokens(title_context)
+            
+            for section in sections:
+                section = section.strip()
+                if not section:
+                    continue
                 
-                # Start new chunk
-                current_chunk = section
-            else:
-                # Add section to current chunk
-                if current_chunk:
-                    current_chunk += "\n\n" + section
-                else:
-                    current_chunk = section
-        
-        # Add final chunk
-        if current_chunk.strip():
-            chunk_content = title_context + current_chunk if len(chunks) == 0 else current_chunk
-            chunks.append(chunk_content.strip())
-        
-        return chunks
-    
-    def chunk_text(self, text: str, title: str = "") -> List[Dict[str, Any]]:
-        """Split text into chunks with overlap, preserving semantic boundaries."""
-        if not text.strip():
-            return []
-        
-        # First, split by major sections (double newlines)
-        sections = re.split(r'\n\s*\n', text)
-        
-        chunks = []
-        current_chunk = ""
-        current_tokens = 0
-        chunk_index = 0
-        
-        # Add title context to first chunk if provided
-        title_context = f"# {title}\n\n" if title else ""
-        title_tokens = self.count_tokens(title_context)
-        
-        for section in sections:
-            section = section.strip()
-            if not section:
-                continue
-            
-            section_tokens = self.count_tokens(section)
-            
-            # If section alone exceeds max tokens, split it further
-            if section_tokens > self.max_chunk_tokens - title_tokens:
-                # Save current chunk if it has content
-                if current_chunk.strip():
-                    chunk_content = title_context + current_chunk if chunk_index == 0 else current_chunk
-                    chunks.append({
-                        'index': chunk_index,
-                        'content': chunk_content.strip(),
-                        'token_count': self.count_tokens(chunk_content)
-                    })
-                    chunk_index += 1
-                    current_chunk = ""
-                    current_tokens = 0
-                
-                # Split large section by sentences or lines
-                subsections = self._split_large_section(section, self.max_chunk_tokens - title_tokens)
-                for subsection in subsections:
-                    chunk_content = title_context + subsection if chunk_index == 0 else subsection
-                    chunks.append({
-                        'index': chunk_index,
-                        'content': chunk_content.strip(),
-                        'token_count': self.count_tokens(chunk_content)
-                    })
-                    chunk_index += 1
-                    title_context = ""  # Only add title to first chunk
-                
-            else:
                 # Check if adding this section would exceed chunk size
-                potential_tokens = current_tokens + section_tokens + title_tokens
-                
-                if potential_tokens > self.max_chunk_tokens and current_chunk.strip():
+                if current_chunk and self.count_tokens(current_chunk + "\n\n" + section) > self.max_chunk_tokens - title_tokens:
                     # Save current chunk
-                    chunk_content = title_context + current_chunk if chunk_index == 0 else current_chunk
-                    chunks.append({
-                        'index': chunk_index,
-                        'content': chunk_content.strip(),
-                        'token_count': self.count_tokens(chunk_content)
-                    })
-                    chunk_index += 1
+                    if current_chunk.strip():
+                        chunk_content = title_context + current_chunk if len(chunks) == 0 else current_chunk
+                        chunks.append(chunk_content.strip())
+                        title_context = ""  # Only add title to first chunk
                     
-                    # Start new chunk with overlap
-                    overlap_content = self._get_overlap(current_chunk)
-                    current_chunk = overlap_content + "\n\n" + section if overlap_content else section
-                    current_tokens = self.count_tokens(current_chunk)
-                    title_context = ""  # Only add title to first chunk
+                    # Start new chunk
+                    current_chunk = section
                 else:
                     # Add section to current chunk
                     if current_chunk:
                         current_chunk += "\n\n" + section
                     else:
                         current_chunk = section
-                    current_tokens = potential_tokens
-        
-        # Add final chunk if it has content
-        if current_chunk.strip():
-            chunk_content = title_context + current_chunk if chunk_index == 0 else current_chunk
-            if self.count_tokens(chunk_content) >= self.min_chunk_tokens:
-                chunks.append({
-                    'index': chunk_index,
-                    'content': chunk_content.strip(),
-                    'token_count': self.count_tokens(chunk_content)
-                })
-        
-        return chunks
-    
-    def _split_large_section(self, section: str, max_tokens: int) -> List[str]:
-        """Split a large section by sentences or lines."""
-        # Try splitting by sentences first
-        sentences = re.split(r'(?<=[.!?])\s+', section)
-        
-        subsections = []
-        current_subsection = ""
-        
-        for sentence in sentences:
-            sentence_tokens = self.count_tokens(sentence)
             
-            if sentence_tokens > max_tokens:
-                # If single sentence is too long, split by lines or words
-                if current_subsection:
-                    subsections.append(current_subsection.strip())
-                    current_subsection = ""
-                
-                # Split very long sentence by lines
-                lines = sentence.split('\n')
-                for line in lines:
-                    if self.count_tokens(current_subsection + line) > max_tokens:
-                        if current_subsection:
-                            subsections.append(current_subsection.strip())
-                        current_subsection = line
-                    else:
-                        current_subsection = current_subsection + "\n" + line if current_subsection else line
-            else:
-                if self.count_tokens(current_subsection + " " + sentence) > max_tokens:
-                    subsections.append(current_subsection.strip())
-                    current_subsection = sentence
-                else:
-                    current_subsection = current_subsection + " " + sentence if current_subsection else sentence
-        
-        if current_subsection.strip():
-            subsections.append(current_subsection.strip())
-        
-        return subsections
-    
-    def _get_overlap(self, text: str) -> str:
-        """Get overlap content from the end of current chunk."""
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        
-        overlap = ""
-        overlap_tokens = 0
-        
-        # Take sentences from the end until we reach overlap limit
-        for sentence in reversed(sentences[-3:]):  # Max 3 sentences for overlap
-            sentence_tokens = self.count_tokens(sentence)
-            if overlap_tokens + sentence_tokens <= self.chunk_overlap_tokens:
-                overlap = sentence + " " + overlap if overlap else sentence
-                overlap_tokens += sentence_tokens
-            else:
-                break
-        
-        return overlap.strip()
-    
+            # Add final chunk
+            if current_chunk.strip():
+                chunk_content = title_context + current_chunk if len(chunks) == 0 else current_chunk
+                chunks.append(chunk_content.strip())
+            
+            return chunks
+
     async def process_document(self, 
                              database_id: str,
                              page_data: Dict[str, Any],
@@ -328,9 +174,9 @@ class DocumentProcessor:
         
         # Prepare extracted metadata as JSONB
         extracted_metadata = {}
-        for metadata_record in extracted_metadata_records:
-            field_name = metadata_record['field_name']
-            raw_value = metadata_record['raw_value']
+        if extracted_metadata_record:
+            field_name = extracted_metadata_record['field_name']
+            raw_value = extracted_metadata_record['raw_value']
             extracted_metadata[field_name] = raw_value
         
         # Determine content type

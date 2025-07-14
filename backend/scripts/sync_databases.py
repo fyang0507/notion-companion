@@ -365,8 +365,14 @@ class NotionDatabaseSyncer:
             # Delete existing chunks
             self.db.delete_document_chunks(document_id)
             
-            # Generate chunks using document processor
-            chunks = await self.document_processor.chunk_document(content, title)
+            # Generate chunks using contextual chunker
+            contextual_chunks = await self.document_processor.contextual_chunker.chunk_with_context(
+                content=content,
+                title=title,
+                page_data={}
+            )
+            # Extract just the content for compatibility with existing chunk processing logic
+            chunks = [chunk['content'] for chunk in contextual_chunks]
             
             chunks_data = []
             for i, chunk_content in enumerate(chunks):
