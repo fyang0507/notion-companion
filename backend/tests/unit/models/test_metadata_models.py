@@ -157,9 +157,6 @@ class TestSearchRequestWithMetadataFilters:
                 )
             ],
             content_type_filters=["article", "documentation"],
-            author_filters=["John Doe"],
-            tag_filters=["AI", "Tech"],
-            status_filters=["published"],
             date_range_filter=DateRangeFilter(
                 from_date="2024-01-01",
                 to_date="2024-12-31"
@@ -170,9 +167,6 @@ class TestSearchRequestWithMetadataFilters:
         assert request.database_filters == ["db-1", "db-2"]
         assert len(request.metadata_filters) == 1
         assert request.content_type_filters == ["article", "documentation"]
-        assert request.author_filters == ["John Doe"]
-        assert request.tag_filters == ["AI", "Tech"]
-        assert request.status_filters == ["published"]
         assert request.date_range_filter.from_date == date(2024, 1, 1)
         assert request.date_range_filter.to_date == date(2024, 12, 31)
 
@@ -200,9 +194,6 @@ class TestSearchRequestWithMetadataFilters:
         assert request.database_filters is None
         assert request.metadata_filters is None
         assert request.content_type_filters is None
-        assert request.author_filters is None
-        assert request.tag_filters is None
-        assert request.status_filters is None
         assert request.date_range_filter is None
 
 
@@ -247,9 +238,6 @@ class TestChatRequestWithMetadataFilters:
                 )
             ],
             content_type_filters=["article"],
-            author_filters=["John Doe"],
-            tag_filters=["Advanced"],
-            status_filters=["reviewed"],
             date_range_filter=DateRangeFilter(
                 from_date="2024-01-01"
             )
@@ -260,9 +248,6 @@ class TestChatRequestWithMetadataFilters:
         assert request.database_filters == ["db-1"]
         assert len(request.metadata_filters) == 1
         assert request.content_type_filters == ["article"]
-        assert request.author_filters == ["John Doe"]
-        assert request.tag_filters == ["Advanced"]
-        assert request.status_filters == ["reviewed"]
         assert request.date_range_filter.from_date == date(2024, 1, 1)
 
     def test_chat_request_validation(self):

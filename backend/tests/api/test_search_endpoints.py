@@ -88,7 +88,7 @@ class TestSearchEndpoints:
         assert response.status_code != 404
         assert response.status_code != 405  # Method not allowed
     
-    def test_search_query_validation(self, client):
+    def test_search_query_validation(self, client, mock_services):
         """Test search query validation."""
         # Empty query should be handled
         response = client.post("/api/search", json={"query": "", "limit": 10})

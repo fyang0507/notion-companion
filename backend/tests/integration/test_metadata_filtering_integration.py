@@ -103,9 +103,10 @@ class TestMetadataFilteringIntegration:
         assert filter_options_response.status_code == 200
         
         filter_options = filter_options_response.json()
-        assert 'authors' in filter_options
-        assert 'tags' in filter_options
-        assert 'statuses' in filter_options
+        assert 'dynamic_fields' in filter_options
+        assert 'author' in filter_options['dynamic_fields']
+        assert 'tags' in filter_options['dynamic_fields']
+        assert 'status' in filter_options['dynamic_fields']
         
         # Step 3: Get aggregated field values
         aggregated_response = client.get("/api/metadata/aggregated-fields?field_names=author,tags,status")
@@ -239,10 +240,6 @@ class TestMetadataFilteringIntegration:
         
         search_response = client.post("/api/search", json=search_payload)
         assert search_response.status_code in [200, 422, 500]
-        
-        # Also test with hybrid search
-        hybrid_response = client.post("/api/search/hybrid", json=search_payload)
-        assert hybrid_response.status_code in [200, 422, 500]
 
     def test_error_handling_workflow(self, client, mock_full_stack):
         """Test error handling in metadata filtering workflow."""
