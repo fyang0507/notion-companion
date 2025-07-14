@@ -24,6 +24,7 @@ dependencies = [
     "respx",
     "numpy",
     "openai-agents",
+    "aiohttp",
 ]
 requires-python = ">=3.12"
 readme = "README.md"
