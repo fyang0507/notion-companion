@@ -20,162 +20,14 @@ from database import get_db
 from models import *
 from services.openai_service import get_openai_service
 from services.chat_session_service import get_chat_session_service
-from services.contextual_search_engine import ContextualSearchEngine
+from services.rag_search_service import RAGSearchService, FilterProcessor
 from config.model_config import get_model_config
 from logging_config import get_logger, log_performance
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-def _load_database_configurations() -> List[Dict[str, Any]]:
-    """Load all database configurations from databases.toml."""
-    config_path = Path(__file__).parent.parent / 'config' / 'databases.toml'
-    
-    try:
-        with open(config_path, 'rb') as f:
-            config_data = tomllib.load(f)
-        return config_data.get('databases', [])
-    except Exception as e:
-        logger.error(f"Failed to load database configurations: {str(e)}")
-        return []
-
-def _get_field_type_mapping() -> Dict[str, str]:
-    """Create a mapping of field names to their configured types."""
-    field_type_mapping = {}
-    
-    configurations = _load_database_configurations()
-    for config in configurations:
-        metadata_config = config.get('metadata', {})
-        for field_name, field_config in metadata_config.items():
-            field_type = field_config.get('type', 'text')
-            field_type_mapping[field_name] = field_type
-    
-    return field_type_mapping
-
-def _prepare_chat_filters(request: ChatRequest) -> Dict[str, Any]:
-    """Prepare filter parameters for chat with configuration-based field types."""
-    filters = {}
-    
-    # Basic filters
-    if request.database_filters:
-        filters['database_filter'] = request.database_filters
-    if request.content_type_filters:
-        filters['content_type_filter'] = request.content_type_filters
-    if request.author_filters:
-        filters['author_filter'] = request.author_filters
-    if request.tag_filters:
-        filters['tag_filter'] = request.tag_filters
-    if request.status_filters:
-        filters['status_filter'] = request.status_filters
-    
-    # Date range filter
-    if request.date_range_filter:
-        date_range = {}
-        if request.date_range_filter.from_date:
-            date_range['from'] = request.date_range_filter.from_date.isoformat()
-        if request.date_range_filter.to_date:
-            date_range['to'] = request.date_range_filter.to_date.isoformat()
-        if date_range:
-            filters['date_range_filter'] = date_range
-    
-    # Metadata filters based on configuration
-    if request.metadata_filters:
-        # Get field type mappings from configuration
-        field_type_mapping = _get_field_type_mapping()
-        
-        # Separate filters by configured field type
-        text_filters = {}
-        number_filters = {}
-        select_filters = {}
-        checkbox_filters = {}
-        
-        for filter_item in request.metadata_filters:
-            field_name = filter_item.field_name
-            operator = filter_item.operator
-            values = filter_item.values
-            
-            # Get field type from configuration
-            field_type = field_type_mapping.get(field_name)
-            
-            if not field_type:
-                logger.warning(f"Field '{field_name}' not found in configuration, skipping filter")
-                continue
-            
-            # Route to appropriate filter type based on configuration
-            if field_type in ['text', 'rich_text']:
-                if operator == 'equals':
-                    text_filters[field_name] = values[0] if values else ""
-                elif operator == 'in':
-                    text_filters[field_name] = values
-                elif operator == 'contains':
-                    text_filters[field_name] = values
-                    
-            elif field_type in ['select', 'status']:
-                if operator == 'equals':
-                    select_filters[field_name] = values[0] if values else ""
-                elif operator == 'in':
-                    select_filters[field_name] = values
-                    
-            elif field_type == 'multi_select':
-                # Multi-select maps to tag_filter
-                if operator == 'equals':
-                    if field_name not in filters:
-                        filters['tag_filter'] = {field_name: [values[0]] if values else []}
-                    else:
-                        filters['tag_filter'][field_name] = [values[0]] if values else []
-                elif operator == 'in':
-                    if field_name not in filters:
-                        filters['tag_filter'] = {field_name: values}
-                    else:
-                        filters['tag_filter'][field_name] = values
-                        
-            elif field_type == 'number':
-                if operator == 'range' and values:
-                    range_filter = {}
-                    for value in values:
-                        str_value = str(value)
-                        if str_value.startswith('min:'):
-                            range_filter['min'] = float(str_value[4:])
-                        elif str_value.startswith('max:'):
-                            range_filter['max'] = float(str_value[4:])
-                    
-                    if range_filter:
-                        number_filters[field_name] = range_filter
-                elif operator == 'equals':
-                    number_filters[field_name] = {'equals': float(values[0]) if values else 0}
-                    
-            elif field_type == 'checkbox':
-                if operator == 'equals' and values:
-                    bool_value = str(values[0]).lower() in ['true', '1', 'yes']
-                    checkbox_filters[field_name] = bool_value
-                    
-            elif field_type == 'date':
-                # Date fields map to date_range_filter
-                if operator == 'range' and values:
-                    date_range = {}
-                    for value in values:
-                        str_value = str(value)
-                        if str_value.startswith('from:'):
-                            date_range['from'] = str_value[5:]
-                        elif str_value.startswith('to:'):
-                            date_range['to'] = str_value[3:]
-                    
-                    if date_range:
-                        if 'date_range_filter' not in filters:
-                            filters['date_range_filter'] = {}
-                        filters['date_range_filter'].update(date_range)
-        
-        # Add type-specific filters to the main filters dict
-        if text_filters:
-            filters['text_filter'] = text_filters
-        if number_filters:
-            filters['number_filter'] = number_filters
-        if select_filters:
-            filters['select_filter'] = select_filters
-        if checkbox_filters:
-            filters['checkbox_filter'] = checkbox_filters
-    
-    return filters
+# Filter preparation logic moved to shared FilterProcessor in rag_search_service.py
 
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
@@ -214,109 +66,72 @@ async def chat_endpoint(request: ChatRequest):
             'message_preview': latest_user_message[:interface_config.message_preview_length] + "..." if len(latest_user_message) > interface_config.message_preview_length else latest_user_message
         })
         
-        # Generate embedding for the user's message to find relevant sources
-        embedding_start = time.time()
-        embedding_response = await openai_service.generate_embedding(latest_user_message)
-        embedding_duration = (time.time() - embedding_start) * 1000
-        log_performance("embedding_generation", embedding_duration, 
-                       message_length=len(latest_user_message))
-        
-        # Find relevant documents and chunks using enhanced metadata search when filters are provided
-        # Check if advanced metadata filters are provided
-        filters = _prepare_chat_filters(request)
-        has_advanced_filters = any(key in filters for key in [
-            'metadata_filters', 'author_filter', 'tag_filter', 'status_filter', 'date_range_filter',
-            'text_filter', 'number_filter', 'select_filter', 'checkbox_filter'
-        ])
-        
+        # Use unified RAG search service (steps 1-5)
         search_start = time.time()
         
-        if has_advanced_filters:
-            # Use enhanced metadata search for advanced filtering
-            contextual_engine = ContextualSearchEngine(db, openai_service, search_config)
-            combined_results = await contextual_engine.enhanced_metadata_search(
-                query=latest_user_message,
-                filters=filters,
-                match_threshold=search_config.match_threshold,
-                match_count=search_config.match_count_default * 2  # Get more results to separate docs/chunks
-            )
-            
-            # Separate documents and chunks from combined results
-            doc_results = [r for r in combined_results if r.get('result_type') == 'document']
-            chunk_results = [r for r in combined_results if r.get('result_type') == 'chunk']
-            
-            search_method = "enhanced_metadata_search"
-        else:
-            # Use standard vector search for basic database filtering
-            database_filter = request.database_filters if request.database_filters else None
-            
-            doc_results = db.vector_search_documents(
-                query_embedding=embedding_response.embedding,
-                database_filter=database_filter,
-                match_threshold=search_config.match_threshold,
-                match_count=search_config.match_count_default
-            )
-            
-            chunk_results = db.vector_search_chunks(
-                query_embedding=embedding_response.embedding,
-                database_filter=database_filter,
-                match_threshold=search_config.match_threshold,
-                match_count=search_config.match_count_default
-            )
-            
-            search_method = "vector_search"
+        # Initialize RAG search service
+        rag_service = RAGSearchService(db, openai_service, search_config)
+        
+        # Prepare filters using consolidated logic
+        filters = FilterProcessor.prepare_filters(request)
+        
+        # Execute complete RAG pipeline (steps 1-5)
+        rag_results = await rag_service.search_and_retrieve(
+            query=latest_user_message,
+            filters=filters,
+            match_threshold=search_config.match_threshold,
+            match_count=search_config.match_count_default * 2  # Get more results for source building
+        )
+        
+        # TODO: Step 6 - Agentic iteration (future enhancement)
+        # The AI assistant will evaluate if retrieved chunks are sufficient to answer the query.
+        # If not, it can:
+        # - Modify the query for better semantic matching
+        # - Adjust metadata filters to be more inclusive
+        # - Try different search strategies
+        # - Iterate until satisfactory results are found
+        # Example implementation:
+        # if not _are_chunks_sufficient(rag_results['chunks'], latest_user_message):
+        #     modified_query = await _generate_alternative_query(latest_user_message, rag_results)
+        #     expanded_filters = _expand_filters(filters)
+        #     rag_results = await rag_service.search_and_retrieve(modified_query, expanded_filters)
         
         search_duration = (time.time() - search_start) * 1000
-        log_performance(search_method, search_duration,
-                       doc_results_count=len(doc_results),
-                       chunk_results_count=len(chunk_results))
+        search_metadata = rag_results['search_metadata']
         
-        logger.info(f"{search_method} completed", extra={
-            'doc_results': len(doc_results),
-            'chunk_results': len(chunk_results),
-            'search_duration_ms': search_duration,
+        logger.info(f"RAG search completed", extra={
+            'execution_time_ms': search_metadata['execution_time_ms'],
+            'search_strategy': search_metadata['search_strategy'],
+            'total_found': search_metadata['total_found'],
+            'final_returned': search_metadata['final_returned'],
             'threshold_used': search_config.match_threshold
         })
         
-        # Combine and sort all results by similarity
+        # Convert RAG results to source format for chat context
         all_sources = []
-        
-        # Add document results
-        for doc in doc_results:
+        for result in rag_results['chunks']:
+            # Use enriched content if available for better context
+            content = result.get('enriched_content', result.get('content', ''))
+            
             all_sources.append({
-                'id': doc['id'],
-                'title': doc['title'],
-                'content': doc['content'],
-                'similarity': doc['similarity'],
-                'notion_page_id': doc['notion_page_id'],
-                'page_url': doc.get('page_url', ''),
-                'type': 'document',
-                'metadata': doc.get('metadata', {})
+                'id': result.get('chunk_id', result.get('id', '')),
+                'title': result.get('title', ''),
+                'content': content,
+                'similarity': result.get('final_score', result.get('combined_score', result.get('similarity', 0.0))),
+                'notion_page_id': result.get('notion_page_id', ''),
+                'page_url': result.get('page_url', ''),
+                'type': result.get('result_type', 'chunk'),
+                'metadata': result.get('metadata', {})
             })
         
-        # Add chunk results  
-        for chunk in chunk_results:
-            all_sources.append({
-                'id': chunk['chunk_id'],
-                'title': chunk['title'],
-                'content': chunk['content'],
-                'similarity': chunk['similarity'],
-                'notion_page_id': chunk['notion_page_id'],
-                'page_url': chunk.get('page_url', ''),
-                'type': 'chunk',
-                'metadata': {'chunk_index': chunk.get('chunk_index', 0)}
-            })
-        
-        # Sort by similarity and take top sources based on configuration
-        all_sources.sort(key=lambda x: x['similarity'], reverse=True)
+        # Take top sources based on configuration
         top_sources = all_sources[:interface_config.top_sources_limit]
         
         # Check if no relevant documents were found
         if not top_sources:
             logger.info("No relevant documents found for user query", extra={
                 'query_preview': latest_user_message[:interface_config.message_preview_length] + "..." if len(latest_user_message) > interface_config.message_preview_length else latest_user_message,
-                'doc_results_count': len(doc_results),
-                'chunk_results_count': len(chunk_results),
+                'total_found': search_metadata['total_found'],
                 'threshold_used': search_config.match_threshold
             })
             
@@ -341,7 +156,7 @@ async def chat_endpoint(request: ChatRequest):
                             'role': 'user',
                             'content': latest_user_message,
                             'context_used': {
-                                'database_filters': database_filter or [],
+                                'database_filters': filters.get('database_filter', []),
                                 'search_threshold': search_config.match_threshold,
                                 'search_results_count': 0
                             }
@@ -354,7 +169,7 @@ async def chat_endpoint(request: ChatRequest):
                             'content': no_results_message,
                             'citations': [],
                             'context_used': {
-                                'database_filters': database_filter or [],
+                                'database_filters': filters.get('database_filter', []),
                                 'search_threshold': search_config.match_threshold,
                                 'search_results_count': 0,
                                 'model_used': 'no-llm',
@@ -399,7 +214,7 @@ async def chat_endpoint(request: ChatRequest):
                     'role': 'user',
                     'content': user_message_content,
                     'context_used': {
-                        'database_filters': database_filter or [],
+                        'database_filters': filters.get('database_filter', []),
                         'search_threshold': search_config.match_threshold,
                         'search_results_count': len(top_sources)
                     }
@@ -458,7 +273,7 @@ async def chat_endpoint(request: ChatRequest):
                             'content': assistant_response,
                             'citations': citations,
                             'context_used': {
-                                'database_filters': database_filter or [],
+                                'database_filters': filters.get('database_filter', []),
                                 'search_threshold': search_config.match_threshold,
                                 'search_results_count': len(top_sources),
                                 'model_used': chat_config.model,  # Get actual model from config
