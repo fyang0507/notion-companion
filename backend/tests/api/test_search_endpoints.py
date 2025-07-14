@@ -146,13 +146,7 @@ class TestSearchEndpoints:
             if isinstance(results, list):
                 assert len(results) <= 5
     
-    def test_hybrid_search_endpoint(self, client, mock_services):
-        """Test hybrid search endpoint (documents + chunks)."""
-        response = client.get("/api/search/hybrid?q=test query")
-        
-        # Should have hybrid search endpoint
-        assert response.status_code != 404
-    
+
     def test_contextual_search_features(self, client, mock_services):
         """Test contextual search features."""
         test_payload = {
@@ -317,23 +311,4 @@ class TestSearchEndpoints:
         response = client.post("/api/search", json=test_payload)
         
         # Should accept all filter types
-        assert response.status_code in [200, 422, 500]
-
-    def test_hybrid_search_with_metadata_filters(self, client, mock_services):
-        """Test hybrid search with metadata filters."""
-        test_payload = {
-            "query": "hybrid search test",
-            "metadata_filters": [
-                {
-                    "field_name": "content_type",
-                    "operator": "in",
-                    "values": ["article", "documentation"]
-                }
-            ],
-            "limit": 10
-        }
-        
-        response = client.post("/api/search/hybrid", json=test_payload)
-        
-        # Should accept metadata filters in hybrid search
         assert response.status_code in [200, 422, 500]

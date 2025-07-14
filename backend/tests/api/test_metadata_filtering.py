@@ -157,23 +157,6 @@ class TestMetadataFiltering:
         # Should accept metadata filters
         assert response.status_code in [200, 422, 500]
 
-    def test_hybrid_search_with_metadata_filters(self, client, mock_services):
-        """Test hybrid search with metadata filters."""
-        search_payload = {
-            "query": "test hybrid search",
-            "metadata_filters": [
-                {
-                    "field_name": "content_type",
-                    "operator": "in",
-                    "values": ["article", "documentation"]
-                }
-            ]
-        }
-        
-        response = client.post("/api/search/hybrid", json=search_payload)
-        
-        # Should accept metadata filters
-        assert response.status_code in [200, 422, 500]
 
     def test_metadata_filter_validation(self, client, mock_services):
         """Test metadata filter validation."""

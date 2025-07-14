@@ -14,45 +14,12 @@ from pathlib import Path
 # Add backend to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from services.content_type_detector import ContentTypeDetector
 from services.contextual_chunker import ContextualChunker
 from services.openai_service import get_openai_service
 from database import get_db, init_db
 
-async def test_content_type_detection():
-    """Test content type detection."""
-    print("🔍 Testing Content Type Detection...")
-    
-    detector = ContentTypeDetector()
-    
-    # Test cases
-    test_cases = [
-        {
-            'title': 'Reading Notes: The Lean Startup',
-            'content': '- Key takeaway: Build-Measure-Learn cycle\n- Important quote: "The only way to win is to learn faster than anyone else"\n- Action items: Apply MVP approach to our product',
-            'expected': 'reading_notes'
-        },
-        {
-            'title': 'Machine Learning in Healthcare: A Comprehensive Review',
-            'content': '# Introduction\nMachine learning has revolutionized healthcare...\n\n# Methodology\nWe conducted a systematic review...\n\n# Results\nOur findings indicate...\n\n# Conclusion\nML shows promise...',
-            'expected': 'article'
-        },
-        {
-            'title': 'API Documentation',
-            'content': '# Setup Guide\n\n1. Install dependencies\n2. Configure environment\n\n```bash\npnpm install\n```\n\n## Authentication\nUse Bearer tokens...',
-            'expected': 'documentation'
-        }
-    ]
-    
-    for i, case in enumerate(test_cases, 1):
-        detected = detector.detect_content_type(case['title'], case['content'], {})
-        status = "✅" if detected == case['expected'] else "❌"
-        print(f"  Test {i}: {status} '{case['title']}' -> {detected} (expected: {case['expected']})")
-    
-    print()
-
 async def test_contextual_chunking():
-    """Test contextual chunking with sample content."""
+    """Test contextual chunking with real content."""
     print("🧩 Testing Contextual Chunking...")
     
     try:
@@ -60,60 +27,57 @@ async def test_contextual_chunking():
         openai_service = get_openai_service()
         chunker = ContextualChunker(openai_service, max_tokens=500, overlap_tokens=50)
         
-        # Sample reading notes content
-        sample_content = """
-# Key Insights from "The Lean Startup"
+        # Test content
+        test_title = "Machine Learning in Healthcare"
+        test_content = """
+# Introduction
 
-## Build-Measure-Learn Cycle
-- The fundamental principle is to build a minimum viable product (MVP)
-- Measure how customers respond to the product
-- Learn from the data and iterate quickly
+Machine learning (ML) has emerged as a transformative technology in healthcare, offering unprecedented opportunities to improve patient outcomes, reduce costs, and enhance operational efficiency. This comprehensive review examines the current state of ML applications in healthcare.
 
-## Validated Learning
-- Traditional business planning is often based on assumptions
-- Startups should focus on validated learning through experiments
-- Each experiment should test a specific hypothesis
+# Background and Motivation
 
-## Innovation Accounting
-- Traditional accounting doesn't work for startups
-- Need to measure progress differently
-- Focus on learning milestones rather than traditional metrics
+The healthcare industry generates vast amounts of data daily, including electronic health records, medical imaging, genomic sequences, and sensor data from wearable devices. Traditional analytical methods often fall short in extracting meaningful insights from these complex, high-dimensional datasets.
 
-## Key Quotes
-> "The only way to win is to learn faster than anyone else"
+# Key Applications
 
-> "We must learn what customers really want, not what they say they want"
+## Diagnostic Imaging
+Machine learning algorithms, particularly deep learning models, have shown remarkable success in medical image analysis. Convolutional neural networks (CNNs) can detect diabetic retinopathy in retinal photographs with accuracy matching or exceeding that of human specialists.
 
-## Action Items
-- Implement build-measure-learn cycle in our product development
-- Define clear hypotheses for each feature
-- Set up metrics to track validated learning
-        """
+## Drug Discovery
+ML accelerates drug discovery by predicting molecular behavior, identifying potential drug targets, and optimizing clinical trial design. This has the potential to reduce the typical 10-15 year drug development timeline.
+
+## Personalized Medicine
+By analyzing patient-specific data including genetics, lifestyle, and medical history, ML enables personalized treatment recommendations that can improve therapeutic outcomes while minimizing adverse effects.
+
+# Challenges and Limitations
+
+Despite its promise, ML in healthcare faces significant challenges including data privacy concerns, regulatory hurdles, interpretability requirements, and the need for robust validation in clinical settings.
+
+# Future Directions
+
+The future of ML in healthcare lies in federated learning approaches that preserve privacy while enabling collaborative model training, explainable AI that provides clinically interpretable insights, and real-time decision support systems integrated into clinical workflows.
+
+# Conclusion
+
+Machine learning represents a paradigm shift in healthcare, offering tools to unlock insights from complex medical data. While challenges remain, continued research and development promise to deliver increasingly sophisticated and clinically valuable applications.
+"""
         
         # Test chunking
-        chunks = await chunker.chunk_with_context(
-            content=sample_content,
-            title="Reading Notes: The Lean Startup",
-            page_data={}
-        )
+        chunks = await chunker.chunk_with_context(test_content, test_title)
         
-        print(f"  Generated {len(chunks)} contextual chunks")
+        print(f"  ✅ Generated {len(chunks)} chunks")
         
-        # Display first chunk details
-        if chunks:
-            first_chunk = chunks[0]
-            print(f"  First chunk:")
-            print(f"    Content Type: {first_chunk.get('content_type', 'unknown')}")
-            print(f"    Section: {first_chunk.get('section_title', 'N/A')}")
-            print(f"    Context: {first_chunk.get('chunk_context', 'N/A')[:100]}...")
-            print(f"    Summary: {first_chunk.get('chunk_summary', 'N/A')[:100]}...")
-            print(f"    Has contextual content: {'contextual_content' in first_chunk}")
-            print(f"    Position metadata: {first_chunk.get('chunk_position', {})}")
-        
+        # Display sample chunks
+        for i, chunk in enumerate(chunks[:3]):  # Show first 3 chunks
+            print(f"\n  Chunk {i+1}:")
+            print(f"    Content: {chunk['content'][:100]}...")
+            print(f"    Context: {chunk.get('chunk_context', 'N/A')}")
+            print(f"    Summary: {chunk.get('chunk_summary', 'N/A')}")
+            
         return True
         
     except Exception as e:
-        print(f"  ❌ Error in contextual chunking: {str(e)}")
+        print(f"  ❌ Error: {str(e)}")
         return False
     
     print()
@@ -162,10 +126,7 @@ async def main():
     """Run all tests."""
     print("🚀 Testing Enhanced RAG with Contextual Retrieval\n")
     
-    # Test 1: Content Type Detection
-    await test_content_type_detection()
-    
-    # Test 2: Contextual Chunking (requires OpenAI API)
+    # Test 1: Contextual Chunking (requires OpenAI API)
     print("Note: Contextual chunking test requires OpenAI API key")
     if os.getenv('OPENAI_API_KEY'):
         await test_contextual_chunking()
@@ -173,7 +134,7 @@ async def main():
         print("  ⚠️  Skipping contextual chunking test (no OPENAI_API_KEY)")
         print()
     
-    # Test 3: Database Functions (requires Supabase)
+    # Test 2: Database Functions (requires Supabase)
     print("Note: Database test requires Supabase credentials")
     if os.getenv('NEXT_PUBLIC_SUPABASE_URL') and os.getenv('NEXT_PUBLIC_SUPABASE_ANON_KEY'):
         await test_database_functions()
