@@ -187,25 +187,6 @@ class Database:
     # VECTOR SEARCH FUNCTIONS
     # ============================================================================
     
-    def vector_search_documents(self, query_embedding: List[float], 
-                              database_filter: Optional[List[str]] = None,
-                              match_threshold: float = 0.7, 
-                              match_count: int = 10) -> List[Dict[str, Any]]:
-        """Search documents using vector similarity."""
-        try:
-            # Use the match_documents function
-            response = self.client.rpc('match_documents', {
-                'query_embedding': query_embedding,
-                'database_filter': database_filter,
-                'match_threshold': match_threshold,
-                'match_count': match_count
-            }).execute()
-            return response.data
-        except Exception as e:
-            print(f"Error in vector_search_documents: {e}")
-            # Fallback to direct table query if function not available
-            return self._fallback_vector_search(query_embedding, database_filter, match_threshold, match_count)
-    
     def vector_search_chunks(self, query_embedding: List[float], 
                            database_filter: Optional[List[str]] = None,
                            match_threshold: float = 0.7, 
@@ -224,54 +205,6 @@ class Database:
             print(f"Error in vector_search_chunks: {e}")
             return []
     
-    def hybrid_search(self, query_embedding: List[float],
-                     database_filter: Optional[List[str]] = None,
-                     content_type_filter: Optional[List[str]] = None,
-                     metadata_filters: Optional[Dict[str, Any]] = None,
-                     match_threshold: float = 0.7,
-                     match_count: int = 10) -> List[Dict[str, Any]]:
-        """Perform hybrid search combining documents and chunks."""
-        try:
-            # Use the hybrid_search function
-            response = self.client.rpc('hybrid_search', {
-                'query_embedding': query_embedding,
-                'database_filter': database_filter,
-                'content_type_filter': content_type_filter,
-                'metadata_filters': metadata_filters or {},
-                'match_threshold': match_threshold,
-                'match_count': match_count
-            }).execute()
-            return response.data
-        except Exception as e:
-            print(f"Error in hybrid_search: {e}")
-            # Fallback to document search only
-            return self.vector_search_documents(query_embedding, database_filter, match_threshold, match_count)
-    
-    def _fallback_vector_search(self, query_embedding: List[float], 
-                               database_filter: Optional[List[str]] = None,
-                               match_threshold: float = 0.7, 
-                               match_count: int = 10) -> List[Dict[str, Any]]:
-        """Fallback vector search using direct table queries."""
-        try:
-            # Note: This is a simplified fallback - actual vector search would need pgvector
-            # For now, just return recent documents
-            query = self.client.table('documents').select(
-                'id, title, content, notion_page_id, page_url, extracted_metadata'
-            )
-            
-            if database_filter:
-                query = query.in_('notion_database_id', database_filter)
-            
-            response = query.order('last_edited_time', desc=True).limit(match_count).execute()
-            
-            # Add dummy similarity scores
-            for doc in response.data:
-                doc['similarity'] = 0.8  # Dummy score
-            
-            return response.data
-        except Exception as e:
-            print(f"Error in fallback vector search: {e}")
-            return []
     
     # ============================================================================
     # CHAT SESSIONS (Simplified - No database reference)
