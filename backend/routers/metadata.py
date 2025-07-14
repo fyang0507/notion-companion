@@ -49,12 +49,10 @@ class AggregatedFieldInfo(BaseModel):
     total_values: int
 
 class FilterOptions(BaseModel):
-    authors: List[str]
-    tags: List[str]
-    statuses: List[str]
     content_types: List[str]
     databases: List[Dict[str, str]]  # [{"id": "db_id", "name": "DB Name"}]
     date_ranges: Dict[str, Any]  # {"earliest": "date", "latest": "date"}
+    dynamic_fields: Dict[str, List[str]]  # Field name -> list of values (configuration-driven)
 
 class MetadataStatsResponse(BaseModel):
     total_databases: int
@@ -472,9 +470,10 @@ async def get_aggregated_fields(
 @router.get("/filter-options", response_model=FilterOptions)
 async def get_filter_options(
     search: Optional[str] = Query(None, description="Search within filter values"),
+    limit_per_field: int = Query(50, description="Maximum values per field"),
     db=Depends(get_db)
 ):
-    """Get all available filter options for the UI with search support."""
+    """Get all available filter options for the UI with configuration-driven field discovery."""
     try:
         # Get database list
         databases = []
@@ -485,26 +484,30 @@ async def get_filter_options(
                 "name": config.get('name', f"Database {config.get('database_id')}")
             })
         
-        # Get aggregated field values for common filter fields with search
-        common_fields = ['author', 'tags', 'status']
+        # Discover all filterable fields from configurations
+        filterable_fields = set()
+        for config in configurations:
+            metadata_config = config.get('metadata', {})
+            for field_name, field_config in metadata_config.items():
+                if field_config.get('filterable', True):
+                    # Only include select, multi_select, and text fields for filtering
+                    field_type = field_config.get('type', 'text')
+                    if field_type in ['text', 'select', 'multi_select', 'status']:
+                        filterable_fields.add(field_name)
+        
+        # Get aggregated field values for all filterable fields
         aggregated_fields = await get_aggregated_fields(
-            field_names=common_fields, 
+            field_names=list(filterable_fields), 
             search=search,
-            limit_per_field=200,  # Increased limit for filter options
+            limit_per_field=limit_per_field,
             db=db
         )
         
-        authors = []
-        tags = []
-        statuses = []
-        
+        # Build dynamic fields dictionary
+        dynamic_fields = {}
         for field_info in aggregated_fields:
-            if field_info.field_name == 'author':
-                authors = field_info.unique_values[:50]  # Limit to 50 most common
-            elif field_info.field_name == 'tags':
-                tags = field_info.unique_values[:100]  # Limit to 100 most common
-            elif field_info.field_name == 'status':
-                statuses = field_info.unique_values[:20]  # Limit to 20 most common
+            if field_info.unique_values:  # Only include fields that have values
+                dynamic_fields[field_info.field_name] = field_info.unique_values
         
         # Get content types
         content_types_result = db.client.table('documents').select('content_type').execute()
@@ -534,12 +537,10 @@ async def get_filter_options(
                 }
         
         return FilterOptions(
-            authors=authors,
-            tags=tags,
-            statuses=statuses,
             content_types=content_types,
             databases=databases,
-            date_ranges=date_ranges
+            date_ranges=date_ranges,
+            dynamic_fields=dynamic_fields
         )
         
     except Exception as e:
