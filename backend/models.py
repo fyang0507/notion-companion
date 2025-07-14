@@ -25,13 +25,10 @@ class ChatRequest(BaseModel):
     database_filters: Optional[List[str]] = None
     session_id: str  # Required session ID for conversation history
     
-    # Enhanced metadata filtering
+    # Enhanced metadata filtering with typed filters
     metadata_filters: Optional[List[MetadataFilter]] = None
     content_type_filters: Optional[List[str]] = None
     date_range_filter: Optional[DateRangeFilter] = None
-    author_filters: Optional[List[str]] = None
-    tag_filters: Optional[List[str]] = None
-    status_filters: Optional[List[str]] = None
     
     # Single-user, single-workspace app - no workspace ID needed
 
@@ -40,13 +37,10 @@ class SearchRequest(BaseModel):
     limit: int = 10
     database_filters: Optional[List[str]] = None
     
-    # Enhanced metadata filtering
+    # Enhanced metadata filtering with typed filters
     metadata_filters: Optional[List[MetadataFilter]] = None
     content_type_filters: Optional[List[str]] = None
     date_range_filter: Optional[DateRangeFilter] = None
-    author_filters: Optional[List[str]] = None
-    tag_filters: Optional[List[str]] = None
-    status_filters: Optional[List[str]] = None
     
     # Single-user, single-workspace app - no workspace ID needed
 
@@ -58,11 +52,11 @@ class SearchResult(BaseModel):
     metadata: Dict[str, Any]
     notion_page_id: str
     
-    # Enhanced metadata fields (simplified)
+    # Enhanced metadata fields (configuration-driven)
     result_type: Optional[str] = None  # 'document' or 'chunk'
     chunk_context: Optional[str] = None
     chunk_summary: Optional[str] = None
-    document_metadata: Optional[Dict[str, Any]] = None  # Now contains extracted_fields from config
+    document_metadata: Optional[Dict[str, Any]] = None  # Contains extracted_fields from databases.toml config
     page_url: Optional[str] = None
     has_adjacent_context: Optional[bool] = None
     database_id: Optional[str] = None

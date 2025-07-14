@@ -870,17 +870,13 @@ $$;
 CREATE OR REPLACE FUNCTION enhanced_metadata_search(
     query_embedding vector(1536),
     database_filter text[] DEFAULT NULL,
-    metadata_filters jsonb DEFAULT '{}',
-    author_filter text[] DEFAULT NULL,
-    tag_filter text[] DEFAULT NULL,
-    status_filter text[] DEFAULT NULL,
-    date_range_filter jsonb DEFAULT '{}',
     content_type_filter text[] DEFAULT NULL,
-    metadata_query_conditions text[] DEFAULT NULL,
-    -- Additional field type filters
+    date_range_filter jsonb DEFAULT '{}',
+    -- Type-based metadata filters matching FilterProcessor output
     text_filter jsonb DEFAULT '{}',           -- For text/rich_text fields: {"field_name": ["value1", "value2"]}
+    select_filter jsonb DEFAULT '{}',         -- For select/status fields: {"field_name": ["option1", "option2"]}
+    tag_filter text[] DEFAULT NULL,           -- For multi_select fields (legacy compatibility)
     number_filter jsonb DEFAULT '{}',         -- For number fields: {"field_name": {"min": 1, "max": 100}}
-    select_filter jsonb DEFAULT '{}',         -- For select fields: {"field_name": ["option1", "option2"]}
     checkbox_filter jsonb DEFAULT '{}',       -- For checkbox fields: {"field_name": true/false}
     match_threshold float DEFAULT 0.1,
     match_count int DEFAULT 10
@@ -904,16 +900,10 @@ RETURNS TABLE (
     page_url text,
     has_adjacent_context boolean,
     database_id text,
-    author text,
-    tags text[],
-    status text,
-    created_date timestamp with time zone,
-    modified_date timestamp with time zone,
     document_id uuid,
     chunk_index integer,
     document_section text,
-    has_context_enrichment boolean,
-    enriched_content text
+    has_context_enrichment boolean
 )
 LANGUAGE plpgsql
 AS $$
@@ -976,39 +966,15 @@ BEGIN
             d.page_url,
             false as has_adjacent_context,
             d.notion_database_id as database_id,
-            COALESCE(dm.extracted_fields->>'author', '')::text as author,
-            CASE 
-                WHEN dm.extracted_fields->'tags' ? 'type' AND dm.extracted_fields->'tags'->>'type' = 'multi_select' THEN
-                    ARRAY(SELECT jsonb_array_elements_text(dm.extracted_fields->'tags'->'multi_select'))
-                WHEN jsonb_typeof(dm.extracted_fields->'tags') = 'array' THEN
-                    ARRAY(SELECT jsonb_array_elements_text(dm.extracted_fields->'tags'))
-                ELSE 
-                    ARRAY[]::text[]
-            END as tags,
-            COALESCE(dm.extracted_fields->>'status', '')::text as status,
-            d.created_time as created_date,
-            d.last_edited_time as modified_date,
             d.id as document_id,
             0 as chunk_index,
             NULL::text as document_section,
-            false as has_context_enrichment,
-            d.content as enriched_content
+            false as has_context_enrichment
         FROM documents d
         LEFT JOIN document_metadata dm ON d.id = dm.document_id
         WHERE (d.summary_embedding IS NOT NULL OR d.content_embedding IS NOT NULL)
             AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
             AND (content_type_filter IS NULL OR d.content_type = ANY(content_type_filter))
-            -- Handle metadata filters
-            AND (metadata_filters = '{}' OR dm.extracted_fields @> metadata_filters)
-            -- Handle author filters
-            AND (author_filter IS NULL OR dm.extracted_fields->>'author' = ANY(author_filter))
-            -- Handle tag filters (support both array and multi_select format)
-            AND (tag_filter IS NULL OR (
-                (jsonb_typeof(dm.extracted_fields->'tags') = 'array' AND dm.extracted_fields->'tags' ?| tag_filter) OR
-                (dm.extracted_fields->'tags' ? 'multi_select' AND dm.extracted_fields->'tags'->'multi_select' ?| tag_filter)
-            ))
-            -- Handle status filters
-            AND (status_filter IS NULL OR dm.extracted_fields->>'status' = ANY(status_filter))
             -- Handle date range filters
             AND (date_range_filter = '{}' OR (
                 (NOT date_range_filter ? 'from' OR d.created_time >= (date_range_filter->>'from')::timestamp with time zone) AND
@@ -1025,6 +991,7 @@ BEGIN
                     END
                 ) 
                 FROM jsonb_object_keys(text_filter) AS field_key
+                WHERE dm.extracted_fields ? field_key
             ))
             -- Handle number field filters
             AND (number_filter = '{}' OR (
@@ -1042,6 +1009,7 @@ BEGIN
                     END
                 )
                 FROM jsonb_object_keys(number_filter) AS field_key
+                WHERE dm.extracted_fields ? field_key
             ))
             -- Handle select field filters
             AND (select_filter = '{}' OR (
@@ -1054,6 +1022,7 @@ BEGIN
                     END
                 ) 
                 FROM jsonb_object_keys(select_filter) AS field_key
+                WHERE dm.extracted_fields ? field_key
             ))
             -- Handle checkbox field filters
             AND (checkbox_filter = '{}' OR (
@@ -1061,6 +1030,19 @@ BEGIN
                     (dm.extracted_fields->>field_key)::boolean = (checkbox_filter->>field_key)::boolean
                 )
                 FROM jsonb_object_keys(checkbox_filter) AS field_key
+                WHERE dm.extracted_fields ? field_key
+            ))
+            -- Handle tag filters
+            AND (tag_filter IS NULL OR (
+                SELECT bool_or(
+                    CASE 
+                        WHEN jsonb_typeof(dm.extracted_fields->field_key) = 'array' THEN
+                            dm.extracted_fields->field_key ?| tag_filter
+                        ELSE false
+                    END
+                )
+                FROM jsonb_object_keys(dm.extracted_fields) AS field_key
+                WHERE field_key ILIKE '%tag%' OR field_key ILIKE '%label%'
             ))
             AND (
                 (d.summary_embedding IS NOT NULL AND 1 - (d.summary_embedding <=> query_embedding) > match_threshold) OR
@@ -1128,40 +1110,16 @@ BEGIN
             d.page_url,
             (dc.prev_chunk_id IS NOT NULL OR dc.next_chunk_id IS NOT NULL) as has_adjacent_context,
             d.notion_database_id as database_id,
-            COALESCE(dm.extracted_fields->>'author', '')::text as author,
-            CASE 
-                WHEN dm.extracted_fields->'tags' ? 'type' AND dm.extracted_fields->'tags'->>'type' = 'multi_select' THEN
-                    ARRAY(SELECT jsonb_array_elements_text(dm.extracted_fields->'tags'->'multi_select'))
-                WHEN jsonb_typeof(dm.extracted_fields->'tags') = 'array' THEN
-                    ARRAY(SELECT jsonb_array_elements_text(dm.extracted_fields->'tags'))
-                ELSE 
-                    ARRAY[]::text[]
-            END as tags,
-            COALESCE(dm.extracted_fields->>'status', '')::text as status,
-            d.created_time as created_date,
-            d.last_edited_time as modified_date,
             d.id as document_id,
             dc.chunk_order as chunk_index,
             dc.document_section,
-            (dc.prev_chunk_id IS NOT NULL OR dc.next_chunk_id IS NOT NULL) as has_context_enrichment,
-            dc.content as enriched_content
+            (dc.prev_chunk_id IS NOT NULL OR dc.next_chunk_id IS NOT NULL) as has_context_enrichment
         FROM document_chunks dc
         JOIN documents d ON dc.document_id = d.id
         LEFT JOIN document_metadata dm ON d.id = dm.document_id
         WHERE (dc.contextual_embedding IS NOT NULL OR dc.embedding IS NOT NULL)
             AND (database_filter IS NULL OR d.notion_database_id = ANY(database_filter))
             AND (content_type_filter IS NULL OR d.content_type = ANY(content_type_filter))
-            -- Handle metadata filters
-            AND (metadata_filters = '{}' OR dm.extracted_fields @> metadata_filters)
-            -- Handle author filters
-            AND (author_filter IS NULL OR dm.extracted_fields->>'author' = ANY(author_filter))
-            -- Handle tag filters (support both array and multi_select format)
-            AND (tag_filter IS NULL OR (
-                (jsonb_typeof(dm.extracted_fields->'tags') = 'array' AND dm.extracted_fields->'tags' ?| tag_filter) OR
-                (dm.extracted_fields->'tags' ? 'multi_select' AND dm.extracted_fields->'tags'->'multi_select' ?| tag_filter)
-            ))
-            -- Handle status filters
-            AND (status_filter IS NULL OR dm.extracted_fields->>'status' = ANY(status_filter))
             -- Handle date range filters
             AND (date_range_filter = '{}' OR (
                 (NOT date_range_filter ? 'from' OR d.created_time >= (date_range_filter->>'from')::timestamp with time zone) AND
@@ -1178,6 +1136,7 @@ BEGIN
                     END
                 ) 
                 FROM jsonb_object_keys(text_filter) AS field_key
+                WHERE dm.extracted_fields ? field_key
             ))
             -- Handle number field filters
             AND (number_filter = '{}' OR (
@@ -1195,6 +1154,7 @@ BEGIN
                     END
                 )
                 FROM jsonb_object_keys(number_filter) AS field_key
+                WHERE dm.extracted_fields ? field_key
             ))
             -- Handle select field filters
             AND (select_filter = '{}' OR (
@@ -1207,6 +1167,7 @@ BEGIN
                     END
                 ) 
                 FROM jsonb_object_keys(select_filter) AS field_key
+                WHERE dm.extracted_fields ? field_key
             ))
             -- Handle checkbox field filters
             AND (checkbox_filter = '{}' OR (
@@ -1214,6 +1175,19 @@ BEGIN
                     (dm.extracted_fields->>field_key)::boolean = (checkbox_filter->>field_key)::boolean
                 )
                 FROM jsonb_object_keys(checkbox_filter) AS field_key
+                WHERE dm.extracted_fields ? field_key
+            ))
+            -- Handle tag filters
+            AND (tag_filter IS NULL OR (
+                SELECT bool_or(
+                    CASE 
+                        WHEN jsonb_typeof(dm.extracted_fields->field_key) = 'array' THEN
+                            dm.extracted_fields->field_key ?| tag_filter
+                        ELSE false
+                    END
+                )
+                FROM jsonb_object_keys(dm.extracted_fields) AS field_key
+                WHERE field_key ILIKE '%tag%' OR field_key ILIKE '%label%'
             ))
             AND (
                 (dc.contextual_embedding IS NOT NULL AND 1 - (dc.contextual_embedding <=> query_embedding) > match_threshold) OR
