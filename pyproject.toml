@@ -25,6 +25,7 @@ dependencies = [
     "numpy",
     "openai-agents",
     "aiohttp",
+    "psutil",
 ]
 requires-python = ">=3.12"
 readme = "README.md"
