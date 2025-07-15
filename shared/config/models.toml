@@ -177,9 +177,6 @@ chat_summary_max_chars = 150
 # ============================================================================
 
 # [prompts.document_processing]
-# # Document analysis prompts (for future use)
-# content_type_detection_prompt = """Analyze this document and classify its content type. Consider the title, structure, and content.
-# 
 # Title: {title}
 # Content: {content}
 # 
