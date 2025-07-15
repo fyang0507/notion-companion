@@ -13,9 +13,9 @@ import tomllib
 from pathlib import Path
 import asyncio
 
-from database import get_db
-from services.database_schema_manager import get_schema_manager
-from logging_config import get_logger
+from storage.database import get_db
+from storage.database_schema_manager import get_schema_manager
+from shared.logging.logging_config import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api/metadata", tags=["metadata"])

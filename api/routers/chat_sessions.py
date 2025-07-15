@@ -9,10 +9,10 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 import uuid
 
-from database import get_db
-from logging_config import get_logger
-from services.openai_service import get_openai_service
-from services.chat_session_service import (
+from storage.database import get_db
+from shared.logging.logging_config import get_logger
+from ingestion.services.openai_service import get_openai_service
+from rag.services.chat_session_service import (
     get_chat_session_service, 
     generate_title_from_first_message,
     generate_ai_chat_title,

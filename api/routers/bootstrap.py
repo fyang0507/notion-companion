@@ -7,10 +7,10 @@ No workspace concept exists - all operations are per-database.
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
-from database import get_db
-from services.openai_service import get_openai_service
-from services.document_processor import get_document_processor
-from services.notion_service import get_notion_service
+from storage.database import get_db
+from ingestion.services.openai_service import get_openai_service
+from ingestion.services.document_processor import get_document_processor
+from ingestion.services.notion_service import get_notion_service
 from typing import Dict, Any, Optional, List
 import asyncio
 import uuid

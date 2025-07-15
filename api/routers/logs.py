@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from logging_config import get_logger, set_request_id
+from shared.logging.logging_config import get_logger, set_request_id
 
 router = APIRouter()
 logger = get_logger(__name__)
