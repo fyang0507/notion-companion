@@ -8,11 +8,11 @@ No workspace concept exists - all operations are per-database.
 from typing import List, Dict, Any, Tuple, Optional
 import re
 import tiktoken
-from services.openai_service import OpenAIService
-from services.database_schema_manager import DatabaseSchemaManager
-from services.contextual_chunker import ContextualChunker
-from database import Database
-from config.model_config import get_model_config
+from ingestion.services.openai_service import OpenAIService
+from storage.database_schema_manager import DatabaseSchemaManager
+from ingestion.services.contextual_chunker import ContextualChunker
+from storage.database import Database
+from shared.config.model_config import get_model_config
 import asyncio
 from datetime import datetime
 import uuid

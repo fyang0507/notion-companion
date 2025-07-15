@@ -10,8 +10,8 @@ from typing import List, Dict, Any, AsyncGenerator
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
-from config.model_config import get_model_config
-from logging_config import get_logger
+from shared.config.model_config import get_model_config
+from shared.logging.logging_config import get_logger
 
 logger = get_logger(__name__)
 

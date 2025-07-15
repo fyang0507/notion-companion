@@ -31,11 +31,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 # Load environment variables
 load_dotenv(dotenv_path="../../.env")
 
-from database import get_db, init_db
-from services.notion_service import NotionService
-from services.openai_service import get_openai_service
-from services.document_processor import get_document_processor
-from services.database_schema_manager import get_schema_manager
+from storage.database import get_db, init_db
+from ingestion.services.notion_service import NotionService
+from ingestion.services.openai_service import get_openai_service
+from ingestion.services.document_processor import get_document_processor
+from storage.database_schema_manager import get_schema_manager
 
 # Configure logging
 logging.basicConfig(

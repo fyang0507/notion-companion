@@ -8,8 +8,8 @@ explaining how it relates to the overall document and what specific topics it co
 import asyncio
 from typing import List, Dict, Any
 import logging
-from services.openai_service import OpenAIService
-from services.chunking_strategies import ArticleChunkingStrategy
+from ingestion.services.openai_service import OpenAIService
+from ingestion.services.chunking_strategies import ArticleChunkingStrategy
 
 class ContextualChunker:
     """Anthropic-style contextual retrieval chunking."""
