@@ -20,15 +20,25 @@ class DateRangeFilter(BaseModel):
     from_date: Optional[date] = None
     to_date: Optional[date] = None
 
+# Frontend-compatible date range filter
+class FrontendDateRangeFilter(BaseModel):
+    from_: Optional[str] = None  # Frontend sends as string
+    to: Optional[str] = None
+
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     database_filters: Optional[List[str]] = None
     session_id: str  # Required session ID for conversation history
     
-    # Enhanced metadata filtering with typed filters
-    metadata_filters: Optional[List[MetadataFilter]] = None
+    # Frontend-compatible metadata filters
+    metadata_filters: Optional[Dict[str, List[str]]] = None  # Frontend sends as Record<string, string[]>
     content_type_filters: Optional[List[str]] = None
-    date_range_filter: Optional[DateRangeFilter] = None
+    date_range_filter: Optional[FrontendDateRangeFilter] = None  # Frontend format
+    search_query_filter: Optional[str] = None  # Frontend field
+    
+    # Add fields that the chat endpoint expects
+    stream: Optional[bool] = True  # Default to streaming
+    limit: Optional[int] = 10  # Default limit
     
     # Single-user, single-workspace app - no workspace ID needed
 
@@ -66,6 +76,18 @@ class SearchResponse(BaseModel):
     query: str
     total: int
 
+# Chat response models for different response types
+class ChatResponse(BaseModel):
+    message: str
+    sources: List[SearchResult]
+    session_id: str
+    tokens_used: int
+
+class StreamChatChunk(BaseModel):
+    content: str
+    done: bool
+    error: Optional[str] = None
+
 class NotionWebhookPayload(BaseModel):
     object: str
     event_type: str
@@ -77,8 +99,4 @@ class WebhookResponse(BaseModel):
 
 class EmbeddingResponse(BaseModel):
     embedding: List[float]
-    tokens: int
-
-class ChatResponse(BaseModel):
-    content: str
     tokens: int

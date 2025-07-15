@@ -5,12 +5,17 @@ import os
 import time
 from dotenv import load_dotenv
 
-from routers import chat, search, notion_webhook, bootstrap, chat_sessions, logs, metadata
-from database import init_db
-from logging_config import setup_logging, set_request_id, log_api_request, get_logger
-from services.chat_session_service import get_chat_session_service
+import sys
+import os
+# Add the parent directory to the Python path to access the modular structure
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-load_dotenv(dotenv_path="../.env")
+from .routers import chat, search, notion_webhook, bootstrap, chat_sessions, logs, metadata
+from storage.database import init_db
+from shared.logging.logging_config import setup_logging, set_request_id, log_api_request, get_logger
+from rag.services.chat_session_service import get_chat_session_service
+
+load_dotenv(dotenv_path=".env")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,7 +32,7 @@ async def lifespan(app: FastAPI):
         await init_db()
         
         # Verify database connection is working
-        from database import get_db
+        from storage.database import get_db
         db = get_db()
         if db.client is None:
             raise RuntimeError("Database client is None after initialization")
