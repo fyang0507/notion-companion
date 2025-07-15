@@ -6,9 +6,9 @@ Handles chat conclusion triggers and automatic title/summary regeneration.
 import asyncio
 from datetime import datetime, timedelta
 from typing import Optional
-from database import get_db
-from logging_config import get_logger
-from services.openai_service import get_openai_service
+from storage.database import get_db
+from shared.logging.logging_config import get_logger
+from ingestion.services.openai_service import get_openai_service
 
 logger = get_logger(__name__)
 

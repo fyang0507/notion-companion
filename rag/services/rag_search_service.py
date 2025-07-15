@@ -16,10 +16,10 @@ import time
 from pathlib import Path
 import tomllib
 
-from database import Database
-from services.openai_service import OpenAIService
-from config.model_config import VectorSearchConfig
-from models import SearchRequest, ChatRequest
+from storage.database import Database
+from ingestion.services.openai_service import OpenAIService
+from shared.config.model_config import VectorSearchConfig
+from api.models.models import SearchRequest, ChatRequest
 
 class RAGSearchService:
     """Unified search service implementing steps 1-5 of agentic RAG pipeline."""
