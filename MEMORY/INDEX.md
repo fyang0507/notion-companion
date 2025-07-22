@@ -40,7 +40,7 @@ MEMORY/
 ```
 
 ### Document Guidelines
-- **Size limit**: Maximum 150 lines or 1,000 words per document
+- **Size limit**: Maximum 50 lines (excluding code snippets) or 500 words per document
 - **Code snippets**: Maximum 10 lines; reference specific files for details
 - **Metadata**: Each doc must include `Last Updated: YYYY-MM-DD` header
 
