@@ -45,7 +45,7 @@ from services.newline_splitter import NewlineSplitter
 from services.sentence_embedding import SentenceEmbeddingCache
 from services.semantic_merger import SemanticMerger
 from utils.config_loader import ConfigLoader
-from backend.services.openai_service import OpenAIService
+from ingestion.services.openai_service import OpenAIService
 
 # Configure logging
 logging.basicConfig(
