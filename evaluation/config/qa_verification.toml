@@ -1,0 +1,52 @@
+# Configuration for QA Self-Verification Service
+# Implements quality assurance for candidate Q&A pairs through LLM self-validation
+
+[models]
+model = "gpt-4.1"
+
+[verification]
+# Rouge-L threshold for chunk_content similarity (lowered since we compare against longer reference text)
+rouge_threshold = 0.9
+
+# Context expansion: number of chunks before/after target chunk
+context_expansion_chunks = 10
+
+# Maximum context tokens to prevent hitting context window limits
+max_context_tokens = 50000  # Conservative limit for gpt-4.1 (1M context)
+
+# Batch processing settings
+batch_size = 10
+delay_between_batches = 2.0  # seconds
+
+# Retry configuration
+retry_rate_limit_delay = 60  # Seconds to wait when hit rate limit (429 error)
+max_retries = 3              # Maximum number of retry attempts for rate limits
+
+[prompts]
+# System prompt for verification task
+verification_system_prompt = """You are a text extraction system. Your task is to find and extract the exact text from the provided context that answers the given question.
+
+Rules:
+1. Extract the exact text span from the context that best answers the question
+2. Do not paraphrase or rewrite - provide the direct quote
+3. If no relevant text exists in the context, respond with "No relevant text found"
+4. Extract only the minimal text span that fully answers the question"""
+
+# User prompt template for verification
+verification_user_prompt_template = """Context:
+{context}
+
+Question: {question}
+
+Extract the exact text from the context above that answers this question. Provide only the direct quote from the source material."""
+
+[performance]
+# Rate limiting settings
+verification_delay_seconds = 0.1
+
+[output]
+# Output formatting options
+include_verification_details = true
+include_failed_pairs = true
+truncate_context_in_output = true
+max_context_output_length = 1000
