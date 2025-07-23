@@ -26,6 +26,7 @@ dependencies = [
     "openai-agents",
     "aiohttp",
     "psutil",
+    "rouge-score",
 ]
 requires-python = ">=3.12"
 readme = "README.md"
