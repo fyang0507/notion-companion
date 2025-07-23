@@ -1,6 +1,16 @@
 # Recent Changes
 
-*Last Updated: 2025-07-16*
+*Last Updated: 2025-07-23*
+
+## 2025-07-23 - QA Self-Verification System for Evaluation Quality Assurance
+
+• **Self-Verification Pipeline** - Implemented LLM-based verification: re-answers questions using expanded document context, compares via Rouge-L scoring (≥0.9 threshold)
+• **Multilingual Rouge Scoring** - Custom tokenizer handling Chinese characters + English words for accurate Rouge-L calculation in mixed-language content
+• **Chunk Context Expansion** - Smart growth strategy: starts from answer chunk, adds surrounding chunks alternately until token limit (respects gpt-4.1 context window)
+
+## 2025-07-22 - Simple Rate Limit Retry Logic for Evaluation Pipeline
+
+• **OpenAI API Rate Limit Handling** - Simple retry logic: wait 1 minute on 429 errors, max 3 attempts during batch question generation and QA pair verification
 
 ## 2025-07-16 - Memory System Migration
 
