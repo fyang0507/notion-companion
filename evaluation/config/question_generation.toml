@@ -6,7 +6,7 @@ model = "gpt-4.1"
 
 [generation]
 # Total question generation control
-total_questions_to_generate = 10  # Total number of questions to generate (random sampling)
+total_questions_to_generate = 50  # Total number of questions to generate (random sampling)
 
 # Content filtering criteria
 min_token_count = 100          # Minimum tokens for meaningful content
@@ -14,14 +14,15 @@ max_token_count = 1000        # Maximum tokens to avoid overwhelming context
 exclude_headers = true        # Skip chunks that start with # or ##
 exclude_short_questions = true # Skip chunks that are just questions
 
-# Observability settings
-enable_qualification_stats = true  # Track chunk qualification statistics
-
 # Output configuration
 output_format = "json"
 include_metadata = true
 batch_size = 10              # Process chunks in parallel batches (balance between speed and rate limits)
 delay_between_batches = 1.0  # Seconds to wait between batches
+
+# Retry configuration
+retry_rate_limit_delay = 60  # Seconds to wait when hit rate limit (429 error)
+max_retries = 3              # Maximum number of retry attempts for rate limits
 
 # Heuristic-based question count per chunk based on token length
 # Dictionary mapping token ranges to number of questions
