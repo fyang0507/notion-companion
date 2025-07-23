@@ -5,7 +5,7 @@ Handles chat conclusion triggers and automatic title/summary regeneration.
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict
 from storage.database import get_db
 from shared.logging.logging_config import get_logger
 from ingestion.services.openai_service import get_openai_service
@@ -20,8 +20,6 @@ def is_chinese_text(text: str) -> bool:
 async def generate_title_from_first_message(first_message: str) -> str:
     """Generate a concise title from the first user message using 8 words/chars rule + GPT."""
     try:
-        openai_service = get_openai_service()
-        
         # Rule: 8 words (English) or 8 characters (Chinese)
         if is_chinese_text(first_message):
             # Chinese: use 8 characters
@@ -36,8 +34,9 @@ async def generate_title_from_first_message(first_message: str) -> str:
         # Otherwise, use LLM to create a concise title
         messages = [{"role": "user", "content": first_message}]
         
-        # Use the existing generate_chat_title method but with 8-word limit
-        title = await openai_service.generate_chat_title(messages, max_words=8)
+        # Use the new local generate_chat_title method
+        chat_service = get_chat_session_service()
+        title = await chat_service.generate_chat_title(messages, max_words=8)
         
         return title if title and title != "New Chat" else first_message.strip()
         
@@ -68,12 +67,12 @@ async def generate_ai_chat_title(session_id: str, db) -> str:
         if not result or len(result) < 2:  # Need at least user + assistant message
             return "New Chat"
         
-        # Convert to format expected by OpenAI service
+        # Convert to format expected by the chat service
         messages = [{"role": row['role'], "content": row['content']} for row in result]
         
-        # Generate title using AI with 8-word limit
-        openai_service = get_openai_service()
-        title = await openai_service.generate_chat_title(messages, max_words=8)
+        # Generate title using local method with 8-word limit
+        chat_service = get_chat_session_service()
+        title = await chat_service.generate_chat_title(messages, max_words=8)
         
         return title
         
@@ -109,12 +108,12 @@ async def generate_ai_chat_summary(session_id: str, db) -> str:
         if not result or len(result) < 2:  # Need at least user + assistant message
             return ""
         
-        # Convert to format expected by OpenAI service
+        # Convert to format expected by the chat service
         messages = [{"role": row['role'], "content": row['content']} for row in result]
         
-        # Generate summary using AI
-        openai_service = get_openai_service()
-        summary = await openai_service.generate_chat_summary(messages)
+        # Generate summary using local method
+        chat_service = get_chat_session_service()
+        summary = await chat_service.generate_chat_summary(messages)
         
         return summary
         
@@ -130,6 +129,132 @@ class ChatSessionService:
         self._idle_check_task = None
         self._is_running = False
     
+    async def generate_chat_title(self, messages: List[Dict[str, str]], max_words: int = 8) -> str:
+        """
+        Generate a concise, descriptive title for a chat session based on the conversation.
+        
+        Args:
+            messages: List of chat messages (user and assistant)
+            max_words: Maximum number of words in the title (default 8, max 10)
+            
+        Returns:
+            A concise title (max 10 words) that describes the conversation topic
+        """
+        try:
+            openai_service = get_openai_service()
+            model_config = openai_service.model_config
+            
+            summarization_config = model_config.get_summarization_config()
+            performance_config = model_config.get_performance_config()
+            prompts_config = model_config.get_prompts_config()
+            
+            # Add delay for rate limiting
+            await asyncio.sleep(performance_config.summarization_delay_seconds)
+            
+            # Take only the first few messages to determine the topic
+            first_messages = messages[:4]  # First 4 messages should be enough for topic identification
+            
+            # Build conversation context
+            conversation_text = ""
+            for msg in first_messages:
+                role = "User" if msg["role"] == "user" else "Assistant" 
+                conversation_text += f"{role}: {msg['content']}\n"
+            
+            # Use centralized prompt management
+            prompt = model_config.format_title_prompt(
+                conversation_text=conversation_text,
+                max_words=max_words
+            )
+
+            response = await openai_service.client.chat.completions.create(
+                model=summarization_config.model,
+                messages=[{
+                    "role": "user", 
+                    "content": prompt
+                }],
+                temperature=prompts_config.title_generation.temperature_override,
+                max_tokens=prompts_config.title_generation.max_tokens_override,
+            )
+            
+            title = response.choices[0].message.content or ''
+            title = title.strip().strip('"').strip("'")  # Remove quotes
+            
+            # Ensure it doesn't exceed word limit
+            words = title.split()
+            if len(words) > max_words:
+                title = ' '.join(words[:max_words])
+                
+            return title if title else "New Chat"
+            
+        except Exception as e:
+            logger.error(f"Failed to generate chat title: {e}")
+            # Fallback to simple title generation if AI fails
+            first_user_message = next((msg['content'] for msg in messages if msg['role'] == 'user'), '')
+            if first_user_message:
+                words = first_user_message.split()
+                if len(words) <= max_words:
+                    return first_user_message
+                else:
+                    return ' '.join(words[:max_words])
+            return "New Chat"
+    
+    async def generate_chat_summary(self, messages: List[Dict[str, str]]) -> str:
+        """Generate a concise summary of the chat conversation."""
+        try:
+            openai_service = get_openai_service()
+            model_config = openai_service.model_config
+            
+            summarization_config = model_config.get_summarization_config()
+            performance_config = model_config.get_performance_config()
+            prompts_config = model_config.get_prompts_config()
+            
+            # Apply rate limiting
+            await asyncio.sleep(performance_config.summarization_delay_seconds)
+            
+            if not messages:
+                return ""
+            
+            # Use only a subset of messages for efficiency (first 6 exchanges)
+            summary_messages = messages[:12]  # 6 exchanges max
+            
+            # Build conversation text
+            conversation_text = ""
+            for msg in summary_messages:
+                role = "User" if msg['role'] == 'user' else "Assistant"
+                conversation_text += f"{role}: {msg['content'][:500]}\n\n"  # Limit each message to 500 chars
+            
+            if len(conversation_text) > 3000:  # Limit total input
+                conversation_text = conversation_text[:3000] + "..."
+            
+            # Use centralized prompt management
+            summary_prompt = model_config.format_chat_summary_prompt(conversation_text)
+            
+            response = await openai_service.client.chat.completions.create(
+                model=summarization_config.model,
+                messages=[
+                    {"role": "user", "content": summary_prompt}
+                ],
+                max_tokens=prompts_config.summarization.chat_summary_max_tokens,
+                temperature=prompts_config.summarization.chat_summary_temperature,
+            )
+            
+            summary = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+            
+            # Clean up the summary
+            summary = summary.strip('"').strip("'").strip()
+            
+            # Ensure it's not too long
+            max_chars = prompts_config.summarization.chat_summary_max_chars
+            if len(summary) > max_chars:
+                summary = summary[:max_chars-3] + "..."
+                
+            return summary if summary else ""
+            
+        except Exception as e:
+            logger.error(f"Failed to generate chat summary: {e}")
+            # Return empty string if summary generation fails
+            return ""
+
     async def start_idle_monitoring(self):
         """Start the idle timeout monitoring task."""
         if self._is_running:
