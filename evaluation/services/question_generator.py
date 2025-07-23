@@ -23,6 +23,7 @@ from pathlib import Path
 from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from agents import AsyncOpenAI, ModelSettings, set_default_openai_client, set_default_openai_api, trace, enable_verbose_stdout_logging, ModelTracing
 from dotenv import load_dotenv
+import openai
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -88,7 +89,6 @@ class QuestionGenerator:
             self.max_token_count = config["generation"]["max_token_count"]
             self.exclude_headers = config["generation"]["exclude_headers"]
             self.exclude_short_questions = config["generation"]["exclude_short_questions"]
-            self.enable_qualification_stats = config["generation"]["enable_qualification_stats"]
         except KeyError as e:
             raise RuntimeError(f"Missing required content filtering configuration: {e}")
 
@@ -96,6 +96,8 @@ class QuestionGenerator:
         try:
             self.batch_size = config["generation"]["batch_size"]
             self.delay_between_batches = config["generation"]["delay_between_batches"]
+            self.retry_rate_limit_delay = config["generation"]["retry_rate_limit_delay"]
+            self.max_retries = config["generation"]["max_retries"]
         except KeyError as e:
             raise RuntimeError(f"Missing required batch processing configuration: {e}")
 
@@ -108,6 +110,7 @@ class QuestionGenerator:
         
         logger.info(f"QuestionGenerator initialized with model: {self.model}")
         logger.info(f"Question heuristics: {self.question_heuristics}")
+        logger.info(f"Rate limit retry: max {self.max_retries} attempts, {self.retry_rate_limit_delay}s delay")
     
     def _parse_heuristics_config(self, heuristics: Dict[str, int]) -> List[Tuple[int, int, int]]:
         """Parse heuristics configuration from dictionary format to list of (min, max, questions) tuples."""
@@ -269,6 +272,44 @@ class QuestionGenerator:
             logger.debug(f"Error extracting previous chunk: {e}")
             return "This is the beginning of the document, no previous texts available."
     
+    async def _make_openai_request_with_retry(self, system_prompt: str, user_prompt: str) -> Any:
+        """Make OpenAI API request with simple rate limit retry."""
+        attempt = 0
+        while attempt <= self.max_retries:
+            try:
+                # Make API call within trace context for proper span capture
+                with trace(f"question_generation_{datetime.now().strftime('%Y%m%d_%H%M')}"):
+                    response = await self.openai_model.get_response(
+                        system_instructions=system_prompt,
+                        input=user_prompt,
+                        model_settings=ModelSettings(),
+                        tools=[],
+                        output_schema=None,
+                        handoffs=[],
+                        tracing=ModelTracing.ENABLED,
+                        previous_response_id=None,
+                    )
+                return response
+            
+            except Exception as e:
+                # Check if this is a rate limit error
+                is_rate_limit = (
+                    isinstance(e, openai.RateLimitError) or
+                    "429" in str(e) or
+                    "rate limit" in str(e).lower()
+                )
+                
+                if is_rate_limit and attempt < self.max_retries:
+                    attempt += 1
+                    logger.warning(f"Rate limit hit. Attempt {attempt}/{self.max_retries}. Waiting {self.retry_rate_limit_delay} seconds...")
+                    await asyncio.sleep(self.retry_rate_limit_delay)
+                    # Continue the loop to retry
+                else:
+                    # Not a rate limit error or max retries exceeded
+                    if is_rate_limit:
+                        logger.error(f"Rate limit persisted after {self.max_retries} retries. Giving up.")
+                    raise e
+    
     async def generate_questions_for_chunk(self, chunk: Dict[str, Any], chunk_id: str, database_id: str, chunks_data: Dict[str, Any] = None, chunk_idx: int = 0, doc_id: str = None) -> List[QuestionAnswerPair]:
         """Generate questions for a single chunk."""
         content = chunk.get("content", "").strip()
@@ -291,18 +332,9 @@ class QuestionGenerator:
                 document_metadata=document_metadata,
                 previous_chunk=previous_chunk_content
             )
-            # Make API call within trace context for proper span capture
-            with trace(f"question_generation_{datetime.now().strftime('%Y%m%d_%H%M')}"):
-                response = await self.openai_model.get_response(
-                    system_instructions=self.system_prompt,
-                    input=user_prompt,
-                    model_settings=ModelSettings(),
-                    tools=[],
-                    output_schema=None,
-                    handoffs=[],
-                    tracing=ModelTracing.ENABLED,
-                    previous_response_id=None,
-                )
+            
+            # Make API call with retry logic
+            response = await self._make_openai_request_with_retry(self.system_prompt, user_prompt)
             
             # Parse response - adapt for Response API format
             response_content = response.output[0].content
