@@ -27,6 +27,7 @@ dependencies = [
     "aiohttp",
     "psutil",
     "rouge-score",
+    "loguru",
 ]
 requires-python = ">=3.12"
 readme = "README.md"
