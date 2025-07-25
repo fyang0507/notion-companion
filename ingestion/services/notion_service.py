@@ -398,6 +398,13 @@ class NotionService:
                 pass
         return None
     
+    async def get_database(self, database_id: str) -> Dict[str, Any]:
+        """Get database schema and properties."""
+        try:
+            return self.client.databases.retrieve(database_id=database_id)
+        except Exception as e:
+            raise Exception(f"Failed to get database {database_id}: {str(e)}")
+    
     async def get_database_pages(self, database_id: str) -> List[Dict[str, Any]]:
         """Get all pages from a specific database."""
         try:
@@ -417,6 +424,58 @@ class NotionService:
         
         except Exception as e:
             raise Exception(f"Failed to get database pages for {database_id}: {str(e)}")
+    
+    async def get_all_pages_content_from_database(self, database_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all pages from a database with their full content ready for chunking.
+        
+        Returns a list of dictionaries containing:
+        - id: page ID
+        - title: extracted page title
+        - content: full text content 
+        - created_time: creation timestamp
+        - last_edited_time: last edit timestamp
+        - url: page URL
+        - properties: page properties
+        
+        This is the single interface for getting all page content from a database for chunking.
+        """
+        try:
+            # Get all pages from the database
+            pages = await self.get_database_pages(database_id)
+            
+            page_contents = []
+            for page in pages:
+                page_id = page['id']
+                
+                # Extract title
+                title = self.extract_title_from_page(page)
+                
+                # Get full text content
+                try:
+                    content = await self.get_page_content(page_id)
+                except Exception as e:
+                    # Log error but continue with other pages
+                    print(f"Warning: Could not fetch content for page {page_id}: {e}")
+                    content = ""
+                
+                # Build complete page content object
+                page_content = {
+                    'id': page_id,
+                    'title': title,
+                    'content': content,
+                    'created_time': page.get('created_time'),
+                    'last_edited_time': page.get('last_edited_time'),
+                    'url': self.get_page_url(page),
+                    'properties': page.get('properties', {})
+                }
+                
+                page_contents.append(page_content)
+            
+            return page_contents
+            
+        except Exception as e:
+            raise Exception(f"Failed to get all pages content from database {database_id}: {str(e)}")
 
 def get_notion_service(access_token: str) -> NotionService:
     """Factory function to create NotionService instance."""

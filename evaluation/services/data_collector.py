@@ -14,7 +14,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 root_dir = Path(__file__).parent.parent.parent
 load_dotenv(dotenv_path=root_dir / ".env")
 
-from backend.services.notion_service import NotionService
+from ingestion.services.notion_service import NotionService
 from evaluation.models.evaluation_models import Document, CollectionStats
 
 
