@@ -12,6 +12,12 @@ import logging
 from typing import List, Dict, Optional
 import numpy as np
 from dataclasses import dataclass
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.append(str(Path(__file__).parent.parent.parent))
+from shared.utils import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +66,7 @@ class MergingStatistics:
 class SemanticMerger:
     """Merge semantically similar adjacent sentences based on embeddings with token-aware limits"""
     
-    def __init__(self, tokenizer, config: Dict):
-        self.tokenizer = tokenizer
+    def __init__(self, config: Dict):
         
         # Require semantic_merging configuration - fail hard if missing
         if 'semantic_merging' not in config:
@@ -162,7 +167,7 @@ class SemanticMerger:
                 
                 # Check token count before adding sentence
                 test_content = ' '.join(chunk_sentences + [sentences[j]])
-                token_count = len(self.tokenizer.encode(test_content))
+                token_count = count_tokens(test_content)
                 
                 if token_count > self.max_chunk_size:
                     # Would exceed token limit, stop merging
