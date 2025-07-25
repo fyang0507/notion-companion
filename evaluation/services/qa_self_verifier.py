@@ -12,7 +12,6 @@ This ensures noisy items are discarded automatically through LLM self-validation
 import json
 import logging
 import asyncio
-import re
 import math
 from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass
@@ -23,13 +22,13 @@ from agents.models.openai_chatcompletions import OpenAIChatCompletionsModel
 from agents import AsyncOpenAI, ModelSettings, trace, ModelTracing
 from rouge_score import rouge_scorer
 from rouge_score.tokenizers import Tokenizer
-import tiktoken
 import openai
 
 # Add parent directory to path for imports
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from models.evaluation_models import QuestionAnswerPair
+from shared.utils import count_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -129,16 +128,10 @@ class QASelfVerifier:
             use_stemmer=False,  # Disable stemming for multilingual text
             tokenizer=multilingual_tokenizer
         )
-        # Use standard tokenizer for token counting (independent of verification model)
-        self.tokenizer = tiktoken.get_encoding("cl100k_base")
         
         logger.info(f"QASelfVerifier initialized with model: {self.model}")
         logger.info(f"Rouge threshold: {self.rouge_threshold}, Context expansion: {self.context_expansion_chunks} chunks")
         logger.info(f"Rate limit retry: max {self.max_retries} attempts, {self.retry_rate_limit_delay}s delay")
-
-    def _count_tokens(self, text: str) -> int:
-        """Count tokens in text using the model's tokenizer."""
-        return len(self.tokenizer.encode(text))
 
     def _extract_chunks_from_step5_data(self, step5_data: Dict[str, Any], chunk_id: str) -> Tuple[List[Dict[str, Any]], int, str]:
         """Extract the document chunks and find the target chunk index from step 5 semantic merging data."""
@@ -214,13 +207,13 @@ class QASelfVerifier:
         # Start with the target chunk (the chunk containing the answer)
         target_chunk = chunks[target_chunk_index]
         context_parts = [target_chunk.get("content", "")]
-        current_tokens = self._count_tokens(context_parts[0])
+        current_tokens = count_tokens(context_parts[0])
         
         # If target chunk alone exceeds limit, truncate it
         if current_tokens > self.max_context_tokens:
             max_chars = self.max_context_tokens * 4
             truncated_content = target_chunk.get("content", "")[:max_chars]
-            logger.debug(f"Target chunk too large, truncated to {self._count_tokens(truncated_content)} tokens")
+            logger.debug(f"Target chunk too large, truncated to {count_tokens(truncated_content)} tokens")
             return truncated_content
         
         # Expand by adding chunks before and after alternately
@@ -234,7 +227,7 @@ class QASelfVerifier:
             before_idx = target_chunk_index - expansion_distance
             if before_idx >= 0:
                 before_content = chunks[before_idx].get("content", "")
-                before_tokens = self._count_tokens(before_content)
+                before_tokens = count_tokens(before_content)
                 
                 if current_tokens + before_tokens <= self.max_context_tokens:
                     context_parts.insert(0, before_content)  # Add at beginning
@@ -246,7 +239,7 @@ class QASelfVerifier:
             after_idx = target_chunk_index + expansion_distance
             if after_idx < len(chunks) and current_tokens < self.max_context_tokens:
                 after_content = chunks[after_idx].get("content", "")
-                after_tokens = self._count_tokens(after_content)
+                after_tokens = count_tokens(after_content)
                 
                 if current_tokens + after_tokens <= self.max_context_tokens:
                     context_parts.append(after_content)  # Add at end
@@ -263,7 +256,7 @@ class QASelfVerifier:
         # Join all chunks with double newlines
         expanded_context = "\n\n".join(context_parts)
         
-        final_tokens = self._count_tokens(expanded_context)
+        final_tokens = count_tokens(expanded_context)
         start_idx = max(0, target_chunk_index - (expansion_distance - 1))
         end_idx = min(len(chunks) - 1, target_chunk_index + (expansion_distance - 1))
         

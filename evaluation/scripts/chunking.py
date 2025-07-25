@@ -27,7 +27,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
-import tiktoken
+
 import numpy as np
 
 # Add parent directory to path
@@ -45,7 +45,8 @@ from services.newline_splitter import NewlineSplitter
 from services.sentence_embedding import SentenceEmbeddingCache
 from services.semantic_merger import SemanticMerger
 from utils.config_loader import ConfigLoader
-from ingestion.services.openai_service import OpenAIService
+from shared.services.openai_service import OpenAIService
+from shared.utils import count_tokens
 
 # Configure logging
 logging.basicConfig(
@@ -229,9 +230,8 @@ class ChunkingOrchestrator:
         self.embedding_cache = SentenceEmbeddingCache(self.config)
         self.openai_service = OpenAIService()
         
-        # Initialize tokenizer for semantic merger
-        self.tokenizer = tiktoken.get_encoding("cl100k_base")
-        self.semantic_merger = SemanticMerger(self.tokenizer, self.config)
+        # Initialize semantic merger
+        self.semantic_merger = SemanticMerger(self.config)
         
         logger.info(f"ChunkingOrchestrator initialized successfully (Experiment ID: {self.cache_manager.experiment_id})")
     
@@ -558,7 +558,7 @@ class ChunkingOrchestrator:
                 'cache_hits': total_cache_hits,
                 'cache_misses': total_cache_misses,
                 'cache_hit_rate': total_cache_hits / (total_cache_hits + total_cache_misses) if (total_cache_hits + total_cache_misses) > 0 else 0,
-                'embedding_model': self.config['embeddings']['model'],
+                'embedding_model': self.config['embeddings']['openai']['model'],
                 'embedding_dimensions': len(next(iter(doc_embeddings.values()))[0]) if doc_embeddings and next(iter(doc_embeddings.values())) else 0
             }
         }
@@ -760,7 +760,7 @@ class ChunkingOrchestrator:
                     'content': chunk_result.content,
                     'start_sentence': chunk_result.start_sentence,
                     'end_sentence': chunk_result.end_sentence,
-                    'token_count': len(self.tokenizer.encode(chunk_result.content)),
+                    'token_count': count_tokens(chunk_result.content),
                     'text_unit_count': chunk_result.end_sentence - chunk_result.start_sentence + 1,
                     'document_metadata': document_metadata_map.get(doc_id, {}),  # Include document metadata
                     'document_id': doc_id  # Add document ID for reference
