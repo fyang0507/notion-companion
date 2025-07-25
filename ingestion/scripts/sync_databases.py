@@ -17,12 +17,10 @@ import asyncio
 import logging
 import os
 import sys
-import time
-import uuid
 import tomllib
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from dotenv import load_dotenv
 
 # Add parent directory to path to import our modules
@@ -311,8 +309,6 @@ class NotionDatabaseSyncer:
             'content_type': 'page',
             'created_time': page.get('created_time'),
             'last_edited_time': page.get('last_edited_time'),
-            'created_by': page.get('created_by', {}).get('id'),
-            'last_edited_by': page.get('last_edited_by', {}).get('id'),
             'page_url': page.get('url'),
             'notion_properties': page.get('properties', {}),
             'extracted_metadata': self._extract_basic_metadata(page),
