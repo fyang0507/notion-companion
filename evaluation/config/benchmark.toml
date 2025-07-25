@@ -1,0 +1,32 @@
+# Benchmark Configuration for Basic RAG Experiment
+# Contains experiment-specific configurations that override global defaults
+
+[ingestion]
+# Maximum tokens per chunk
+max_tokens = 1000
+# Overlap tokens between chunks
+overlap_tokens = 0
+# API delay between requests (seconds)
+api_delay = 0.1
+
+
+[embeddings]
+# Internal configuration (not passed to OpenAI API)
+batch_size = 50  # For our internal batching logic
+delay_seconds = 0.1  # Rate limiting delay
+
+[embeddings.openai]
+# OpenAI API parameters (passed directly to embeddings.create)
+model = "text-embedding-3-small"
+dimensions = 1536
+
+
+[evaluation]
+# Default k values for precision@k evaluation
+k_values = [1, 3, 5, 10]
+# Metrics to evaluate
+metrics = ["precision", "recall", "mrr", "ndcg"]
+# Rouge threshold (f1-measure) for retrieval
+rouge_threshold = 0.25
+# Whether to save detailed individual metric results to separate JSON files
+save_individual_results = false
