@@ -22,7 +22,7 @@
 │   └── schema/             # SQL schema files
 ├── ingestion/              # Document processing pipeline
 │   ├── interface.py        # Ingestion interface contract
-│   ├── services/           # Chunking, Notion API, OpenAI
+│   ├── services/           # Chunking, Notion API
 │   └── scripts/            # Sync utilities
 ├── rag/                    # RAG search and chat services
 │   ├── interface.py        # RAG interface contract
@@ -31,7 +31,8 @@
 ├── shared/                 # Common utilities and config
 │   ├── config/             # Centralized configuration
 │   ├── logging/            # Logging configuration
-│   └── utils/              # Shared utilities
+│   ├── services/           # Shared services (OpenAI)
+│   └── utils/              # Shared utilities (token counter, supabase data cleaner)
 ├── evaluation/             # RAG evaluation framework
 ├── app/                    # Next.js frontend
 ├── components/             # React components + shadcn/ui
