@@ -10,8 +10,9 @@ from datetime import datetime
 import uuid
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv(dotenv_path="../.env")
+# Load environment variables from project root
+from pathlib import Path
+load_dotenv(dotenv_path=Path(__file__).parent.parent / ".env")
 
 class Database:
     def __init__(self):
