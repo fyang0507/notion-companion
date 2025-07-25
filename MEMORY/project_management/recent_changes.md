@@ -2,6 +2,12 @@
 
 *Last Updated: 2025-07-24*
 
+## 2025-07-24 - Interactive Evaluation Results Dashboard
+
+• **Streamlit + Plotly Visualization** - Built interactive web dashboard for exploring aggregated evaluation results with multi-select filtering
+• **Complete Metadata Exposure** - All evaluation parameters (QA models, embedding models, rouge thresholds, chunking config) available as toggle filters
+• **Dynamic Line Charts** - Precision, recall, ndcg metrics vs K-values with MRR values displayed as metric cards
+
 ## 2025-07-24 - Retrieval Metrics and end-to-end evaluation pipeline for benchmark experiments
 
 • Metrics (precision@k, recall@k, NDCG@k, MRR) now fully config-driven, multi-chunk aware, and support flexible similarity thresholds
