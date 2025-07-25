@@ -89,7 +89,11 @@ max_merge_distance = 5
 max_chunk_size = 500
 
 [embeddings]
-# Embedding model for semantic similarity
+# Internal configuration (not passed to OpenAI API)
+batch_size = 512  # For our internal batching logic
+delay_seconds = 0.1  # Rate limiting delay
+
+[embeddings.openai]
+# OpenAI API parameters (passed directly to embeddings.create)
 model = "text-embedding-3-small"
-# Batch size for embedding generation
-batch_size = 512
+dimensions = 1536

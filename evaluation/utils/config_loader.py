@@ -116,20 +116,29 @@ class ConfigLoader:
             # Validate embeddings section
             embeddings = config['embeddings']
             
-            # Required fields in embeddings section
-            required_embedding_fields = ['model', 'batch_size']
-            for field in required_embedding_fields:
-                if field not in embeddings:
-                    raise ValueError(f"Missing required field: embeddings.{field}")
-            
-            # Validate embeddings configuration values
-            model = embeddings['model']
-            if not isinstance(model, str) or not model.strip():
-                raise ValueError(f"embeddings.model must be a non-empty string, got {model}")
+            # Check for required embeddings configuration
+            if 'batch_size' not in embeddings:
+                raise ValueError("Missing required field: embeddings.batch_size")
             
             batch_size = embeddings['batch_size']
             if not isinstance(batch_size, int) or batch_size <= 0:
                 raise ValueError(f"embeddings.batch_size must be a positive integer, got {batch_size}")
+            
+            # Check for nested openai section
+            if 'openai' not in embeddings:
+                raise ValueError("Missing required field: embeddings.openai section")
+            
+            openai_config = embeddings['openai']
+            if not isinstance(openai_config, dict):
+                raise ValueError("embeddings.openai must be a dictionary")
+            
+            # Check for required openai fields
+            if 'model' not in openai_config:
+                raise ValueError("Missing required field: embeddings.openai.model")
+            
+            model = openai_config['model']
+            if not isinstance(model, str) or not model.strip():
+                raise ValueError(f"embeddings.openai.model must be a non-empty string, got {model}")
             
             logger.info("Configuration validation passed")
             return True
