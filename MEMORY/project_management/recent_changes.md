@@ -1,6 +1,25 @@
 # Recent Changes
 
-*Last Updated: 2025-07-23*
+*Last Updated: 2025-07-24*
+
+## 2025-07-24 - Retrieval Metrics and end-to-end evaluation pipeline for benchmark experiments
+
+• Metrics (precision@k, recall@k, NDCG@k, MRR) now fully config-driven, multi-chunk aware, and support flexible similarity thresholds
+• Built and verified end-to-end evaluation pipeline for benchmark experiments
+
+## 2025-07-24 - Centralized Token Counting Utility
+
+• **Shared Token Counter** - Created shared/utils/token_counter.py with tiktoken-based token counting for consistent calculations across all modules
+
+## 2025-07-24 - Decentralized OpenAI Service Architecture
+
+• **Service Decentralization** - Moved OpenAI service from ingestion/services/ to shared/services/ with stateless, config-agnostic design
+• **Experiment-Specific Configuration** - Enabled flexible embedding parameter tuning (model, dimensions, batch_size) via benchmark.toml without affecting global config
+• **Global Config Elimination** - Removed dependency on shared/config/models.toml for benchmark experiments, each component now owns its configuration
+
+## 2025-07-23 - RAG Pipeline Architecture Clean Slate
+
+• **Concrete Implementation Removal** - Removed all concrete implementations from ingestion/, rag/, and storage/ modules to create clean experimental foundation
 
 ## 2025-07-23 - QA Self-Verification System for Evaluation Quality Assurance
 
