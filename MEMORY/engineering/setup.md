@@ -79,9 +79,6 @@ uv run python shared/config/model_config.py
 ```bash
 # Database connectivity test (5 seconds)
 uv run python -c "import asyncio; from storage.database import init_db; asyncio.run(init_db()); print('✓ DB OK')"
-
-# OpenAI integration test (10 seconds)  
-uv run python -c "import asyncio; from ingestion.services.openai_service import get_openai_service; asyncio.run(get_openai_service().generate_embedding('test')); print('✓ OpenAI OK')"
 ```
 
 ## Configuration Files
