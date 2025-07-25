@@ -46,6 +46,8 @@ dev = [
     # Evaluation dependencies
     "numpy",
     "typing-extensions",
+    "plotly",
+    "streamlit",
 ]
 
 evaluation = [
