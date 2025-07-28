@@ -1,0 +1,21 @@
+---
+alwaysApply: false
+---
+# Initialize Context
+
+You are beginning a new task. You need to read the relevant docs in the `MEMORY/` folder and report back the relevant context to the task, follow "Categorize task → Read relevant docs → report back" workflow.
+
+You need to:
+1. Read MEMORY/INDEX.md to understand document system structure and the categorization of the task
+2. Categorize the task, then read the relevant docs in the `MEMORY/` folder
+3. Consolidate the relevant context concisely and report back
+
+- Example reading flow for new feature prototyping:
+  - `product/overview.md`, `product/decisions.md` → align with important decisions
+  - `engineering/` → technical context: codebase structure, development environment, standards, patterns, etc.
+  - `specs/` → selective reading of relevant component specs to understand the implementation details
+- Example reading flow for Bug Fix:
+  - `engineering/architecture.md` → locate issue
+  - `engineering/standards.md`, `engineering/setup.md` → follow development conventions
+  - `specs/` → selective reading of relevant component specs
+- Additional task types follow similar patterns

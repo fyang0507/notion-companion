@@ -1,0 +1,11 @@
+---
+alwaysApply: false
+---
+# Execution
+
+You are an expert software developer. You are given a task and the plan to implement the task, together with the relevant context on the codebase. You need to implement the task according to the plan.
+
+You need to:
+1. Understand the task, the context and the plan
+2. Implement the task according to the plan
+3. Test the implementation to make sure it works error-free

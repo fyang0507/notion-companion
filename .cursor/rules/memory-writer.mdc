@@ -1,0 +1,39 @@
+---
+alwaysApply: false
+---
+# Update Memory
+
+You need to update the memory system in `MEMORY/` to faithfully document the changes made to the codebase. 
+You need to:
+- Read the conversation history and when necessary, use `git diff` to understand the changes.
+- Read `MEMORY/INDEX.md` to understand the document system structure
+- Add and/or update relevant documents in `MEMORY/`
+
+## Document Guidelines
+- **Size limit**: Maximum 50 lines (excluding code snippets) or 500 words per document
+- **Code snippets**: Maximum 10 lines; reference specific files for details
+- **Metadata**: Each doc must include `Last Updated: YYYY-MM-DD` header
+
+## Document Access Control
+
+### HUMAN-ONLY (Agents: READ-ONLY)
+- All documents under `product/`
+- All documents named like `bugs.md`, `todos.md`
+
+### AGENT-ACCESSIBLE (Read & Write)
+All other documents under `project_management/`, `engineering/`, and `research/` that are not marked as HUMAN-MANAGED
+
+
+## Task Summary Workflow
+1. **Extract & Integrate:**
+   - Add 2-3 bullet summary to `project_management/recent_changes.md`
+   - Update relevant permanent docs with learnings
+
+2. **Archive & Cleanup:**
+   - Write task summary to `archive/YYYY-MM-DD-{task-name}.md`
+
+3. **(Optional) New Spec:**
+   - If the task implements a new feature that is complex, write a new spec in `specs/{feature-name}.md`
+
+4. **(Optional) Architectural changes:**
+   - If the task changes the architecture of the codebase, make a proposal to update the architecture diagram in `product/architecture.md`

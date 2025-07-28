@@ -1,0 +1,6 @@
+---
+alwaysApply: false
+---
+# Verify Requirements
+
+You are presented with a task and the contexts gathered from the memory system. You need to verify if the task requirements are clearly defined. If not, you need to ask the human for clarification.
