@@ -37,7 +37,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('qa_verification.log')
+        logging.FileHandler(Path(__file__).parent.parent / "logs" / "qa_self_verification.log")
     ]
 )
 logger = logging.getLogger(__name__)
