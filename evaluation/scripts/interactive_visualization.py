@@ -12,14 +12,12 @@ Usage:
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
-from plotly.subplots import make_subplots
 import pandas as pd
 import json
 import glob
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Tuple
-import re
 
 # Page configuration
 st.set_page_config(
@@ -53,17 +51,11 @@ def load_aggregated_results() -> Tuple[pd.DataFrame, Dict[str, Any]]:
             # Extract metadata
             metadata = data['metadata']
             
-            # Parse filename to extract configuration
+            # Use metadata values directly (more reliable than filename parsing)
             filename = os.path.basename(file_path)
-            config_match = re.search(r'rouge(\d+)_maxtkn(\d+)_overlap(\d+)', filename)
-            if config_match:
-                rouge_threshold = float(f"0.{config_match.group(1)}")
-                max_tokens = int(config_match.group(2))
-                overlap_tokens = int(config_match.group(3))
-            else:
-                rouge_threshold = metadata.get('rouge_threshold', 0.0)
-                max_tokens = metadata.get('chunking_config', {}).get('max_tokens', 1000)
-                overlap_tokens = metadata.get('chunking_config', {}).get('overlap_tokens', 0)
+            rouge_threshold = metadata.get('rouge_threshold', 0.0)
+            max_tokens = metadata.get('chunking_config', {}).get('max_tokens', 1000)
+            overlap_tokens = metadata.get('chunking_config', {}).get('overlap_tokens', 0)
             
             # Process results
             results = data['results']
@@ -78,8 +70,6 @@ def load_aggregated_results() -> Tuple[pd.DataFrame, Dict[str, Any]]:
                         'rouge_threshold': rouge_threshold,
                         'max_tokens': max_tokens,
                         'overlap_tokens': overlap_tokens,
-                        'embeddings_model': metadata.get('embeddings_config', {}).get('openai', {}).get('model', 'unknown'),
-                        'qa_model': metadata.get('qa_metadata', {}).get('model', 'unknown'),
                         'total_questions': metric_data['total_questions'],
                         'correct_retrievals': metric_data['correct_retrievals'],
                         'filename': filename,
@@ -95,8 +85,6 @@ def load_aggregated_results() -> Tuple[pd.DataFrame, Dict[str, Any]]:
                         'rouge_threshold': rouge_threshold,
                         'max_tokens': max_tokens,
                         'overlap_tokens': overlap_tokens,
-                        'embeddings_model': metadata.get('embeddings_config', {}).get('openai', {}).get('model', 'unknown'),
-                        'qa_model': metadata.get('qa_metadata', {}).get('model', 'unknown'),
                         'total_questions': metric_data['total_questions'],
                         'correct_retrievals': metric_data['correct_retrievals'],
                         'filename': filename,
@@ -121,44 +109,127 @@ def load_aggregated_results() -> Tuple[pd.DataFrame, Dict[str, Any]]:
     df = pd.DataFrame(all_data)
     return df, metadata_info
 
-def create_metric_chart(df: pd.DataFrame, metric: str, selected_rouge_thresholds: List[float]) -> go.Figure:
+def create_metric_chart(df: pd.DataFrame, metric: str, selected_configurations: List[Dict]) -> go.Figure:
     """Create a line chart for a specific metric."""
     
     # Filter data for the metric (excluding MRR for line plots)
     metric_df = df[(df['metric_name'] == metric) & (df['k_value'].notna())]
-    metric_df = metric_df[metric_df['rouge_threshold'].isin(selected_rouge_thresholds)]
+    
+    # Filter by selected configurations
+    if selected_configurations:
+        config_filter = pd.Series([False] * len(metric_df))
+        for config in selected_configurations:
+            config_match = (
+                (metric_df['rouge_threshold'] == config['rouge_threshold']) &
+                (metric_df['max_tokens'] == config['max_tokens']) &
+                (metric_df['overlap_tokens'] == config['overlap_tokens'])
+            )
+            config_filter = config_filter | config_match
+        metric_df = metric_df[config_filter]
     
     if metric_df.empty:
         return go.Figure().add_annotation(text="No data available", showarrow=False)
     
     fig = go.Figure()
     
-    # Create a line for each rouge threshold
-    colors = px.colors.qualitative.Set1
-    for i, rouge_threshold in enumerate(sorted(selected_rouge_thresholds)):
-        threshold_df = metric_df[metric_df['rouge_threshold'] == rouge_threshold]
+    # Create a line for each unique configuration with extended styling
+    # Extended color palette for many configurations
+    colors = (px.colors.qualitative.Set1 + 
+              px.colors.qualitative.Set2 + 
+              px.colors.qualitative.Set3 + 
+              px.colors.qualitative.Pastel1 + 
+              px.colors.qualitative.Pastel2)
+    
+    # Line style variations for better distinguishability
+    line_styles = ['solid', 'dash', 'dot', 'dashdot']
+    
+    # Marker styles for additional variation
+    marker_symbols = ['circle', 'square', 'diamond', 'cross', 'x', 'triangle-up', 'triangle-down', 'star']
+    
+    unique_configs = metric_df[['rouge_threshold', 'max_tokens', 'overlap_tokens']].drop_duplicates()
+    
+    for i, (_, config) in enumerate(unique_configs.iterrows()):
+        rouge_threshold = config['rouge_threshold']
+        max_tokens = config['max_tokens']
+        overlap_tokens = config['overlap_tokens']
         
-        if not threshold_df.empty:
+        config_df = metric_df[
+            (metric_df['rouge_threshold'] == rouge_threshold) &
+            (metric_df['max_tokens'] == max_tokens) &
+            (metric_df['overlap_tokens'] == overlap_tokens)
+        ]
+        
+        if not config_df.empty:
             # Sort by k_value for proper line connection
-            threshold_df = threshold_df.sort_values('k_value')
+            config_df = config_df.sort_values('k_value')
+            
+            # Create a descriptive label
+            label = f'Rouge {rouge_threshold}, {max_tokens}tkn'
+            if overlap_tokens > 0:
+                label += f', overlap {overlap_tokens}'
+            
+            # Use cycling styles for better distinguishability with many configurations
+            color = colors[i % len(colors)]
+            line_style = line_styles[i % len(line_styles)]
+            marker_symbol = marker_symbols[i % len(marker_symbols)]
             
             fig.add_trace(go.Scatter(
-                x=threshold_df['k_value'],
-                y=threshold_df['score'],
+                x=config_df['k_value'],
+                y=config_df['score'],
                 mode='lines+markers',
-                name=f'Rouge {rouge_threshold}',
-                line=dict(color=colors[i % len(colors)], width=3),
-                marker=dict(size=8),
+                name=label,
+                line=dict(
+                    color=color, 
+                    width=3, 
+                    dash=line_style
+                ),
+                marker=dict(
+                    size=8, 
+                    symbol=marker_symbol,
+                    color=color,
+                    line=dict(width=2, color='white')
+                ),
                 hovertemplate=(
-                    f'<b>Rouge Threshold: {rouge_threshold}</b><br>'
+                    f'<b>{label}</b><br>'
                     'K: %{x}<br>'
                     f'{metric.title()}: %{{y:.3f}}<br>'
-                    f'QA Model: {threshold_df.iloc[0]["qa_model"]}<br>'
-                    f'Embedding Model: {threshold_df.iloc[0]["embeddings_model"]}<br>'
-                    f'Max Tokens: {threshold_df.iloc[0]["max_tokens"]}<br>'
                     '<extra></extra>'
                 )
             ))
+    
+    # Adaptive layout based on number of configurations
+    num_configs = len(unique_configs)
+    
+    # Adjust height and legend position for many configurations
+    if num_configs <= 4:
+        height = 400
+        legend_config = dict(
+            orientation="v",
+            yanchor="top",
+            y=1,
+            xanchor="left",
+            x=1.02
+        )
+    elif num_configs <= 8:
+        height = 450
+        legend_config = dict(
+            orientation="v",
+            yanchor="top", 
+            y=1,
+            xanchor="left",
+            x=1.02,
+            font=dict(size=10)
+        )
+    else:
+        height = 500
+        legend_config = dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.3,
+            xanchor="center",
+            x=0.5,
+            font=dict(size=9)
+        )
     
     fig.update_layout(
         title=f'{metric.title()} @ K',
@@ -166,8 +237,9 @@ def create_metric_chart(df: pd.DataFrame, metric: str, selected_rouge_thresholds
         yaxis_title=f'{metric.title()} Score',
         hovermode='closest',
         showlegend=True,
-        height=400,
-        margin=dict(l=0, r=0, t=40, b=0)
+        height=height,
+        margin=dict(l=0, r=0, t=40, b=0 if num_configs <= 8 else 80),
+        legend=legend_config
     )
     
     # Set x-axis to show only integer values
@@ -175,11 +247,12 @@ def create_metric_chart(df: pd.DataFrame, metric: str, selected_rouge_thresholds
     
     return fig
 
-def display_mrr_values(df: pd.DataFrame, selected_rouge_thresholds: List[float]):
+def display_mrr_values(df: pd.DataFrame, selected_configurations: List[Dict]):
     """Display MRR values as cards below the charts."""
     
     mrr_df = df[(df['metric_name'] == 'mrr')]
-    mrr_df = mrr_df[mrr_df['rouge_threshold'].isin(selected_rouge_thresholds)]
+    
+    # Note: No secondary filtering needed here since df is already filtered by main()
     
     if mrr_df.empty:
         st.warning("No MRR data available for selected filters.")
@@ -187,20 +260,76 @@ def display_mrr_values(df: pd.DataFrame, selected_rouge_thresholds: List[float])
     
     st.subheader("📏 Mean Reciprocal Rank (MRR)")
     
-    # Create columns for MRR values
-    cols = st.columns(len(selected_rouge_thresholds))
+    # Get unique configurations
+    unique_configs = mrr_df[['rouge_threshold', 'max_tokens', 'overlap_tokens']].drop_duplicates()
+    num_configs = len(unique_configs)
     
-    for i, rouge_threshold in enumerate(sorted(selected_rouge_thresholds)):
-        threshold_mrr = mrr_df[mrr_df['rouge_threshold'] == rouge_threshold]
+    # Create explicit layout that ensures all configurations are displayed
+    config_list = list(unique_configs.iterrows())
+    
+    # For 4 configurations, use explicit 2x2 grid
+    if num_configs == 4:
+        # First row
+        col1, col2 = st.columns(2)
+        # Second row
+        col3, col4 = st.columns(2)
+        columns = [col1, col2, col3, col4]
+    elif num_configs <= 2:
+        columns = st.columns(num_configs)
+    elif num_configs == 3:
+        col1, col2 = st.columns(2)
+        col3, _ = st.columns(2)  # Use underscore for unused column
+        columns = [col1, col2, col3]
+    elif num_configs <= 6:
+        # Use 2 rows of 3 columns for 5-6 items
+        col1, col2, col3 = st.columns(3)
+        if num_configs > 3:
+            col4, col5, col6 = st.columns(3)
+            columns = [col1, col2, col3, col4, col5, col6][:num_configs]
+        else:
+            columns = [col1, col2, col3]
+    elif num_configs <= 9:
+        # Use 3 rows of 3 columns for 7-9 items
+        col1, col2, col3 = st.columns(3)
+        col4, col5, col6 = st.columns(3)
+        col7, col8, col9 = st.columns(3)
+        columns = [col1, col2, col3, col4, col5, col6, col7, col8, col9][:num_configs]
+    else:
+        # For many items, use multiple rows of 4 columns
+        columns = []
+        remaining = num_configs
+        while remaining > 0:
+            row_size = min(4, remaining)
+            row_cols = st.columns(4)
+            columns.extend(row_cols[:row_size])
+            remaining -= row_size
+    
+    # Display each configuration
+    for i, (_, config) in enumerate(config_list):
+        rouge_threshold = config['rouge_threshold']
+        max_tokens = config['max_tokens']
+        overlap_tokens = config['overlap_tokens']
         
-        if not threshold_mrr.empty:
-            mrr_score = threshold_mrr.iloc[0]['score']
-            correct_retrievals = threshold_mrr.iloc[0]['correct_retrievals']
-            total_questions = threshold_mrr.iloc[0]['total_questions']
+        config_mrr = mrr_df[
+            (mrr_df['rouge_threshold'] == rouge_threshold) &
+            (mrr_df['max_tokens'] == max_tokens) &
+            (mrr_df['overlap_tokens'] == overlap_tokens)
+        ]
+        
+        # Create a descriptive label
+        label = f'Rouge {rouge_threshold}, {int(max_tokens)}tkn'
+        if overlap_tokens > 0:
+            label += f', overlap {int(overlap_tokens)}'
+        
+        if not config_mrr.empty and i < len(columns):
+            mrr_score = config_mrr.iloc[0]['score']
+            correct_retrievals = config_mrr.iloc[0]['correct_retrievals']
+            total_questions = config_mrr.iloc[0]['total_questions']
             
-            with cols[i]:
+            # Display in the appropriate column
+            with columns[i]:
                 st.metric(
-                    label=f"Rouge {rouge_threshold}",
+                    label=label,
                     value=f"{mrr_score:.3f}",
                     help=f"Correct retrievals: {correct_retrievals}/{total_questions}"
                 )
@@ -222,39 +351,52 @@ def main():
     # Sidebar for filtering
     st.sidebar.header("🔍 Filters")
     
-    # Rouge threshold multi-select
-    available_rouge_thresholds = sorted(df['rouge_threshold'].unique())
-    selected_rouge_thresholds = st.sidebar.multiselect(
-        "Rouge Thresholds",
-        options=available_rouge_thresholds,
-        default=available_rouge_thresholds,
-        help="Select which rouge thresholds to display"
+    # Configuration selection
+    unique_configs = df[['rouge_threshold', 'max_tokens', 'overlap_tokens']].drop_duplicates()
+    config_options = []
+    config_labels = []
+    
+    for _, config in unique_configs.iterrows():
+        config_dict = {
+            'rouge_threshold': config['rouge_threshold'],
+            'max_tokens': config['max_tokens'],
+            'overlap_tokens': config['overlap_tokens']
+        }
+        config_options.append(config_dict)
+        
+        # Create descriptive label
+        label = f'Rouge {config["rouge_threshold"]}, {config["max_tokens"]}tkn'
+        if config['overlap_tokens'] > 0:
+            label += f', overlap {config["overlap_tokens"]}'
+        config_labels.append(label)
+    
+    # Multi-select for configurations
+    selected_config_indices = st.sidebar.multiselect(
+        "Configurations",
+        options=list(range(len(config_options))),
+        format_func=lambda x: config_labels[x],
+        default=list(range(len(config_options))),
+        help="Select which configurations to display"
     )
     
-    if not selected_rouge_thresholds:
-        st.warning("Please select at least one rouge threshold.")
+    if not selected_config_indices:
+        st.warning("Please select at least one configuration.")
         return
     
-    # Model configuration filters
-    st.sidebar.header("🤖 Model Configuration")
+    selected_configurations = [config_options[i] for i in selected_config_indices]
     
-    # QA Model selection
-    available_qa_models = sorted(df['qa_model'].unique())
-    selected_qa_models = st.sidebar.multiselect(
-        "QA Models",
-        options=available_qa_models,
-        default=available_qa_models,
-        help="Select which QA models to include"
-    )
-    
-    # Embedding Model selection
-    available_embedding_models = sorted(df['embeddings_model'].unique())
-    selected_embedding_models = st.sidebar.multiselect(
-        "Embedding Models",
-        options=available_embedding_models,
-        default=available_embedding_models,
-        help="Select which embedding models to include"
-    )
+    # Display information about configuration count and readability
+    num_selected = len(selected_configurations)
+    if num_selected > 8:
+        st.sidebar.warning(
+            f"⚠️ {num_selected} configurations selected. "
+            "Consider filtering to improve chart readability."
+        )
+    elif num_selected > 4:
+        st.sidebar.info(
+            f"ℹ️ {num_selected} configurations selected. "
+            "Charts will use extended styling for clarity."
+        )
     
     # Chunking configuration filters
     with st.sidebar.expander("⚙️ Chunking Configuration"):
@@ -274,20 +416,21 @@ def main():
             help="Filter by chunking overlap tokens"
         )
     
-    # Validate all filter selections
-    if not selected_qa_models:
-        st.warning("Please select at least one QA model.")
-        return
-        
-    if not selected_embedding_models:
-        st.warning("Please select at least one embedding model.")
-        return
+    # No additional validation needed since models are constant
+    
+    # Apply configuration filters
+    config_filter = pd.Series([False] * len(df))
+    for config in selected_configurations:
+        config_match = (
+            (df['rouge_threshold'] == config['rouge_threshold']) &
+            (df['max_tokens'] == config['max_tokens']) &
+            (df['overlap_tokens'] == config['overlap_tokens'])
+        )
+        config_filter = config_filter | config_match
     
     # Apply all filters
     filtered_df = df[
-        (df['rouge_threshold'].isin(selected_rouge_thresholds)) &
-        (df['qa_model'].isin(selected_qa_models)) &
-        (df['embeddings_model'].isin(selected_embedding_models)) &
+        config_filter &
         (df['max_tokens'].isin(selected_max_tokens)) &
         (df['overlap_tokens'].isin(selected_overlap_tokens))
     ]
@@ -312,31 +455,31 @@ def main():
     
     # Create charts in columns
     if len(selected_metrics) == 1:
-        fig = create_metric_chart(filtered_df, selected_metrics[0], selected_rouge_thresholds)
+        fig = create_metric_chart(filtered_df, selected_metrics[0], selected_configurations)
         st.plotly_chart(fig, use_container_width=True)
     elif len(selected_metrics) == 2:
         col1, col2 = st.columns(2)
         with col1:
-            fig1 = create_metric_chart(filtered_df, selected_metrics[0], selected_rouge_thresholds)
+            fig1 = create_metric_chart(filtered_df, selected_metrics[0], selected_configurations)
             st.plotly_chart(fig1, use_container_width=True)
         with col2:
-            fig2 = create_metric_chart(filtered_df, selected_metrics[1], selected_rouge_thresholds)
+            fig2 = create_metric_chart(filtered_df, selected_metrics[1], selected_configurations)
             st.plotly_chart(fig2, use_container_width=True)
     else:
         # For 3 metrics, use 2+1 layout
         col1, col2 = st.columns(2)
         with col1:
-            fig1 = create_metric_chart(filtered_df, selected_metrics[0], selected_rouge_thresholds)
+            fig1 = create_metric_chart(filtered_df, selected_metrics[0], selected_configurations)
             st.plotly_chart(fig1, use_container_width=True)
         with col2:
-            fig2 = create_metric_chart(filtered_df, selected_metrics[1], selected_rouge_thresholds)
+            fig2 = create_metric_chart(filtered_df, selected_metrics[1], selected_configurations)
             st.plotly_chart(fig2, use_container_width=True)
         
-        fig3 = create_metric_chart(filtered_df, selected_metrics[2], selected_rouge_thresholds)
+        fig3 = create_metric_chart(filtered_df, selected_metrics[2], selected_configurations)
         st.plotly_chart(fig3, use_container_width=True)
     
     # Display MRR values
-    display_mrr_values(filtered_df, selected_rouge_thresholds)
+    display_mrr_values(filtered_df, selected_configurations)
     
     # Data summary
     with st.expander("📊 Data Summary"):
@@ -351,22 +494,7 @@ def main():
         with col3:
             st.metric("Rouge Thresholds", len(df['rouge_threshold'].unique()))
         with col4:
-            st.metric("Unique Configs", len(df[['rouge_threshold', 'max_tokens', 'overlap_tokens', 'qa_model', 'embeddings_model']].drop_duplicates()))
-        
-        # Model information
-        st.markdown("### Model Configuration")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**QA Models:**")
-            for model in sorted(df['qa_model'].unique()):
-                count = len(df[df['qa_model'] == model])
-                st.markdown(f"- {model} ({count} data points)")
-        
-        with col2:
-            st.markdown("**Embedding Models:**")
-            for model in sorted(df['embeddings_model'].unique()):
-                count = len(df[df['embeddings_model'] == model])
-                st.markdown(f"- {model} ({count} data points)")
+            st.metric("Unique Configs", len(df[['rouge_threshold', 'max_tokens', 'overlap_tokens']].drop_duplicates()))
         
         # Configuration details
         st.markdown("### Detailed Configuration Summary")
@@ -376,7 +504,7 @@ def main():
         # Filtered data preview
         if len(filtered_df) > 0:
             st.markdown("### Filtered Data Preview")
-            preview_cols = ['metric_name', 'k_value', 'score', 'rouge_threshold', 'qa_model', 'embeddings_model']
+            preview_cols = ['metric_name', 'k_value', 'score', 'rouge_threshold', 'max_tokens', 'overlap_tokens']
             st.dataframe(filtered_df[preview_cols].head(10), use_container_width=True)
         else:
             st.warning("No data matches the current filters.")
