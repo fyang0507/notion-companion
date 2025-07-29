@@ -662,11 +662,10 @@ class BenchmarkBasicRAGRunner:
         # Generate filename with timestamp and config info
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         rouge_suffix = f"rouge{self.benchmark_config['evaluation']['rouge_threshold']:.1f}".replace(".", "")
-        overlap_tokens = self.benchmark_config['ingestion']['overlap_tokens']
         max_tokens = self.benchmark_config['ingestion']['max_tokens']
         chunking_strategy = self.benchmark_config['strategies']['chunking']['strategy']
         retrieval_strategy = self.benchmark_config['strategies']['retrieval']['strategy']
-        filename = f"aggregated_results_{chunking_strategy}_{retrieval_strategy}_{rouge_suffix}_maxtkn{max_tokens}_overlap{overlap_tokens}_{timestamp}.json"
+        filename = f"aggregated_results_{chunking_strategy}_{retrieval_strategy}_{rouge_suffix}_maxtkn{max_tokens}_{timestamp}.json"
         results_path = results_dir / filename
         
         # Convert evaluation results to serializable format
@@ -694,7 +693,6 @@ class BenchmarkBasicRAGRunner:
                 'chunking_config': {
                     'strategy': self.benchmark_config['strategies']['chunking']['strategy'],
                     'max_tokens': self.benchmark_config['ingestion']['max_tokens'],
-                    'overlap_tokens': self.benchmark_config['ingestion']['overlap_tokens']
                 },
                 'retrieval_config': {
                     'strategy': self.benchmark_config['strategies']['retrieval']['strategy']
@@ -705,7 +703,7 @@ class BenchmarkBasicRAGRunner:
             'results': serializable_results,
             'summary': {
                 'total_queries': len([r for r in evaluation_results.values()][0].detailed_results) if evaluation_results else 0,
-                'config_fingerprint': f"{chunking_strategy}_{retrieval_strategy}_maxtkn{max_tokens}_overlap{overlap_tokens}_{rouge_suffix}"
+                'config_fingerprint': f"{chunking_strategy}_{retrieval_strategy}_maxtkn{max_tokens}_{rouge_suffix}"
             }
         }
         

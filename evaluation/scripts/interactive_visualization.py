@@ -55,7 +55,6 @@ def load_aggregated_results() -> Tuple[pd.DataFrame, Dict[str, Any]]:
             filename = os.path.basename(file_path)
             rouge_threshold = metadata.get('rouge_threshold', 0.0)
             max_tokens = metadata.get('chunking_config', {}).get('max_tokens', 1000)
-            overlap_tokens = metadata.get('chunking_config', {}).get('overlap_tokens', 0)
             
             # Process results
             results = data['results']
@@ -69,7 +68,6 @@ def load_aggregated_results() -> Tuple[pd.DataFrame, Dict[str, Any]]:
                         'score': metric_data['score'],
                         'rouge_threshold': rouge_threshold,
                         'max_tokens': max_tokens,
-                        'overlap_tokens': overlap_tokens,
                         'total_questions': metric_data['total_questions'],
                         'correct_retrievals': metric_data['correct_retrievals'],
                         'filename': filename,
@@ -84,7 +82,6 @@ def load_aggregated_results() -> Tuple[pd.DataFrame, Dict[str, Any]]:
                         'score': metric_data['score'],
                         'rouge_threshold': rouge_threshold,
                         'max_tokens': max_tokens,
-                        'overlap_tokens': overlap_tokens,
                         'total_questions': metric_data['total_questions'],
                         'correct_retrievals': metric_data['correct_retrievals'],
                         'filename': filename,
@@ -96,7 +93,6 @@ def load_aggregated_results() -> Tuple[pd.DataFrame, Dict[str, Any]]:
             metadata_info[filename] = {
                 'rouge_threshold': rouge_threshold,
                 'max_tokens': max_tokens,
-                'overlap_tokens': overlap_tokens,
                 'embeddings_model': metadata.get('embeddings_config', {}).get('openai', {}).get('model', 'unknown'),
                 'qa_model': metadata.get('qa_metadata', {}).get('model', 'unknown'),
                 'timestamp': metadata['timestamp']
@@ -121,8 +117,7 @@ def create_metric_chart(df: pd.DataFrame, metric: str, selected_configurations: 
         for config in selected_configurations:
             config_match = (
                 (metric_df['rouge_threshold'] == config['rouge_threshold']) &
-                (metric_df['max_tokens'] == config['max_tokens']) &
-                (metric_df['overlap_tokens'] == config['overlap_tokens'])
+                (metric_df['max_tokens'] == config['max_tokens'])
             )
             config_filter = config_filter | config_match
         metric_df = metric_df[config_filter]
@@ -146,17 +141,15 @@ def create_metric_chart(df: pd.DataFrame, metric: str, selected_configurations: 
     # Marker styles for additional variation
     marker_symbols = ['circle', 'square', 'diamond', 'cross', 'x', 'triangle-up', 'triangle-down', 'star']
     
-    unique_configs = metric_df[['rouge_threshold', 'max_tokens', 'overlap_tokens']].drop_duplicates()
+    unique_configs = metric_df[['rouge_threshold', 'max_tokens']].drop_duplicates()
     
     for i, (_, config) in enumerate(unique_configs.iterrows()):
         rouge_threshold = config['rouge_threshold']
         max_tokens = config['max_tokens']
-        overlap_tokens = config['overlap_tokens']
         
         config_df = metric_df[
             (metric_df['rouge_threshold'] == rouge_threshold) &
-            (metric_df['max_tokens'] == max_tokens) &
-            (metric_df['overlap_tokens'] == overlap_tokens)
+            (metric_df['max_tokens'] == max_tokens)
         ]
         
         if not config_df.empty:
@@ -165,8 +158,6 @@ def create_metric_chart(df: pd.DataFrame, metric: str, selected_configurations: 
             
             # Create a descriptive label
             label = f'Rouge {rouge_threshold}, {max_tokens}tkn'
-            if overlap_tokens > 0:
-                label += f', overlap {overlap_tokens}'
             
             # Use cycling styles for better distinguishability with many configurations
             color = colors[i % len(colors)]
@@ -261,7 +252,7 @@ def display_mrr_values(df: pd.DataFrame, selected_configurations: List[Dict]):
     st.subheader("📏 Mean Reciprocal Rank (MRR)")
     
     # Get unique configurations
-    unique_configs = mrr_df[['rouge_threshold', 'max_tokens', 'overlap_tokens']].drop_duplicates()
+    unique_configs = mrr_df[['rouge_threshold', 'max_tokens']].drop_duplicates()
     num_configs = len(unique_configs)
     
     # Create explicit layout that ensures all configurations are displayed
@@ -308,18 +299,14 @@ def display_mrr_values(df: pd.DataFrame, selected_configurations: List[Dict]):
     for i, (_, config) in enumerate(config_list):
         rouge_threshold = config['rouge_threshold']
         max_tokens = config['max_tokens']
-        overlap_tokens = config['overlap_tokens']
         
         config_mrr = mrr_df[
             (mrr_df['rouge_threshold'] == rouge_threshold) &
-            (mrr_df['max_tokens'] == max_tokens) &
-            (mrr_df['overlap_tokens'] == overlap_tokens)
+            (mrr_df['max_tokens'] == max_tokens) 
         ]
         
         # Create a descriptive label
         label = f'Rouge {rouge_threshold}, {int(max_tokens)}tkn'
-        if overlap_tokens > 0:
-            label += f', overlap {int(overlap_tokens)}'
         
         if not config_mrr.empty and i < len(columns):
             mrr_score = config_mrr.iloc[0]['score']
@@ -352,7 +339,7 @@ def main():
     st.sidebar.header("🔍 Filters")
     
     # Configuration selection
-    unique_configs = df[['rouge_threshold', 'max_tokens', 'overlap_tokens']].drop_duplicates()
+    unique_configs = df[['rouge_threshold', 'max_tokens']].drop_duplicates()
     config_options = []
     config_labels = []
     
@@ -360,14 +347,11 @@ def main():
         config_dict = {
             'rouge_threshold': config['rouge_threshold'],
             'max_tokens': config['max_tokens'],
-            'overlap_tokens': config['overlap_tokens']
         }
         config_options.append(config_dict)
         
         # Create descriptive label
         label = f'Rouge {config["rouge_threshold"]}, {config["max_tokens"]}tkn'
-        if config['overlap_tokens'] > 0:
-            label += f', overlap {config["overlap_tokens"]}'
         config_labels.append(label)
     
     # Multi-select for configurations
@@ -407,14 +391,6 @@ def main():
             default=available_max_tokens,
             help="Filter by chunking max tokens"
         )
-        
-        available_overlap_tokens = sorted(df['overlap_tokens'].unique())
-        selected_overlap_tokens = st.multiselect(
-            "Overlap Tokens",
-            options=available_overlap_tokens,
-            default=available_overlap_tokens,
-            help="Filter by chunking overlap tokens"
-        )
     
     # No additional validation needed since models are constant
     
@@ -423,16 +399,14 @@ def main():
     for config in selected_configurations:
         config_match = (
             (df['rouge_threshold'] == config['rouge_threshold']) &
-            (df['max_tokens'] == config['max_tokens']) &
-            (df['overlap_tokens'] == config['overlap_tokens'])
+            (df['max_tokens'] == config['max_tokens']) 
         )
         config_filter = config_filter | config_match
     
     # Apply all filters
     filtered_df = df[
         config_filter &
-        (df['max_tokens'].isin(selected_max_tokens)) &
-        (df['overlap_tokens'].isin(selected_overlap_tokens))
+        (df['max_tokens'].isin(selected_max_tokens))
     ]
     
     # Metrics selection
@@ -494,7 +468,7 @@ def main():
         with col3:
             st.metric("Rouge Thresholds", len(df['rouge_threshold'].unique()))
         with col4:
-            st.metric("Unique Configs", len(df[['rouge_threshold', 'max_tokens', 'overlap_tokens']].drop_duplicates()))
+            st.metric("Unique Configs", len(df[['rouge_threshold', 'max_tokens']].drop_duplicates()))
         
         # Configuration details
         st.markdown("### Detailed Configuration Summary")
@@ -504,7 +478,7 @@ def main():
         # Filtered data preview
         if len(filtered_df) > 0:
             st.markdown("### Filtered Data Preview")
-            preview_cols = ['metric_name', 'k_value', 'score', 'rouge_threshold', 'max_tokens', 'overlap_tokens']
+            preview_cols = ['metric_name', 'k_value', 'score', 'rouge_threshold', 'max_tokens']
             st.dataframe(filtered_df[preview_cols].head(10), use_container_width=True)
         else:
             st.warning("No data matches the current filters.")

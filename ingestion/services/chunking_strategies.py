@@ -13,9 +13,8 @@ import logging
 class ChunkingStrategy(ABC):
     """Base class for content-aware chunking strategies."""
     
-    def __init__(self, max_tokens: int, overlap_tokens: int):
+    def __init__(self, max_tokens: int):
         self.max_tokens = max_tokens
-        self.overlap_tokens = overlap_tokens
         self.logger = logging.getLogger(__name__)
     
     @abstractmethod

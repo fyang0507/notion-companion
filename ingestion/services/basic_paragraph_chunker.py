@@ -24,8 +24,8 @@ class BasicParagraphChunker(ChunkingStrategy):
     4. Used for benchmark/baseline experiments
     """
     
-    def __init__(self, max_tokens: int, overlap_tokens: int):
-        super().__init__(max_tokens, overlap_tokens)
+    def __init__(self, max_tokens: int):
+        super().__init__(max_tokens)
     
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> 'BasicParagraphChunker':
@@ -42,11 +42,10 @@ class BasicParagraphChunker(ChunkingStrategy):
         
         # Extract required parameters with defaults
         max_tokens = ingestion_config["max_tokens"]
-        overlap_tokens = ingestion_config["overlap_tokens"]
         
-        logger.info(f"Creating BasicParagraphChunker with max_tokens={max_tokens}, overlap_tokens={overlap_tokens}")
+        logger.info(f"Creating BasicParagraphChunker with max_tokens={max_tokens}")
         
-        return cls(max_tokens=max_tokens, overlap_tokens=overlap_tokens)
+        return cls(max_tokens=max_tokens)
     
     async def chunk(self, content: str, title: str) -> List[Dict[str, Any]]:
         """
