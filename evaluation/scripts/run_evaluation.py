@@ -11,11 +11,9 @@ Self-contained script to orchestrate the complete basic RAG benchmark experiment
 This script is fully self-contained and coordinates all modular components.
 
 Usage:
-    python run_evaluation.py --clear-data     # Complete fresh start (all tables)
-    python run_evaluation.py --ingest        # Self-contained ingestion pipeline
-    python run_evaluation.py --full --qa-data my_qa_file.json         # Full pipeline
-    python run_evaluation.py --offline --ingest  # Run offline ingestion only
-    python run_evaluation.py --evaluate --qa-data my_qa_file.json # Run evaluation with QA data (always saves results)
+    python run_evaluation.py --clear-data     # remove all tables in Supabase
+    python run_evaluation.py --config custom_config.toml --ingest  # Use custom config file
+    python run_evaluation.py --config custom_config.toml --qa-data qa.json --evaluate  # Custom config with full pipeline
 """
 
 import argparse
@@ -55,12 +53,49 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def clear_all_data(offline_mode: bool = False):
+    """
+    Standalone function to clear all data for a completely fresh experiment.
+    
+    This function is independent and only requires database/filesystem access.
+    No benchmark configuration needed.
+    
+    Args:
+        offline_mode: If True, clear offline files instead of database
+        
+    Returns:
+        Dictionary with clearing statistics
+    """
+    if offline_mode:
+        logger.info("🧹 Clearing offline chunk files...")
+        offline_dir = Path(__file__).parent.parent / "data" / "temp" / "chunks"
+        offline_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Clear offline files
+        cleared_files = 0
+        for file in offline_dir.glob("*.json"):
+            file.unlink()
+            cleared_files += 1
+        
+        logger.info(f"✅ Cleared {cleared_files} offline chunk files")
+        return {'status': 'success', 'tables_cleared': ['offline_files'], 'files_cleared': cleared_files}
+    
+    # Initialize database connection
+    database = Database()
+    await database.init()
+    
+    # Use the data_cleaner utility for comprehensive clearing
+    data_cleaner = get_data_cleaner(database)
+    result = await data_cleaner.clear_all_data(confirm=False)  # No confirmation in automated script
+    
+    return result
+
+
 class BenchmarkBasicRAGRunner:
     """
     Orchestrates the complete basic RAG benchmark experiment.
     
     This runner coordinates:
-    - Data cleaning (shared/utils)
     - Basic ingestion pipeline (ingestion/services)
     - Basic similarity retrieval (rag/strategies)
     - Precision@K evaluation (evaluation/services)
@@ -146,27 +181,6 @@ class BenchmarkBasicRAGRunner:
                 embeddings_config=self.embeddings_config
             )
             self.data_cleaner = get_data_cleaner(self.database)
-    
-    async def clear_data(self):
-        """Clear all data for a completely fresh experiment."""
-        if self.offline_mode:
-            logger.info("🧹 Clearing offline chunk files...")
-            # Clear offline files
-            for file in self.offline_dir.glob("*.json"):
-                file.unlink()
-            logger.info("✅ Cleared offline chunk files")
-            return {'status': 'success', 'tables_cleared': ['offline_files']}
-        
-        # Initialize basic database connection and data_cleaner
-        if self.database is None:
-            self.database = Database()
-            await self.database.init()
-        
-        # Use the data_cleaner utility for comprehensive clearing
-        data_cleaner = get_data_cleaner(self.database)
-        result = await data_cleaner.clear_all_data(confirm=False)  # No confirmation in automated script
-        
-        return result
     
     async def run_ingestion(self):
         """
@@ -710,6 +724,7 @@ async def main():
     parser.add_argument("--full", action="store_true", help="Run full pipeline (clear + ingest + evaluate)")
     parser.add_argument("--offline", action="store_true", help="Run in offline mode (save chunks to JSON files instead of Supabase)")
     parser.add_argument("--qa-data", type=str, help="Path to the QA data file (required for evaluation)")
+    parser.add_argument("--config", type=str, help="Path to benchmark configuration file (default: evaluation/config/benchmark.toml)")
     
     args = parser.parse_args()
     
@@ -717,13 +732,39 @@ async def main():
         parser.print_help()
         return
     
-    # Load benchmark configuration
-    benchmark_config_path = Path(__file__).parent.parent / "config" / "benchmark.toml"
+    # Handle clear-data as completely standalone operation
+    if args.clear_data and not (args.ingest or args.evaluate or args.full):
+        logger.info("=" * 60)
+        logger.info("STANDALONE DATA CLEARING")
+        logger.info("=" * 60)
+        
+        start_time = datetime.now()
+        await clear_all_data(offline_mode=args.offline)
+        end_time = datetime.now()
+        duration = end_time - start_time
+        
+        logger.info("=" * 60)
+        logger.info("DATA CLEARING COMPLETE")
+        logger.info("=" * 60)
+        logger.info(f"⏱️  Total duration: {duration}")
+        return
+    
+    # For other operations, load benchmark configuration
+    if args.config:
+        benchmark_config_path = Path(args.config)
+        if not benchmark_config_path.is_absolute():
+            # Resolve relative path from script directory
+            benchmark_config_path = Path(__file__).parent.parent.parent / args.config
+    
     try:
         with open(benchmark_config_path, 'rb') as f:
             benchmark_config = tomllib.load(f)
+        
+        logger.info(f"📋 Using benchmark configuration: {benchmark_config_path}")
     except FileNotFoundError:
         print(f"❌ Benchmark configuration file not found: {benchmark_config_path}")
+        if not args.config:
+            print(f"   You can specify a custom config file with --config path/to/config.toml")
         return
     except Exception as e:
         print(f"❌ Failed to load benchmark configuration: {e}")
@@ -750,11 +791,7 @@ async def main():
             print(f"❌ QA data file not found: {qa_data_path}")
             return
     
-    # Override rouge threshold from command line if provided
-    if hasattr(args, 'rouge_threshold') and args.rouge_threshold != 0.3:
-        benchmark_config['evaluation']['rouge_threshold'] = args.rouge_threshold
-    
-    # Initialize runner
+    # Initialize runner for benchmark operations
     runner = BenchmarkBasicRAGRunner(offline_mode=args.offline, benchmark_config=benchmark_config)
     
     try:
@@ -764,7 +801,7 @@ async def main():
             logger.info("=" * 60)
             logger.info("STEP 1: CLEARING DATA")
             logger.info("=" * 60)
-            await runner.clear_data()
+            await clear_all_data(offline_mode=args.offline)
         
         if args.full or args.ingest:
             logger.info("=" * 60)
