@@ -1,6 +1,12 @@
 # Recent Changes
 
-*Last Updated: 2025-07-24*
+*Last Updated: 2025-07-29*
+
+## 2025-07-29 - Factory Pattern Refactoring for RAG Benchmark System
+
+• **Config-Driven Strategy Selection** - Replaced hard-coded factory functions with registry-based factory pattern for chunking and retrieval strategies
+• **Modular Strategy Management** - Created ChunkingStrategyFactory and RetrievalStrategyFactory classes with pluggable architectures 
+• **Enhanced Configuration Structure** - Extended benchmark.toml with [strategies.chunking] and [strategies.retrieval] sections for declarative strategy selection
 
 ## 2025-07-24 - Interactive Evaluation Results Dashboard
 

@@ -22,10 +22,12 @@
 │   └── schema/             # SQL schema files
 ├── ingestion/              # Document processing pipeline
 │   ├── interface.py        # Ingestion interface contract
+│   ├── factory.py          # Chunking strategy factory
 │   ├── services/           # Chunking, Notion API
 │   └── scripts/            # Sync utilities
 ├── rag/                    # RAG search and chat services
 │   ├── interface.py        # RAG interface contract
+│   ├── factory.py          # Retrieval strategy factory
 │   ├── services/           # Search & chat session services
 │   └── strategies/         # Different retrieval strategies
 ├── shared/                 # Common utilities and config

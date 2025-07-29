@@ -27,6 +27,27 @@ class BasicParagraphChunker(ChunkingStrategy):
     def __init__(self, max_tokens: int, overlap_tokens: int):
         super().__init__(max_tokens, overlap_tokens)
     
+    @classmethod
+    def from_config(cls, config: Dict[str, Any]) -> 'BasicParagraphChunker':
+        """
+        Create BasicParagraphChunker from configuration dictionary.
+        
+        Args:
+            config: Configuration containing strategy_config and ingestion_config
+            
+        Returns:
+            Configured BasicParagraphChunker instance
+        """
+        ingestion_config = config.get("ingestion_config", {})
+        
+        # Extract required parameters with defaults
+        max_tokens = ingestion_config["max_tokens"]
+        overlap_tokens = ingestion_config["overlap_tokens"]
+        
+        logger.info(f"Creating BasicParagraphChunker with max_tokens={max_tokens}, overlap_tokens={overlap_tokens}")
+        
+        return cls(max_tokens=max_tokens, overlap_tokens=overlap_tokens)
+    
     async def chunk(self, content: str, title: str) -> List[Dict[str, Any]]:
         """
         Create chunks by splitting on paragraphs to match evaluation dataset.
@@ -83,8 +104,3 @@ class BasicParagraphChunker(ChunkingStrategy):
             # Metadata for the chunk
             'chunk_metadata': {},
         }
-
-
-def get_basic_paragraph_chunker(max_tokens: int, overlap_tokens: int = 0) -> BasicParagraphChunker:
-    """Factory function to create a basic paragraph chunker."""
-    return BasicParagraphChunker(max_tokens=max_tokens, overlap_tokens=overlap_tokens)

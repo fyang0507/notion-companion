@@ -1,6 +1,16 @@
 # Benchmark Configuration for Basic RAG Experiment
 # Contains experiment-specific configurations that override global defaults
 
+[strategies]
+# Strategy selection for the benchmark experiment
+[strategies.chunking]
+# Chunking strategy to use: "basic_paragraph"
+strategy = "basic_paragraph"
+
+[strategies.retrieval]
+# Retrieval strategy to use: "basic_similarity"
+strategy = "basic_similarity"
+
 [ingestion]
 # Maximum tokens per chunk
 max_tokens = 1000

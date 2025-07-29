@@ -31,6 +31,31 @@ class BasicSimilarityStrategy(BaseRetrievalStrategy):
         self.embedding_config = embedding_config
         logger.info(f"BasicSimilarityStrategy initialized with model: {embedding_config.get('openai', {}).get('model', 'unknown')}")
     
+    @classmethod
+    def from_config(cls, config: Dict[str, Any]) -> 'BasicSimilarityStrategy':
+        """
+        Create BasicSimilarityStrategy from configuration dictionary.
+        
+        Args:
+            config: Configuration containing strategy_config, embeddings_config, database, and openai_service
+            
+        Returns:
+            Configured BasicSimilarityStrategy instance
+        """
+        # Extract required dependencies and configuration
+        database = config.get("database")
+        openai_service = config.get("openai_service")
+        embeddings_config = config.get("embeddings_config", {})
+        
+        if not database:
+            raise ValueError("Database instance is required for BasicSimilarityStrategy")
+        if not openai_service:
+            raise ValueError("OpenAI service instance is required for BasicSimilarityStrategy")
+        
+        logger.info(f"Creating BasicSimilarityStrategy with embeddings model: {embeddings_config.get('openai', {}).get('model', 'unknown')}")
+        
+        return cls(database=database, openai_service=openai_service, embedding_config=embeddings_config)
+    
     async def retrieve(self, query: str, filters: Dict[str, Any], limit: int = 10, **kwargs) -> List[Dict[str, Any]]:
         """
         Retrieve relevant documents/chunks for a query.
@@ -127,6 +152,4 @@ class BasicSimilarityStrategy(BaseRetrievalStrategy):
         return "Basic vector similarity search using cosine distance without contextual enrichment"
 
 
-def get_basic_similarity_strategy(database: Database, openai_service, embedding_config: Dict[str, Any]) -> BasicSimilarityStrategy:
-    """Factory function to create a basic similarity strategy with embedding config."""
-    return BasicSimilarityStrategy(database, openai_service, embedding_config)
+# Factory function removed - use evaluation.factories.retrieval_factory.RetrievalStrategyFactory instead

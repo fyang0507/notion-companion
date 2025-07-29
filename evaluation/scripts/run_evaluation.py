@@ -11,11 +11,11 @@ Self-contained script to orchestrate the complete basic RAG benchmark experiment
 This script is fully self-contained and coordinates all modular components.
 
 Usage:
-    python run_benchmark_basic_rag.py --clear-data     # Complete fresh start (all tables)
-    python run_benchmark_basic_rag.py --ingest        # Self-contained ingestion pipeline
-    python run_benchmark_basic_rag.py --full --qa-data my_qa_file.json         # Full pipeline
-    python run_benchmark_basic_rag.py --offline --ingest  # Run offline ingestion only
-    python run_benchmark_basic_rag.py --evaluate --qa-data my_qa_file.json # Run evaluation with QA data (always saves results)
+    python run_evaluation.py --clear-data     # Complete fresh start (all tables)
+    python run_evaluation.py --ingest        # Self-contained ingestion pipeline
+    python run_evaluation.py --full --qa-data my_qa_file.json         # Full pipeline
+    python run_evaluation.py --offline --ingest  # Run offline ingestion only
+    python run_evaluation.py --evaluate --qa-data my_qa_file.json # Run evaluation with QA data (always saves results)
 """
 
 import argparse
@@ -38,8 +38,8 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 from storage.database import Database
 from ingestion.services.notion_service import NotionService
 from shared.services.openai_service import OpenAIService
-from ingestion.services.basic_paragraph_chunker import get_basic_paragraph_chunker
-from rag.strategies.basic_similarity_strategy import get_basic_similarity_strategy
+from ingestion.factory import get_chunking_factory
+from rag.factory import get_retrieval_factory
 from evaluation.services.retrieval_evaluator import get_retrieval_metrics_evaluator, RetrievalResults
 from shared.utils.data_cleaner import get_data_cleaner
 from shared.utils import count_tokens
@@ -94,9 +94,19 @@ class BenchmarkBasicRAGRunner:
         notion_token = os.getenv("NOTION_ACCESS_TOKEN")
         self.notion_service = NotionService(notion_token)
         
-        # Initialize components
-        max_tokens = benchmark_config['ingestion']['max_tokens']
-        self.chunker = get_basic_paragraph_chunker(max_tokens=max_tokens)
+        # Initialize factory-based components
+        self.chunking_factory = get_chunking_factory()
+        self.retrieval_factory = get_retrieval_factory()
+        
+        # Create chunking strategy from config
+        strategies_config = benchmark_config.get('strategies', {})
+        chunking_config = strategies_config.get('chunking', {'strategy': 'basic_paragraph'})
+        ingestion_config = benchmark_config['ingestion']
+        
+        self.chunker = self.chunking_factory.create_strategy(
+            strategy_config=chunking_config,
+            ingestion_config=ingestion_config
+        )
         
         # Store embeddings configurations for runtime use
         self.embeddings_config = benchmark_config['embeddings']
@@ -125,9 +135,16 @@ class BenchmarkBasicRAGRunner:
         if not self.offline_mode and self.database is None:
             self.database = Database()
             await self.database.init()
-            # Initialize database-dependent components
-            # Pass the decentralized OpenAI service to retrieval strategy
-            self.retrieval_strategy = get_basic_similarity_strategy(self.database, self.openai_service, self.embeddings_config)
+            # Initialize database-dependent components using factory
+            strategies_config = self.benchmark_config.get('strategies', {})
+            retrieval_config = strategies_config.get('retrieval', {'strategy': 'basic_similarity'})
+            
+            self.retrieval_strategy = self.retrieval_factory.create_strategy(
+                strategy_config=retrieval_config,
+                database=self.database,
+                openai_service=self.openai_service,
+                embeddings_config=self.embeddings_config
+            )
             self.data_cleaner = get_data_cleaner(self.database)
     
     async def clear_data(self):
